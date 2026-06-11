@@ -6,14 +6,14 @@ from src.group_rules import apply_group_rules
 from src.property_schema import normalize_property, validate_property
 
 
-def make_group(i: int, *, allow_links: bool) -> dict:
+def make_group(i: int, *, allow_links: bool, max_chars: int = 1400) -> dict:
     return {
         "id": f"g{i}",
         "name": f"Group {i}",
         "post_url": f"https://www.facebook.com/groups/g{i}/",
         "enabled": True,
         "tone": "カジュアル" if i % 2 else "丁寧・硬め",
-        "max_chars": 300 + (i % 5) * 50,
+        "max_chars": max_chars,
         "active_hours": [0, 24],
         "allow_links": allow_links,
         "allow_images": True,
@@ -45,7 +45,7 @@ def make_property(i: int) -> dict:
 def test_randomized_group_rules_invariants():
     rng = random.Random(20260611)
     for i in range(200):
-        group = make_group(i, allow_links=bool(i % 2))
+        group = make_group(i, allow_links=bool(i % 2), max_chars=300 + (i % 5) * 50)
         body = f"本文{i} https://example.com/{i} 絶対 保証 NG{i} " + "あ" * rng.randint(0, 900)
         result = apply_group_rules(body, group)
         assert len(result.body) <= group["max_chars"]
