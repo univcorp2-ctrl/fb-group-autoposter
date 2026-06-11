@@ -1,0 +1,10 @@
+playwright>=1.44
+anthropic>=0.40
+pyyaml>=6.0
+watchdog>=4.0
+python-dotenv>=1.0
+pymupdf>=1.24
+requests>=2.32
+tenacity>=8.2
+pytest>=8.2
+ruff>=0.5
