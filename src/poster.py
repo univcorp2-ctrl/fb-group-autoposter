@@ -6,7 +6,7 @@ import random
 from datetime import datetime
 from typing import Any
 
-from tenacity import retry, stop_after_attempt, wait_exponential_jitter
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential_jitter
 
 from src.healer import heal_locate
 from src.queue_db import QueueDB
@@ -35,7 +35,13 @@ class FacebookPoster:
     def _group_allowed_now(self, group: dict[str, Any]) -> bool:
         hours = group.get("active_hours", [0, 24])
         start, end = int(hours[0]), int(hours[1])
-        now_hour = datetime.now().hour
+        try:
+            from zoneinfo import ZoneInfo
+            now_hour = datetime.now(ZoneInfo("Asia/Tokyo")).hour
+        except ImportError:
+            from datetime import timezone, timedelta
+            jst = timezone(timedelta(hours=9))
+            now_hour = datetime.now(jst).hour
         return start <= now_hour < end if start <= end else now_hour >= start or now_hour < end
 
     def _preflight_target(self, job: dict[str, Any], target: dict[str, Any], group: dict[str, Any]) -> str | None:
@@ -105,7 +111,8 @@ class FacebookPoster:
                         break
                     except Exception as exc:
                         screenshot = await save_screenshot(page, prefix="failed", job_id=job["job_id"], group_id=target["group_id"])
-                        self.db.update_target_status(job["job_id"], target["group_id"], "failed", error=repr(exc), screenshot=screenshot, increment_attempts=True)
+                        sanitized_error = f"{type(exc).__name__}: {exc}"[:500]
+                        self.db.update_target_status(job["job_id"], target["group_id"], "failed", error=sanitized_error, screenshot=screenshot, increment_attempts=True)
                         suggest_disable = self.db.record_group_result(target["group_id"], success=False, threshold=self.settings.group_fail_threshold)
                         if suggest_disable and self.notifier:
                             self.notifier.alert(f"連続失敗閾値到達。groups.yamlでenabled:false検討: {target['group_id']}")
@@ -115,6 +122,7 @@ class FacebookPoster:
                             user_data_dir=str(self.settings.profile_dir),
                             headless=False,
                             viewport={"width": 1366, "height": 900},
+                            timeout=self.settings.page_hard_timeout * 1000,
                         )
                         page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
                         posted_in_browser = 0
@@ -134,7 +142,12 @@ class FacebookPoster:
         await page.mouse.wheel(0, random.randint(100, 400))
         await page.wait_for_timeout(random.randint(500, 1800))
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential_jitter(initial=1, max=8), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential_jitter(initial=1, max=8),
+        retry=retry_if_not_exception_type((SessionExpired, PostingBlocked)),
+        reraise=True,
+    )
     async def _post_one(self, page: Any, job: dict[str, Any], target: dict[str, Any], group: dict[str, Any]) -> None:
         await page.goto(group["post_url"], wait_until="domcontentloaded", timeout=self.settings.page_hard_timeout * 1000)
         if not await is_logged_in(page):

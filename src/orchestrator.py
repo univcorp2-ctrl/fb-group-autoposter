@@ -112,12 +112,12 @@ def main() -> None:
     settings = Settings.load()
     if args.approval_poll:
         handled = run_approval_poll(settings)
-        print(f"handled={handled}")
+        log.info("handled=%d", handled)
         return
     if args.healthcheck:
         raise SystemExit(healthcheck(settings))
     summary = asyncio.run(run_cycle(settings, selftest=args.selftest))
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    log.info("pipeline summary: %s", json.dumps(summary, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

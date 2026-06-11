@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import random
 from dataclasses import dataclass
 from typing import Any
@@ -9,6 +10,8 @@ from typing import Any
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 
 from src.group_rules import apply_group_rules
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -110,7 +113,8 @@ def generate_variants(
         if getattr(settings, "anthropic_api_key", ""):
             try:
                 body = _call_claude(settings, property_data, group, revision_instruction)
-            except Exception:
+            except Exception as exc:
+                log.warning("claude generation failed for group %s: %s", group.get("id"), exc)
                 degraded = True
         else:
             degraded = True

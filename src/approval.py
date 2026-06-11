@@ -28,8 +28,13 @@ class TelegramApproval:
         if not self.enabled:
             log.info("telegram disabled: %s", method)
             return None
-        resp = requests.post(f"{self.base_url}/{method}", json=payload, timeout=20)
-        resp.raise_for_status()
+        try:
+            resp = requests.post(f"{self.base_url}/{method}", json=payload, timeout=20)
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            raise requests.HTTPError(
+                f"Telegram API error on {method}: {exc.response.status_code}"
+            ) from None
         return resp.json()
 
     def send_message(self, text: str, *, reply_markup: dict[str, Any] | None = None) -> None:
@@ -84,6 +89,12 @@ class TelegramApproval:
     def _write_offset(self, offset: int) -> None:
         self.offset_path.write_text(str(offset), encoding="utf-8")
 
+    def _is_authorized_sender(self, callback: dict[str, Any]) -> bool:
+        sender_id = str(callback.get("from", {}).get("id", ""))
+        msg_chat_id = str((callback.get("message") or {}).get("chat", {}).get("id", ""))
+        expected = str(self.settings.telegram_chat_id)
+        return sender_id == expected or msg_chat_id == expected
+
     def poll_once(self) -> int:
         if not self.enabled:
             return 0
@@ -91,14 +102,21 @@ class TelegramApproval:
         offset = self._read_offset()
         if offset is not None:
             params["offset"] = offset
-        resp = requests.get(f"{self.base_url}/getUpdates", params=params, timeout=20)
-        resp.raise_for_status()
+        try:
+            resp = requests.get(f"{self.base_url}/getUpdates", params=params, timeout=20)
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            log.warning("telegram poll failed: %s", exc)
+            return 0
         updates = resp.json().get("result", [])
         handled = 0
         for update in updates:
             self._write_offset(update["update_id"] + 1)
             callback = update.get("callback_query")
             if not callback:
+                continue
+            if not self._is_authorized_sender(callback):
+                log.warning("ignoring callback from unauthorized sender")
                 continue
             data = callback.get("data", "")
             action, _, job_id = data.partition(":")

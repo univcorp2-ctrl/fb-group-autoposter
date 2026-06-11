@@ -24,7 +24,10 @@ def _int(name: str, default: int) -> int:
     raw = os.getenv(name)
     if raw is None or raw == "":
         return default
-    return int(raw)
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(f"Environment variable {name!r} must be an integer, got: {raw!r}") from None
 
 
 @dataclass(frozen=True)

@@ -3,10 +3,23 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
 from src.property_schema import normalize_property, validate_property
+
+MAX_URL_INGEST_CHARS = 50_000
+_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+
+def _validate_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"URL scheme not allowed: {parsed.scheme!r}")
+    host = (parsed.hostname or "").lower()
+    if host in _BLOCKED_HOSTS or host.startswith("169.254.") or host.startswith("10."):
+        raise ValueError(f"URL resolves to a blocked address: {host}")
 
 
 def ingest_manual(data: dict[str, Any]) -> dict[str, Any]:
@@ -16,9 +29,10 @@ def ingest_manual(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def ingest_url(url: str, *, timeout: int = 20) -> dict[str, Any]:
+    _validate_url(url)
     resp = requests.get(url, timeout=timeout, headers={"User-Agent": "Mozilla/5.0 property-ingest"})
     resp.raise_for_status()
-    text = resp.text[:50_000]
+    text = resp.text[:MAX_URL_INGEST_CHARS]
     return ingest_manual({"url": url, "raw_text": text, "title": "URL取込物件"})
 
 

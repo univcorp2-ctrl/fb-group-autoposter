@@ -1,3 +1,9 @@
+[project]
+name = "fb-group-autoposter"
+version = "0.1.0"
+description = "Automated Facebook group posting pipeline with approval workflow"
+requires-python = ">=3.11"
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
@@ -10,3 +16,17 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "B"]
 ignore = ["E501", "E402"]
+
+[tool.coverage.run]
+source = ["src", "config"]
+omit = ["tests/*", "scripts/*", "src/poster.py", "src/healer.py", "src/verifier.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 65
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__",
+    "async with async_playwright",
+]

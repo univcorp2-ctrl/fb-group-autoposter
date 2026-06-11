@@ -116,16 +116,26 @@ class QueueDB:
             raise ValueError(f"invalid target status: {status}")
         posted_at = now_iso() if status == "posted" else None
         with self.connect() as conn:
-            attempts_sql = "attempts + 1" if increment_attempts else "attempts"
-            conn.execute(
-                f"""
-                UPDATE job_targets
-                SET status=?, attempts={attempts_sql}, last_error=?, posted_at=COALESCE(?, posted_at),
-                    screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
-                WHERE job_id=? AND group_id=?
-                """,
-                (status, error, posted_at, screenshot, permalink, job_id, group_id),
-            )
+            if increment_attempts:
+                conn.execute(
+                    """
+                    UPDATE job_targets
+                    SET status=?, attempts=attempts + 1, last_error=?, posted_at=COALESCE(?, posted_at),
+                        screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
+                    WHERE job_id=? AND group_id=?
+                    """,
+                    (status, error, posted_at, screenshot, permalink, job_id, group_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE job_targets
+                    SET status=?, last_error=?, posted_at=COALESCE(?, posted_at),
+                        screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
+                    WHERE job_id=? AND group_id=?
+                    """,
+                    (status, error, posted_at, screenshot, permalink, job_id, group_id),
+                )
 
     def approve_job(self, job_id: str) -> None:
         self.update_job_status(job_id, "approved")
