@@ -1,5 +1,4 @@
 import asyncio
-from types import SimpleNamespace
 
 from src.session import is_logged_in, login_required_message
 from src.verifier import dry_run_screenshot_path
