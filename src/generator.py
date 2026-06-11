@@ -3,11 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import random
-import re
 from dataclasses import dataclass
 from typing import Any
 
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
+
+from src.group_rules import apply_group_rules
 
 
 @dataclass
@@ -19,27 +20,6 @@ class GeneratedBatch:
 def _stable_seed(property_id: str, group_id: str) -> int:
     digest = hashlib.sha256(f"{property_id}:{group_id}".encode("utf-8")).hexdigest()
     return int(digest[:12], 16)
-
-
-def _strip_links(body: str) -> str:
-    return re.sub(r"https?://\S+", "", body).strip()
-
-
-def _apply_group_rules(body: str, group: dict[str, Any]) -> str:
-    if not group.get("allow_links", True):
-        body = _strip_links(body)
-    for word in group.get("forbidden", []) or []:
-        body = body.replace(word, "")
-    signature = group.get("signature", "") or ""
-    if signature and signature.strip() not in body:
-        body = f"{body.rstrip()}\n{signature}"
-    max_chars = int(group.get("max_chars", 1500))
-    if len(body) > max_chars:
-        reserve = len(signature) + 8 if signature else 0
-        body = body[: max_chars - reserve].rstrip()
-        if signature:
-            body = f"{body}\n{signature}"
-    return body.strip()
 
 
 def fallback_body(property_data: dict[str, Any], group: dict[str, Any], *, revision_instruction: str = "") -> str:
@@ -74,7 +54,7 @@ def fallback_body(property_data: dict[str, Any], group: dict[str, Any], *, revis
         lines += ["", f"詳細：{property_data['url']}"]
     if revision_instruction:
         lines += ["", f"修正反映メモ：{revision_instruction}"]
-    return _apply_group_rules("\n".join(lines), group)
+    return apply_group_rules("\n".join(lines), group)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential_jitter(initial=1, max=8), reraise=True)
@@ -136,7 +116,7 @@ def generate_variants(
             degraded = True
         if not body:
             body = fallback_body(property_data, group, revision_instruction=revision_instruction)
-        body = _apply_group_rules(body, group)
+        body = apply_group_rules(body, group)
         seed = _stable_seed(property_data.get("property_id", "unknown"), group["id"])
         variants.append(
             {
