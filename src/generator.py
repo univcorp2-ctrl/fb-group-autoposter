@@ -54,7 +54,7 @@ def fallback_body(property_data: dict[str, Any], group: dict[str, Any], *, revis
         lines += ["", f"詳細：{property_data['url']}"]
     if revision_instruction:
         lines += ["", f"修正反映メモ：{revision_instruction}"]
-    return apply_group_rules("\n".join(lines), group)
+    return apply_group_rules("\n".join(lines), group).body
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential_jitter(initial=1, max=8), reraise=True)
@@ -116,7 +116,7 @@ def generate_variants(
             degraded = True
         if not body:
             body = fallback_body(property_data, group, revision_instruction=revision_instruction)
-        body = apply_group_rules(body, group)
+        body = apply_group_rules(body, group).body
         seed = _stable_seed(property_data.get("property_id", "unknown"), group["id"])
         variants.append(
             {
