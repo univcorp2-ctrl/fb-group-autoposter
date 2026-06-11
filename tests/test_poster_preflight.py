@@ -4,28 +4,52 @@ from src.poster import FacebookPoster
 from src.queue_db import QueueDB
 
 
-def settings(tmp_path):
-    return SimpleNamespace(
+def settings(**overrides):
+    base = dict(
         dry_run=True,
-        max_posts_per_day=1,
+        max_posts_per_day=10,
         min_same_group_hours=20,
-        group_fail_threshold=3,
-        profile_dir=tmp_path / "profile",
-        page_hard_timeout=120,
-        browser_backend="playwright",
         max_groups_per_browser=5,
+        group_fail_threshold=3,
         min_interval_min=0,
         max_interval_min=0,
+        profile_dir="profiles/main",
+        page_hard_timeout=1,
+        browser_backend="playwright",
         humanize=False,
     )
+    base.update(overrides)
+    return SimpleNamespace(**base)
 
 
-def test_preflight_daily_limit(tmp_path):
+def group(**overrides):
+    base = {"id": "g1", "active_hours": [0, 24], "post_url": "https://www.facebook.com/groups/g1/"}
+    base.update(overrides)
+    return base
+
+
+def test_preflight_blocks_daily_limit(tmp_path):
     db = QueueDB(tmp_path / "jobs.db")
-    s = settings(tmp_path)
-    group = {"id": "g", "active_hours": [0, 24]}
-    job_id = db.create_job({"property_id": "p", "title": "A"}, [{"group_id": "g", "body": "body"}])
-    db.update_target_status(job_id, "g", "posted")
-    poster = FacebookPoster(s, db, [group])
-    reason = poster._preflight_target({"property_id": "p2"}, {"group_id": "g"}, group)
+    poster = FacebookPoster(settings(max_posts_per_day=0), db, [group()])
+    reason = poster._preflight_target({"property_id": "p"}, {"group_id": "g1"}, group())
     assert reason == "daily_limit"
+
+
+def test_preflight_blocks_duplicate_recent_property(tmp_path):
+    db = QueueDB(tmp_path / "jobs.db")
+    job_id = db.create_job({"property_id": "p"}, [{"group_id": "g1", "body": "body"}])
+    db.update_target_status(job_id, "g1", "posted")
+    poster = FacebookPoster(settings(), db, [group()])
+    reason = poster._preflight_target({"property_id": "p"}, {"group_id": "g1"}, group())
+    assert reason in {"same_group_interval", "duplicate_property_guard"}
+
+
+def test_dry_run_marks_targets_posted_without_playwright(tmp_path):
+    import asyncio
+
+    db = QueueDB(tmp_path / "jobs.db")
+    job_id = db.create_job({"property_id": "p"}, [{"group_id": "g1", "body": "body"}])
+    db.approve_job(job_id)
+    poster = FacebookPoster(settings(), db, [group()])
+    status = asyncio.run(poster.post_job(db.get_job(job_id)))
+    assert status == "done"
