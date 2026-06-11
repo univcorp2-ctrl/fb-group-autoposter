@@ -38,7 +38,7 @@ class FacebookPoster:
         try:
             from zoneinfo import ZoneInfo
             now_hour = datetime.now(ZoneInfo("Asia/Tokyo")).hour
-        except ImportError:
+        except Exception:
             from datetime import timezone, timedelta
             jst = timezone(timedelta(hours=9))
             now_hour = datetime.now(jst).hour
