@@ -12,7 +12,7 @@ from typing import Iterator
 from config import Settings, load_groups
 from src.approval import TelegramApproval
 from src.generator import generate_variants
-from src.ingest import ingest_manual, scan_inbox
+from src.ingest import scan_inbox
 from src.logging_setup import setup_logging
 from src.poster import FacebookPoster
 from src.queue_db import QueueDB
