@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
-from src.group_rules import validate_group_policy
+from src.group_rules import validate_group
 
 ROOT = Path(__file__).resolve().parent
 
@@ -105,8 +105,21 @@ class Settings:
                 missing.append("TELEGRAM_CHAT_ID")
         if self.min_interval_min > self.max_interval_min:
             raise ValueError("MIN_INTERVAL_MIN must be <= MAX_INTERVAL_MIN")
-        if self.max_posts_per_day < 1:
-            raise ValueError("MAX_POSTS_PER_DAY must be positive")
+        numeric_positive = {
+            "MAX_POSTS_PER_DAY": self.max_posts_per_day,
+            "MIN_SAME_GROUP_HOURS": self.min_same_group_hours,
+            "MAX_GROUPS_PER_BROWSER": self.max_groups_per_browser,
+            "RETRY_MAX": self.retry_max,
+            "PAGE_HARD_TIMEOUT": self.page_hard_timeout,
+            "APPROVAL_TIMEOUT_HOURS": self.approval_timeout_hours,
+            "HEARTBEAT_TIMEOUT_MIN": self.heartbeat_timeout_min,
+            "GROUP_FAIL_THRESHOLD": self.group_fail_threshold,
+            "COOLDOWN_HOURS": self.cooldown_hours,
+            "PROFILE_BACKUP_KEEP": self.profile_backup_keep,
+        }
+        for key, value in numeric_positive.items():
+            if value <= 0:
+                raise ValueError(f"{key} must be positive")
         if self.browser_backend not in {"playwright", "adspower"}:
             raise ValueError("BROWSER_BACKEND must be playwright or adspower")
         if missing:
@@ -121,5 +134,5 @@ def load_groups(path: str | Path = "groups.yaml") -> list[dict[str, Any]]:
         raise ValueError("groups.yaml must contain a top-level 'groups' list")
     enabled = [g for g in groups if g.get("enabled", True)]
     for group in enabled:
-        validate_group_policy(group)
+        validate_group(group)
     return enabled
