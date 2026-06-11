@@ -1,0 +1,27 @@
+# ダミーIDのサンプルです。実運用前にHiroが実際のグループID・URL・規約に合わせて編集してください。
+groups:
+  - id: "123456789012345"
+    name: "首都圏 収益物件 情報交換（サンプル）"
+    post_url: "https://www.facebook.com/groups/123456789012345/"
+    enabled: true
+    tone: "丁寧・硬め"
+    max_chars: 1500
+    active_hours: [9, 22]
+    allow_links: true
+    allow_images: true
+    signature: "\n---\nお問い合わせはコメントまたはDMにて。univ合同会社"
+    forbidden: ["絶対", "必ず儲かる", "保証"]
+    notes: "投稿審査あり。販促色が強いと削除されやすい。"
+
+  - id: "234567890123456"
+    name: "全国 不動産投資コミュニティ（サンプル）"
+    post_url: "https://www.facebook.com/groups/234567890123456/"
+    enabled: true
+    tone: "カジュアル"
+    max_chars: 800
+    active_hours: [7, 23]
+    allow_links: false
+    allow_images: true
+    signature: "\nDMでお気軽にどうぞ😊"
+    forbidden: ["利回り保証"]
+    notes: "リンク直貼り禁止。問い合わせ誘導はDM経由のみ。"
