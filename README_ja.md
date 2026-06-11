@@ -151,13 +151,17 @@ python scripts/run_tests_50.py
 6. 問題なければ `DRY_RUN=false` に変更して本投稿開始
 7. 安定稼働後に `AUTO_APPROVE=true` で完全無人化
 
-## 秘密情報の管理
+## セキュリティ
+
+### 秘密情報の管理
 
 以下は絶対にGitHubにコミットしないでください:
 
 - `.env` ファイル（APIキー、トークン含む）
 - `profiles/` ディレクトリ（Facebookセッション）
 - `data/jobs.db`（投稿履歴）
+
+`.gitignore` で `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12` を除外済みです。
 
 ### GitHub Actions / CI での秘密情報
 
@@ -167,6 +171,14 @@ GitHub Secrets に以下を設定:
 - `TELEGRAM_CHAT_ID`
 
 CIではテストのみ実行し、実投稿は行いません。
+
+### 実装済みセキュリティ対策
+
+- **Telegram認証**: コールバックは設定済み `TELEGRAM_CHAT_ID` からのみ受付
+- **SSRF防止**: `ingest_url()` でスキーム・ホスト検証（localhost, メタデータIP等をブロック）
+- **SQLインジェクション防止**: 全クエリでパラメータ化
+- **Telegram Token保護**: HTTP例外からトークンを除去してログ記録
+- **エラーサニタイズ**: DB保存・Telegram通知時に内部パスを含まないよう制限
 
 ## アーキテクチャ
 
