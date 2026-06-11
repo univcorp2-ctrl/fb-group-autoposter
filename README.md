@@ -25,6 +25,7 @@ flowchart LR
 ```
 
 詳細は [`docs/architecture.md`](docs/architecture.md) を参照。
+深掘り検証は [`docs/deep_verification.md`](docs/deep_verification.md) を参照。
 
 ## 初回セットアップ
 
@@ -130,13 +131,25 @@ pytest
 ruff check .
 ```
 
-10回連続テスト:
+10回連続検証:
 
 ```powershell
 python scripts/run_tests_10.py
 ```
 
-`run_tests_10.py` は `ruff check .` と `pytest -q` を10サイクル連続で実行し、1回でも失敗したら非ゼロ終了します。CIでは実投稿しないテストのみ実行します。
+50回連続の深掘り検証:
+
+```powershell
+python scripts/run_tests_50.py
+```
+
+100回など任意回数:
+
+```powershell
+python scripts/run_tests_50.py --rounds 100
+```
+
+CIでは実投稿しないテストのみ実行します。
 
 ## 手動E2E
 
