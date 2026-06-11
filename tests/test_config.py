@@ -46,6 +46,8 @@ def test_settings_validate_runtime_rejects_bad_interval(monkeypatch, tmp_path):
 
 def test_settings_validate_runtime_rejects_missing_external(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
+    for key in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]:
+        monkeypatch.delenv(key, raising=False)
     settings = Settings.load(env_file=tmp_path / ".env")
     with pytest.raises(RuntimeError):
         settings.validate_runtime(require_external=True)
