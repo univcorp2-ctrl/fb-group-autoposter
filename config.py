@@ -8,6 +8,8 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
+from src.group_rules import validate_group_policy
+
 ROOT = Path(__file__).resolve().parent
 
 
@@ -103,6 +105,8 @@ class Settings:
                 missing.append("TELEGRAM_CHAT_ID")
         if self.min_interval_min > self.max_interval_min:
             raise ValueError("MIN_INTERVAL_MIN must be <= MAX_INTERVAL_MIN")
+        if self.max_posts_per_day < 1:
+            raise ValueError("MAX_POSTS_PER_DAY must be positive")
         if self.browser_backend not in {"playwright", "adspower"}:
             raise ValueError("BROWSER_BACKEND must be playwright or adspower")
         if missing:
@@ -117,8 +121,5 @@ def load_groups(path: str | Path = "groups.yaml") -> list[dict[str, Any]]:
         raise ValueError("groups.yaml must contain a top-level 'groups' list")
     enabled = [g for g in groups if g.get("enabled", True)]
     for group in enabled:
-        required = ["id", "name", "post_url", "tone", "max_chars", "active_hours"]
-        for key in required:
-            if key not in group:
-                raise ValueError(f"group {group!r} is missing {key}")
+        validate_group_policy(group)
     return enabled
