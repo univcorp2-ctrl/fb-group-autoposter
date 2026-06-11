@@ -1,49 +1,90 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any
 
-URL_RE = re.compile(r"https?://\S+")
+URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
 
-def strip_links(body: str) -> str:
-    return URL_RE.sub("", body).strip()
+@dataclass(frozen=True)
+class RuleResult:
+    body: str
+    removed_links: bool = False
+    removed_forbidden: tuple[str, ...] = ()
+    truncated: bool = False
 
 
-def normalize_forbidden_words(group: dict[str, Any]) -> list[str]:
-    values = group.get("forbidden", []) or []
-    return [str(v) for v in values if str(v)]
+def strip_links(body: str) -> tuple[str, bool]:
+    new_body = URL_RE.sub("", body).strip()
+    return new_body, new_body != body.strip()
 
 
-def apply_group_rules(body: str, group: dict[str, Any]) -> str:
-    normalized = body or ""
+def remove_forbidden_words(body: str, forbidden: list[str] | tuple[str, ...] | None) -> tuple[str, tuple[str, ...]]:
+    removed: list[str] = []
+    out = body
+    for word in forbidden or []:
+        if word and word in out:
+            out = out.replace(word, "")
+            removed.append(word)
+    return out, tuple(removed)
+
+
+def append_signature_once(body: str, signature: str | None) -> str:
+    signature = signature or ""
+    if not signature.strip():
+        return body.strip()
+    if signature.strip() in body:
+        return body.strip()
+    return f"{body.rstrip()}\n{signature}".strip()
+
+
+def enforce_max_chars(body: str, max_chars: int, signature: str | None = None) -> tuple[str, bool]:
+    if max_chars <= 0:
+        raise ValueError("max_chars must be positive")
+    if len(body) <= max_chars:
+        return body, False
+    signature = signature or ""
+    if signature.strip() and signature.strip() in body:
+        base = body.replace(signature, "").rstrip()
+        reserve = len(signature) + 1
+        return f"{base[: max_chars - reserve].rstrip()}\n{signature}"[:max_chars].strip(), True
+    return body[:max_chars].rstrip(), True
+
+
+def apply_group_rules(body: str, group: dict[str, Any]) -> RuleResult:
+    removed_links = False
     if not group.get("allow_links", True):
-        normalized = strip_links(normalized)
-    for word in normalize_forbidden_words(group):
-        normalized = normalized.replace(word, "")
+        body, removed_links = strip_links(body)
+    body, removed_forbidden = remove_forbidden_words(body, group.get("forbidden", []))
     signature = group.get("signature", "") or ""
-    if signature and signature.strip() not in normalized:
-        normalized = f"{normalized.rstrip()}\n{signature}"
-    max_chars = int(group.get("max_chars", 1500))
-    if len(normalized) > max_chars:
-        reserve = len(signature) + 8 if signature else 0
-        limit = max(0, max_chars - reserve)
-        normalized = normalized[:limit].rstrip()
-        if signature:
-            normalized = f"{normalized}\n{signature}"
-    return normalized.strip()
+    body = append_signature_once(body, signature)
+    body, truncated = enforce_max_chars(body, int(group.get("max_chars", 1500)), signature)
+    return RuleResult(
+        body=body.strip(),
+        removed_links=removed_links,
+        removed_forbidden=removed_forbidden,
+        truncated=truncated,
+    )
 
 
-def validate_group_policy(group: dict[str, Any]) -> None:
+def validate_group(group: dict[str, Any]) -> None:
     required = ["id", "name", "post_url", "tone", "max_chars", "active_hours"]
     for key in required:
         if key not in group:
             raise ValueError(f"group {group!r} is missing {key}")
-    active_hours = group.get("active_hours")
-    if not isinstance(active_hours, list) or len(active_hours) != 2:
-        raise ValueError(f"group {group.get('id')} active_hours must be [start, end]")
+    if not str(group["id"]).strip():
+        raise ValueError("group id must not be empty")
+    if not str(group["post_url"]).startswith("https://www.facebook.com/groups/"):
+        raise ValueError(f"group {group['id']} post_url must be a Facebook group URL")
+    max_chars = int(group["max_chars"])
+    if max_chars < 100:
+        raise ValueError(f"group {group['id']} max_chars must be >= 100")
+    active_hours = group["active_hours"]
+    if not isinstance(active_hours, list | tuple) or len(active_hours) != 2:
+        raise ValueError(f"group {group['id']} active_hours must be [start, end]")
     start, end = int(active_hours[0]), int(active_hours[1])
     if not (0 <= start <= 24 and 0 <= end <= 24):
-        raise ValueError(f"group {group.get('id')} active_hours must be between 0 and 24")
-    if int(group.get("max_chars", 0)) <= 0:
-        raise ValueError(f"group {group.get('id')} max_chars must be positive")
+        raise ValueError(f"group {group['id']} active_hours must be within 0..24")
+    if group.get("forbidden") is not None and not isinstance(group.get("forbidden"), list):
+        raise ValueError(f"group {group['id']} forbidden must be a list")
