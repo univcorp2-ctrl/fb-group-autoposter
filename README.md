@@ -123,12 +123,20 @@ powershell -ExecutionPolicy Bypass -File scripts\install_windows_tasks.ps1
 
 ## テスト
 
+通常テスト:
+
 ```powershell
 pytest
 ruff check .
 ```
 
-CIでは実投稿しないテストのみ実行します。
+10回連続テスト:
+
+```powershell
+python scripts/run_tests_10.py
+```
+
+`run_tests_10.py` は `ruff check .` と `pytest -q` を10サイクル連続で実行し、1回でも失敗したら非ゼロ終了します。CIでは実投稿しないテストのみ実行します。
 
 ## 手動E2E
 
