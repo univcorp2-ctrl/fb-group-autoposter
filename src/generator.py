@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import random
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -25,6 +26,33 @@ def _stable_seed(property_id: str, group_id: str) -> int:
     return int(digest[:12], 16)
 
 
+_HASHTAG_TYPE_BASES = {
+    "一棟マンション", "一棟アパート", "一棟ビル", "区分マンション",
+    "戸建", "商業施設", "ホテル", "土地", "倉庫・工場", "医療・介護施設",
+}
+_AREA_RE = re.compile(r"(東京都|北海道|京都府|大阪府|.{2,3}?県)(.+?[市区町村])")
+
+
+def build_hashtags(property_data: dict[str, Any]) -> list[str]:
+    """Derive a small set of relevant hashtags from a property dict."""
+    tags = ["#不動産投資", "#収益物件", "#投資用不動産"]
+    for highlight in property_data.get("highlights") or []:
+        base = str(highlight).split("（")[0]
+        if base in _HASHTAG_TYPE_BASES:
+            tags.append("#" + base)
+    match = _AREA_RE.search(str(property_data.get("location", "")))
+    if match:
+        tags.append("#" + match.group(1))
+        tags.append("#" + match.group(2))
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for tag in tags:
+        if tag not in seen:
+            seen.add(tag)
+            ordered.append(tag)
+    return ordered[:6]
+
+
 def fallback_body(property_data: dict[str, Any], group: dict[str, Any], *, revision_instruction: str = "") -> str:
     property_id = property_data.get("property_id", "unknown")
     rng = random.Random(_stable_seed(property_id, group["id"]))
@@ -40,20 +68,25 @@ def fallback_body(property_data: dict[str, Any], group: dict[str, Any], *, revis
     lines = [
         rng.choice(openings),
         "",
-        f"物件名：{property_data.get('title', '記載なし')}",
-        f"価格：{property_data.get('price', '記載なし')}",
-        f"利回り：{property_data.get('yield_pct', '記載なし')}",
-        f"所在地：{property_data.get('location', '記載なし')}",
-        f"交通：{property_data.get('access', '記載なし')}",
-        f"構造：{property_data.get('structure', '記載なし')}",
-        f"土地面積：{property_data.get('land_area', '記載なし')}",
-        f"建物面積：{property_data.get('building_area', '記載なし')}",
-        f"築年：{property_data.get('year_built', '記載なし')}",
+        f"🏢 {property_data.get('title', '記載なし')}",
+        f"💰 価格：{property_data.get('price', '記載なし')}",
+        f"📈 利回り：{property_data.get('yield_pct', '記載なし')}",
+        f"📍 所在地：{property_data.get('location', '記載なし')}",
+        f"🚃 交通：{property_data.get('access', '記載なし')}",
+        f"🏗 構造：{property_data.get('structure', '記載なし')}",
+        f"📐 土地：{property_data.get('land_area', '記載なし')}／建物：{property_data.get('building_area', '記載なし')}",
+        f"🗓 築年：{property_data.get('year_built', '記載なし')}",
     ]
     if highlights:
         bullet = " / ".join(str(x) for x in highlights)
-        lines += ["", f"ポイント：{bullet}"]
-    if property_data.get("url"):
+        lines += ["", f"✨ {bullet}"]
+    contact = str(group.get("contact", "") or "").strip()
+    if contact:
+        lines += ["", contact]
+    hashtags = build_hashtags(property_data)
+    if hashtags:
+        lines += ["", " ".join(hashtags)]
+    if property_data.get("url") and group.get("allow_links", True):
         lines += ["", f"詳細：{property_data['url']}"]
     if revision_instruction:
         lines += ["", f"修正反映メモ：{revision_instruction}"]

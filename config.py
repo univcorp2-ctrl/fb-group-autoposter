@@ -100,12 +100,14 @@ class Settings:
     def validate_runtime(self, *, require_external: bool = True) -> None:
         missing: list[str] = []
         if require_external:
-            if not self.anthropic_api_key:
-                missing.append("ANTHROPIC_API_KEY")
-            if not self.telegram_bot_token:
-                missing.append("TELEGRAM_BOT_TOKEN")
-            if not self.telegram_chat_id:
-                missing.append("TELEGRAM_CHAT_ID")
+            # ANTHROPIC_API_KEY is optional: the generator falls back to template
+            # (degraded) bodies when it is absent. Telegram is only required when
+            # manual approval is in use (i.e. AUTO_APPROVE is disabled).
+            if not self.auto_approve:
+                if not self.telegram_bot_token:
+                    missing.append("TELEGRAM_BOT_TOKEN")
+                if not self.telegram_chat_id:
+                    missing.append("TELEGRAM_CHAT_ID")
         if self.min_interval_min > self.max_interval_min:
             raise ValueError("MIN_INTERVAL_MIN must be <= MAX_INTERVAL_MIN")
         numeric_positive = {

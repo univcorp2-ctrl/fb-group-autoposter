@@ -1,20 +1,44 @@
+# Registers Windows Scheduled Tasks for safe twice-daily Facebook posting.
+#
+# Design (block-avoidance first):
+#   - Two posting runs per day (morning + evening), each with a random delay so
+#     the timing looks natural. MIN_SAME_GROUP_HOURS + MAX_POSTS_PER_DAY in .env
+#     cap the cadence, so even if a run fires early nothing over-posts.
+#   - A monitor run after each posting window writes logs/monitor_status.json and
+#     flags if posting has stalled (no successful post in ~26h).
+#
+# NOTE: posting uses a *headed* browser (lower ban risk than headless), so these
+# tasks run in the interactive user session — the PC must be logged in at the
+# scheduled times. Times below are LOCAL machine time (set the PC to JST).
+
 $ErrorActionPreference = 'Stop'
 
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Python = Join-Path $Root '.venv\Scripts\python.exe'
 if (!(Test-Path $Python)) { $Python = 'python' }
 
-$ActionPipeline = New-ScheduledTaskAction -Execute $Python -Argument "scripts\run_pipeline.py" -WorkingDirectory $Root
-$TriggerPipeline = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(5) -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration (New-TimeSpan -Days 3650)
-Register-ScheduledTask -TaskName 'FBGroupAutoposter-Pipeline' -Action $ActionPipeline -Trigger $TriggerPipeline -Description 'Run approved posting pipeline hourly' -Force
+function New-DailyRun {
+    param([string]$Name, [string]$Script, [string]$At, [int]$RandomDelayMin, [string]$Desc)
+    $action = New-ScheduledTaskAction -Execute $Python -Argument "scripts\$Script" -WorkingDirectory $Root
+    if ($RandomDelayMin -gt 0) {
+        $trigger = New-ScheduledTaskTrigger -Daily -At $At -RandomDelay (New-TimeSpan -Minutes $RandomDelayMin)
+    } else {
+        $trigger = New-ScheduledTaskTrigger -Daily -At $At
+    }
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+    Register-ScheduledTask -TaskName $Name -Action $action -Trigger $trigger -Settings $settings -Description $Desc -Force | Out-Null
+}
 
-$ActionApproval = New-ScheduledTaskAction -Execute $Python -Argument "scripts\approval_listener.py" -WorkingDirectory $Root
-$TriggerApproval = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)
-Register-ScheduledTask -TaskName 'FBGroupAutoposter-ApprovalPoll' -Action $ActionApproval -Trigger $TriggerApproval -Description 'Poll Telegram approval callbacks every 5 minutes' -Force
+# --- Posting: morning + evening (random delay up to 45 min for naturalness) ---
+New-DailyRun -Name 'FBAutoposter-Morning' -Script 'run_daily.py' -At '09:30' -RandomDelayMin 45 -Desc 'Post one fresh broker-OK property (morning)'
+New-DailyRun -Name 'FBAutoposter-Evening' -Script 'run_daily.py' -At '20:30' -RandomDelayMin 45 -Desc 'Post one fresh broker-OK property (evening)'
 
-$ActionHealth = New-ScheduledTaskAction -Execute $Python -Argument "scripts\healthcheck.py" -WorkingDirectory $Root
-$TriggerHealth = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(10) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration (New-TimeSpan -Days 3650)
-Register-ScheduledTask -TaskName 'FBGroupAutoposter-Healthcheck' -Action $ActionHealth -Trigger $TriggerHealth -Description 'Check orchestrator heartbeat' -Force
+# --- Monitoring: after each posting window ---
+New-DailyRun -Name 'FBAutoposter-Monitor-AM' -Script 'monitor.py' -At '12:00' -RandomDelayMin 0 -Desc 'Posting health check (after morning run)'
+New-DailyRun -Name 'FBAutoposter-Monitor-PM' -Script 'monitor.py' -At '23:00' -RandomDelayMin 0 -Desc 'Posting health check (after evening run)'
+
+# --- Group discovery: refresh candidate real-estate / investor groups daily ---
+New-DailyRun -Name 'FBAutoposter-Discover' -Script 'discover_groups.py' -At '07:00' -RandomDelayMin 30 -Desc 'Discover candidate FB groups (review list only, no auto-join)'
 
 Write-Host 'Registered tasks:'
-Get-ScheduledTask -TaskName 'FBGroupAutoposter-*' | Select-Object TaskName, State
+Get-ScheduledTask -TaskName 'FBAutoposter-*' | Select-Object TaskName, State | Format-Table -AutoSize

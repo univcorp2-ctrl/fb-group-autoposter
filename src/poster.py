@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 from datetime import datetime
 from typing import Any
 
@@ -193,6 +194,10 @@ class FacebookPoster:
                     return
             except Exception:
                 continue
+        if await self._text_click_fallback(page, action):
+            if strict_after:
+                await page.wait_for_timeout(1000)
+            return
         healed = await heal_locate(page, intent, self.settings)
         if healed:
             await page.mouse.click(healed.x, healed.y)
@@ -200,6 +205,23 @@ class FacebookPoster:
                 await page.wait_for_timeout(1000)
             return
         raise RuntimeError(f"selector and vision heal failed for {action}: {intent}")
+
+    # Text phrases used as a no-API fallback when CSS selectors miss (FB DOM drift).
+    _TEXT_FALLBACKS = {
+        "open_composer": ["テキストを入力", "投稿を作成", "ディスカッションを書く", "その気持ち", "近況", "Write something", "Create post"],
+        "post_button": ["投稿", "Post"],
+    }
+
+    async def _text_click_fallback(self, page: Any, action: str) -> bool:
+        for phrase in self._TEXT_FALLBACKS.get(action, []):
+            try:
+                loc = page.get_by_text(phrase, exact=False).first
+                if await loc.count() > 0 and await loc.is_visible():
+                    await loc.click(timeout=5000)
+                    return True
+            except Exception:
+                continue
+        return False
 
     async def _wait_first(self, page: Any, action: str, intent: str) -> Any:
         for selector in SELECTORS[action]:
@@ -236,9 +258,22 @@ class FacebookPoster:
                 continue
 
     async def _verify_composer_contains(self, page: Any, body: str) -> None:
-        prefix = body.strip()[:40]
-        if not prefix:
+        # Compare whitespace-squashed text: the composer renders each line as a
+        # separate node, so raw newlines never appear contiguously in the HTML.
+        needle = re.sub(r"\s+", "", body)[:30]
+        if not needle:
             raise RuntimeError("empty post body")
-        content = await page.content()
-        if prefix not in content:
+        haystack = ""
+        for selector in SELECTORS["composer_textbox"]:
+            try:
+                loc = page.locator(selector).first
+                if await loc.count() > 0:
+                    haystack = await loc.inner_text()
+                    if haystack.strip():
+                        break
+            except Exception:
+                continue
+        if needle in re.sub(r"\s+", "", haystack):
+            return
+        if needle not in re.sub(r"\s+", "", await page.content()):
             raise RuntimeError("composer body verification failed before final click")

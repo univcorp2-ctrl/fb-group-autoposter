@@ -258,3 +258,16 @@ class QueueDB:
             for row in rows:
                 conn.execute("UPDATE jobs SET status='approved', updated_at=? WHERE job_id=?", (now_iso(), row["job_id"]))
         return len(rows)
+
+    def posted_property_ids(self) -> set[str]:
+        """property_ids that have at least one successfully posted target."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT j.property_id
+                FROM jobs j
+                JOIN job_targets t ON t.job_id = j.job_id
+                WHERE t.status = 'posted'
+                """
+            ).fetchall()
+        return {row["property_id"] for row in rows}

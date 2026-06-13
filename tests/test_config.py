@@ -48,6 +48,17 @@ def test_settings_validate_runtime_rejects_missing_external(monkeypatch, tmp_pat
     monkeypatch.chdir(tmp_path)
     for key in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]:
         monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("AUTO_APPROVE", "false")
     settings = Settings.load(env_file=tmp_path / ".env")
     with pytest.raises(RuntimeError):
         settings.validate_runtime(require_external=True)
+
+
+def test_settings_validate_runtime_auto_approve_skips_telegram(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    for key in ["ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("AUTO_APPROVE", "true")
+    settings = Settings.load(env_file=tmp_path / ".env")
+    # AUTO_APPROVE + degraded fallback => no external secrets required.
+    settings.validate_runtime(require_external=True)

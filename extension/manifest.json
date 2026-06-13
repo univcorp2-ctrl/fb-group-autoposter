@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "FB Group 物件投稿ヘルパー",
+  "version": "1.0.0",
+  "description": "Facebookグループへ物件情報をワンクリックで下書き／投稿する自作ヘルパー（実セッション内で動作・検知/許可ダイアログなし）。",
+  "content_scripts": [
+    {
+      "matches": ["https://www.facebook.com/groups/*"],
+      "js": ["posts.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
