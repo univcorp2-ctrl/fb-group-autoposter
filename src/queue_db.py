@@ -114,7 +114,10 @@ class QueueDB:
     ) -> None:
         if status not in TARGET_STATUSES:
             raise ValueError(f"invalid target status: {status}")
-        posted_at = now_iso() if status == "posted" else None
+        # 'uncertain' very likely DID publish (we just could not verify it), so
+        # stamp it like a post. The same-group spacing guard and daily cap then
+        # treat it as a real post and never over-post (block-avoidance first).
+        posted_at = now_iso() if status in ("posted", "uncertain") else None
         with self.connect() as conn:
             if increment_attempts:
                 conn.execute(
@@ -205,19 +208,35 @@ class QueueDB:
         return (datetime.now(UTC) - last).total_seconds() / 60
 
     def count_posts_today(self) -> int:
+        # Count posted AND uncertain (uncertain very likely published). Fall back
+        # to the job's updated_at when posted_at is missing (older uncertain rows).
         today = datetime.now(UTC).date().isoformat()
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT COUNT(*) AS c FROM job_targets WHERE status='posted' AND substr(posted_at,1,10)=?",
+                """
+                SELECT COUNT(*) AS c
+                FROM job_targets t JOIN jobs j ON j.job_id = t.job_id
+                WHERE t.status IN ('posted', 'uncertain')
+                  AND substr(COALESCE(t.posted_at, j.updated_at), 1, 10) = ?
+                """,
                 (today,),
             ).fetchone()
         return int(row["c"])
 
     def posted_same_group_recently(self, group_id: str, hours: int) -> bool:
+        # Guarantee a full gap before posting to the same group again. Counts
+        # uncertain too, and uses the job's updated_at when posted_at is missing
+        # so historical uncertain posts still enforce the gap.
         cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT 1 FROM job_targets WHERE group_id=? AND status='posted' AND posted_at > ? LIMIT 1",
+                """
+                SELECT 1
+                FROM job_targets t JOIN jobs j ON j.job_id = t.job_id
+                WHERE t.group_id = ? AND t.status IN ('posted', 'uncertain')
+                  AND COALESCE(t.posted_at, j.updated_at) > ?
+                LIMIT 1
+                """,
                 (group_id, cutoff),
             ).fetchone()
         return row is not None

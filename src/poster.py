@@ -17,6 +17,11 @@ from src.verifier import dry_run_screenshot_path, save_screenshot, verify_post_v
 
 log = logging.getLogger(__name__)
 
+# Characters typed key-by-key (human feel) before the rest of the body is
+# inserted in one fast operation. Keep small: long char-by-char typing exceeds
+# Playwright's action timeout on long posts.
+HUMAN_TYPED_PREFIX_CHARS = 18
+
 
 class PostingBlocked(RuntimeError):
     pass
@@ -151,6 +156,26 @@ class FacebookPoster:
         await page.mouse.wheel(0, random.randint(100, 400))
         await page.wait_for_timeout(random.randint(500, 1800))
 
+    @staticmethod
+    def _split_body_for_typing(body: str) -> tuple[str, str]:
+        """Split a body into a short human-typed prefix and a fast-inserted rest.
+
+        Typing the whole body character-by-character with a human delay takes
+        ~minutes on long posts and exceeds Playwright's action timeout, which is
+        what made long bodies fail. We type only a short prefix to keep a natural
+        feel, then insert the remainder in a single fast operation.
+        """
+        return body[:HUMAN_TYPED_PREFIX_CHARS], body[HUMAN_TYPED_PREFIX_CHARS:]
+
+    async def _enter_body(self, page: Any, textbox: Any, body: str) -> None:
+        prefix, rest = self._split_body_for_typing(body)
+        await textbox.click()
+        await page.wait_for_timeout(random.randint(300, 900))
+        await textbox.type(prefix, delay=random.randint(40, 110), timeout=20000)
+        if rest:
+            await page.keyboard.insert_text(rest)
+        await page.wait_for_timeout(random.randint(400, 1200))
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential_jitter(initial=1, max=8),
@@ -165,8 +190,7 @@ class FacebookPoster:
         await self._human_pause(page)
         await self._click_first(page, "open_composer", "投稿コンポーザを開くボタン")
         textbox = await self._wait_first(page, "composer_textbox", "投稿本文入力欄")
-        await textbox.click()
-        await textbox.type(target["body"], delay=random.randint(35, 120))
+        await self._enter_body(page, textbox, target["body"])
         await self._attach_images(page, group, target)
         await self._detect_blocking_markers(page)
         await self._verify_composer_contains(page, target["body"])

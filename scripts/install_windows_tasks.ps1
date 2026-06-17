@@ -25,7 +25,22 @@ function New-DailyRun {
     } else {
         $trigger = New-ScheduledTaskTrigger -Daily -At $At
     }
-    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+    # Resilience so a daily run is not silently skipped:
+    #   - StartWhenAvailable: if the PC was off/asleep at the scheduled time,
+    #     run as soon as it is available again (catch up a missed day).
+    #   - WakeToRun: wake the PC from sleep to run.
+    #   - Battery flags: still run on battery (laptops).
+    #   - RestartCount/Interval: retry a few times if the run fails.
+    #   - MultipleInstances IgnoreNew: never stack overlapping runs.
+    $settings = New-ScheduledTaskSettingsSet `
+        -StartWhenAvailable `
+        -WakeToRun `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 10) `
+        -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Hours 1)
     Register-ScheduledTask -TaskName $Name -Action $action -Trigger $trigger -Settings $settings -Description $Desc -Force | Out-Null
 }
 
