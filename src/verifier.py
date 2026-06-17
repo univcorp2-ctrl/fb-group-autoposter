@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from src.selectors import SELECTORS
 
 _DIALOG_TEXTBOX = 'div[role="dialog"] div[role="textbox"][contenteditable="true"]'
 
@@ -16,52 +17,40 @@ async def save_screenshot(page: Any, *, prefix: str, job_id: str, group_id: str)
     return str(path)
 
 
-async def _needle_in_page(page: Any, needle: str) -> bool:
-    squashed = re.sub(r"\s+", "", await page.content())
-    return needle in squashed
+async def _posting_block_present(page: Any) -> bool:
+    for selector in SELECTORS["posting_block_markers"]:
+        try:
+            if await page.query_selector(selector):
+                return True
+        except Exception:
+            continue
+    return False
 
 
-async def verify_post_visible(
-    page: Any,
-    body: str,
-    *,
-    attempts: int = 10,
-    interval_ms: int = 1500,
-    reload_rounds: int = 3,
-) -> bool:
-    """Confirm a published post is actually visible in the group feed.
+async def verify_post_visible(page: Any, body: str, *, attempts: int = 12, interval_ms: int = 1500) -> bool:
+    """Return True when the post was accepted by Facebook.
 
-    Two phases, because a freshly published post is lazy-loaded:
-      1. Wait for the composer dialog to close (submission accepted).
-      2. Reload the group feed and scroll so the new post renders, then look
-         for the body text. Without the reload+scroll the post often sits below
-         the fold and a successful post is wrongly marked "uncertain".
-
-    Whitespace-squashed compare: the feed renders each line as a separate node,
-    so raw newlines never appear contiguously in the HTML.
+    The reliable success signal is the composer dialog closing after the Post
+    click, with no posting-block marker present. The group feed is
+    relevance-sorted and lazy-loaded, so scraping its HTML for the body text is
+    unreliable — it misses even posts that demonstrably exist — which previously
+    marked genuine successes as "uncertain". The body content itself is already
+    confirmed before the click by FacebookPoster._verify_composer_contains, so a
+    cleanly-closed composer means the (correct) post was submitted and, for a
+    group without post approval, published.
     """
-    needle = re.sub(r"\s+", "", body)[:40]
-    if not needle:
+    if not body.strip():
         return False
     try:
-        # Phase 1: wait for the composer dialog to close (submission accepted).
+        composer_closed = False
         for _ in range(attempts):
             await page.wait_for_timeout(interval_ms)
             if await page.locator(_DIALOG_TEXTBOX).count() == 0:
+                composer_closed = True
                 break
-        # Phase 2: surface the freshly published post via reload + scroll.
-        for round_index in range(reload_rounds):
-            if await _needle_in_page(page, needle):
-                return True
-            if round_index < reload_rounds - 1:
-                try:
-                    await page.reload(wait_until="domcontentloaded", timeout=30000)
-                except Exception:
-                    pass
-                for _ in range(3):
-                    await page.mouse.wheel(0, 1600)
-                    await page.wait_for_timeout(1200)
-        return await _needle_in_page(page, needle)
+        if not composer_closed:
+            return False
+        return not await _posting_block_present(page)
     except Exception:
         return False
 

@@ -42,19 +42,13 @@ class _Locator:
         return self._count
 
 
-class _Mouse:
-    async def wheel(self, _x, _y):
-        return None
-
-
 class FakePage:
-    def __init__(self, *, html_sequence, dialog_counts=(0,)):
-        self._html_sequence = list(html_sequence)
-        self._content_calls = 0
+    def __init__(self, *, dialog_counts, block_markers=()):
+        # dialog_counts: sequence returned by locator(composer).count() across
+        # polls; reaching 0 means the composer closed (submission accepted).
         self._dialog_counts = list(dialog_counts)
         self._dialog_calls = 0
-        self.mouse = _Mouse()
-        self.reloads = 0
+        self._block_markers = set(block_markers)
 
     async def wait_for_timeout(self, _ms):
         return None
@@ -64,41 +58,30 @@ class FakePage:
         self._dialog_calls += 1
         return _Locator(self._dialog_counts[idx])
 
-    async def content(self):
-        idx = min(self._content_calls, len(self._html_sequence) - 1)
-        self._content_calls += 1
-        return self._html_sequence[idx]
-
-    async def reload(self, **_kwargs):
-        self.reloads += 1
+    async def query_selector(self, selector):
+        return object() if selector in self._block_markers else None
 
 
-def test_verify_confirms_post_after_reload():
-    body = "こんにちは。収益物件のご紹介です。"
-    page = FakePage(
-        html_sequence=["<div>関係ないフィード</div>", f"<div>{body}</div>"],
-        dialog_counts=[0],
-    )
-    ok = asyncio.run(verify_post_visible(page, body))
-    assert ok is True
-    assert page.reloads >= 1  # it reloaded to surface the lazy-loaded post
+def test_verify_true_when_composer_closes():
+    # Composer open for two polls, then closes (count -> 0): submission accepted.
+    page = FakePage(dialog_counts=[1, 1, 0])
+    assert asyncio.run(verify_post_visible(page, "収益物件のご紹介です。")) is True
 
 
-def test_verify_returns_false_when_post_never_appears():
-    body = "確認できない本文テキスト"
-    page = FakePage(html_sequence=["<div>無関係</div>"], dialog_counts=[0])
-    ok = asyncio.run(verify_post_visible(page, body))
-    assert ok is False
+def test_verify_false_when_composer_never_closes():
+    # Composer stays open every poll: the Post click did not submit.
+    page = FakePage(dialog_counts=[1])
+    assert asyncio.run(verify_post_visible(page, "本文", attempts=3, interval_ms=0)) is False
 
 
-def test_verify_confirms_immediately_without_reload():
-    body = "すぐ見つかる本文です"
-    page = FakePage(html_sequence=[f"<article>{body}</article>"], dialog_counts=[0])
-    ok = asyncio.run(verify_post_visible(page, body))
-    assert ok is True
-    assert page.reloads == 0
+def test_verify_false_when_block_marker_present():
+    # Composer closed but a posting-block marker is on screen -> not posted.
+    from src.selectors import SELECTORS
+
+    page = FakePage(dialog_counts=[0], block_markers={SELECTORS["posting_block_markers"][0]})
+    assert asyncio.run(verify_post_visible(page, "本文")) is False
 
 
 def test_verify_empty_body_is_false():
-    page = FakePage(html_sequence=["<div></div>"], dialog_counts=[0])
+    page = FakePage(dialog_counts=[0])
     assert asyncio.run(verify_post_visible(page, "   ")) is False

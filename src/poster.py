@@ -168,12 +168,17 @@ class FacebookPoster:
         return body[:HUMAN_TYPED_PREFIX_CHARS], body[HUMAN_TYPED_PREFIX_CHARS:]
 
     async def _enter_body(self, page: Any, textbox: Any, body: str) -> None:
+        # Type a short prefix with a human delay for natural feel, then type the
+        # rest with no delay. Playwright's type() enters CJK via per-character
+        # insertText events, which Facebook's Lexical editor accepts — unlike a
+        # single keyboard.insert_text() of the whole remainder, which Lexical
+        # drops. delay=0 keeps even long bodies well under the action timeout.
         prefix, rest = self._split_body_for_typing(body)
         await textbox.click()
         await page.wait_for_timeout(random.randint(300, 900))
         await textbox.type(prefix, delay=random.randint(40, 110), timeout=20000)
         if rest:
-            await page.keyboard.insert_text(rest)
+            await textbox.type(rest, delay=0, timeout=60000)
         await page.wait_for_timeout(random.randint(400, 1200))
 
     @retry(
