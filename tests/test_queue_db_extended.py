@@ -56,3 +56,32 @@ def test_invalid_target_status_raises(tmp_path):
 def test_count_posts_today_zero_initially(tmp_path):
     db = QueueDB(tmp_path / "jobs.db")
     assert db.count_posts_today() == 0
+
+
+def test_duplicate_property_posted_ever_detects_old_success(tmp_path):
+    db = QueueDB(tmp_path / "jobs.db")
+    old_job = db.create_job({"property_id": "p"}, [{"group_id": "g", "body": "old"}])
+    db.update_target_status(old_job, "g", "posted")
+
+    assert db.duplicate_property_posted_ever("p", "g") is True
+    assert db.duplicate_property_posted_ever("p", "other") is False
+
+
+def test_duplicate_property_posted_ever_treats_uncertain_as_duplicate(tmp_path):
+    db = QueueDB(tmp_path / "jobs.db")
+    old_job = db.create_job({"property_id": "p"}, [{"group_id": "g", "body": "old"}])
+    db.update_target_status(old_job, "g", "uncertain")
+
+    assert db.duplicate_property_posted_ever("p", "g") is True
+
+
+def test_posted_property_ids_includes_uncertain(tmp_path):
+    db = QueueDB(tmp_path / "jobs.db")
+    posted_job = db.create_job({"property_id": "posted"}, [{"group_id": "g", "body": "old"}])
+    uncertain_job = db.create_job({"property_id": "uncertain"}, [{"group_id": "g", "body": "old"}])
+    failed_job = db.create_job({"property_id": "failed"}, [{"group_id": "g", "body": "old"}])
+    db.update_target_status(posted_job, "g", "posted")
+    db.update_target_status(uncertain_job, "g", "uncertain")
+    db.update_target_status(failed_job, "g", "failed")
+
+    assert db.posted_property_ids() == {"posted", "uncertain"}

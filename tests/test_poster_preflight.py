@@ -53,3 +53,9 @@ def test_dry_run_marks_targets_posted_without_playwright(tmp_path):
     poster = FacebookPoster(settings(), db, [group()])
     status = asyncio.run(poster.post_job(db.get_job(job_id)))
     assert status == "done"
+
+
+def test_has_more_targets_only_between_targets():
+    assert FacebookPoster._has_more_targets(0, 2) is True
+    assert FacebookPoster._has_more_targets(0, 1) is False
+    assert FacebookPoster._has_more_targets(1, 2) is False

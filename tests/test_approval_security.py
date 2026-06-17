@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import requests
+
 from src.approval import TelegramApproval
 from src.queue_db import QueueDB
 
@@ -46,3 +48,16 @@ def test_is_authorized_sender_handles_missing_message(tmp_path):
     approval = TelegramApproval(make_settings("12345"), db)
     callback = {"from": {"id": 12345}}
     assert approval._is_authorized_sender(callback) is True
+
+
+def test_sanitize_error_removes_telegram_token(tmp_path):
+    db = QueueDB(tmp_path / "jobs.db")
+    approval = TelegramApproval(make_settings("12345"), db)
+    exc = requests.RequestException(
+        "GET https://api.telegram.org/botfake-token/getUpdates failed"
+    )
+
+    sanitized = approval._sanitize_error(exc)
+
+    assert "fake-token" not in sanitized
+    assert "<telegram-token>" in sanitized

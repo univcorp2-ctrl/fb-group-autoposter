@@ -20,6 +20,20 @@ from src.queue_db import QueueDB
 log = logging.getLogger(__name__)
 
 
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if pid == os.getpid():
+        return True
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
 @contextmanager
 def pipeline_lock(path: str | Path = "data/pipeline.lock") -> Iterator[None]:
     lock = Path(path)
@@ -27,8 +41,9 @@ def pipeline_lock(path: str | Path = "data/pipeline.lock") -> Iterator[None]:
     if lock.exists():
         try:
             pid = int(lock.read_text(encoding="utf-8").strip() or "0")
-            if pid and pid != os.getpid():
+            if pid and pid != os.getpid() and _pid_is_running(pid):
                 raise RuntimeError(f"pipeline lock exists: {lock} pid={pid}")
+            lock.unlink(missing_ok=True)
         except ValueError:
             lock.unlink(missing_ok=True)
     lock.write_text(str(os.getpid()), encoding="utf-8")

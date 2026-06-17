@@ -236,6 +236,22 @@ class QueueDB:
             ).fetchone()
         return row is not None
 
+    def duplicate_property_completed_or_uncertain_ever(self, property_id: str, group_id: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM jobs j JOIN job_targets t ON j.job_id=t.job_id
+                WHERE j.property_id=? AND t.group_id=? AND t.status IN ('posted', 'uncertain')
+                LIMIT 1
+                """,
+                (property_id, group_id),
+            ).fetchone()
+        return row is not None
+
+    def duplicate_property_posted_ever(self, property_id: str, group_id: str) -> bool:
+        return self.duplicate_property_completed_or_uncertain_ever(property_id, group_id)
+
     def record_group_result(self, group_id: str, *, success: bool, threshold: int) -> bool:
         with self.connect() as conn:
             row = conn.execute("SELECT consecutive_failures FROM group_circuit WHERE group_id=?", (group_id,)).fetchone()
@@ -260,14 +276,14 @@ class QueueDB:
         return len(rows)
 
     def posted_property_ids(self) -> set[str]:
-        """property_ids that have at least one successfully posted target."""
+        """property_ids that should not be posted again."""
         with self.connect() as conn:
             rows = conn.execute(
                 """
                 SELECT DISTINCT j.property_id
                 FROM jobs j
                 JOIN job_targets t ON t.job_id = j.job_id
-                WHERE t.status = 'posted'
+                WHERE t.status IN ('posted', 'uncertain')
                 """
             ).fetchall()
         return {row["property_id"] for row in rows}

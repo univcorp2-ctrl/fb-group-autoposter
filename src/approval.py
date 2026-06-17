@@ -37,6 +37,13 @@ class TelegramApproval:
             ) from None
         return resp.json()
 
+    def _sanitize_error(self, exc: BaseException) -> str:
+        text = str(exc)
+        token = self.settings.telegram_bot_token
+        if token:
+            text = text.replace(token, "<telegram-token>")
+        return text[:500]
+
     def send_message(self, text: str, *, reply_markup: dict[str, Any] | None = None) -> None:
         payload: dict[str, Any] = {"chat_id": self.settings.telegram_chat_id, "text": text[:4096]}
         if reply_markup:
@@ -106,7 +113,7 @@ class TelegramApproval:
             resp = requests.get(f"{self.base_url}/getUpdates", params=params, timeout=20)
             resp.raise_for_status()
         except requests.RequestException as exc:
-            log.warning("telegram poll failed: %s", exc)
+            log.warning("telegram poll failed: %s", self._sanitize_error(exc))
             return 0
         updates = resp.json().get("result", [])
         handled = 0

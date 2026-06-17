@@ -52,9 +52,15 @@ class FacebookPoster:
             return "outside_active_hours"
         if self.db.posted_same_group_recently(target["group_id"], self.settings.min_same_group_hours):
             return "same_group_interval"
+        if self.db.duplicate_property_posted_ever(job["property_id"], target["group_id"]):
+            return "duplicate_property_guard"
         if self.db.duplicate_property_recently(job["property_id"], target["group_id"]):
             return "duplicate_property_guard"
         return None
+
+    @staticmethod
+    def _has_more_targets(index: int, total: int) -> bool:
+        return index < total - 1
 
     async def post_job(self, job: dict[str, Any]) -> str:
         self.db.update_job_status(job["job_id"], "posting")
@@ -88,7 +94,8 @@ class FacebookPoster:
             page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
             try:
                 posted_in_browser = 0
-                for target in self.db.unposted_targets(job["job_id"]):
+                targets = self.db.unposted_targets(job["job_id"])
+                for index, target in enumerate(targets):
                     group = self.groups_by_id.get(target["group_id"])
                     if not group:
                         self.db.update_target_status(job["job_id"], target["group_id"], "skipped", error="group not found")
@@ -127,7 +134,8 @@ class FacebookPoster:
                         )
                         page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
                         posted_in_browser = 0
-                    await self._random_interval()
+                    if self._has_more_targets(index, len(targets)):
+                        await self._random_interval()
             finally:
                 await browser_context.close()
         return self.db.finalize_job_from_targets(job["job_id"])

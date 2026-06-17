@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,20 @@ def _validate_url(url: str) -> None:
     if parsed.scheme not in {"http", "https"}:
         raise ValueError(f"URL scheme not allowed: {parsed.scheme!r}")
     host = (parsed.hostname or "").lower()
-    if host in _BLOCKED_HOSTS or host.startswith("169.254.") or host.startswith("10."):
+    if host in _BLOCKED_HOSTS:
+        raise ValueError(f"URL resolves to a blocked address: {host}")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip and (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    ):
         raise ValueError(f"URL resolves to a blocked address: {host}")
 
 

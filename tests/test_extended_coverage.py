@@ -324,10 +324,11 @@ def test_poll_once_returns_zero_when_disabled(tmp_path):
 # ===========================================================================
 
 
-def test_pipeline_lock_prevents_concurrent_runs(tmp_path):
+def test_pipeline_lock_prevents_concurrent_runs(tmp_path, monkeypatch):
     lock_file = tmp_path / "pipeline.lock"
     # Write a lock with a different PID
     lock_file.write_text("999999999", encoding="utf-8")
+    monkeypatch.setattr("src.orchestrator._pid_is_running", lambda pid: True)
     with pytest.raises(RuntimeError, match="pipeline lock exists"):
         with pipeline_lock(lock_file):
             pass  # pragma: no cover

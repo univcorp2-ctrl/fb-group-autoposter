@@ -1,8 +1,8 @@
 # Registers Windows Scheduled Tasks for safe twice-daily Facebook posting.
 #
-# Design (block-avoidance first):
-#   - Two posting runs per day (morning + evening), each with a random delay so
-#     the timing looks natural. MIN_SAME_GROUP_HOURS + MAX_POSTS_PER_DAY in .env
+# Design:
+#   - Two posting runs per day (morning + evening), each with a random delay.
+#     MIN_SAME_GROUP_HOURS + MAX_POSTS_PER_DAY in .env
 #     cap the cadence, so even if a run fires early nothing over-posts.
 #   - A monitor run after each posting window writes logs/monitor_status.json and
 #     flags if posting has stalled (no successful post in ~26h).
@@ -42,3 +42,5 @@ New-DailyRun -Name 'FBAutoposter-Discover' -Script 'discover_groups.py' -At '07:
 
 Write-Host 'Registered tasks:'
 Get-ScheduledTask -TaskName 'FBAutoposter-*' | Select-Object TaskName, State | Format-Table -AutoSize
+
+& $Python "scripts\schedule_status.py"
