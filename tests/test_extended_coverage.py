@@ -217,7 +217,9 @@ def test_posted_same_group_recently_false_when_old(tmp_path):
     assert db.posted_same_group_recently("g1", hours=24) is False
 
 
-def test_finalize_all_skipped_is_failed(tmp_path):
+def test_finalize_all_skipped_is_done(tmp_path):
+    # A guard-skip (daily cap, same-group spacing, duplicate, outside hours) is
+    # "correctly did nothing", not a failure — it must not surface as `failed`.
     db = QueueDB(tmp_path / "jobs.db")
     job_id = db.create_job(
         {"property_id": "p1"},
@@ -226,7 +228,37 @@ def test_finalize_all_skipped_is_failed(tmp_path):
     db.update_target_status(job_id, "g1", "skipped")
     db.update_target_status(job_id, "g2", "skipped")
     status = db.finalize_job_from_targets(job_id)
-    assert status == "failed"
+    assert status == "done"
+
+
+def test_finalize_failed_target_still_reports_failure(tmp_path):
+    db = QueueDB(tmp_path / "jobs.db")
+    job_id = db.create_job(
+        {"property_id": "p1"},
+        [{"group_id": "g1", "body": "a"}, {"group_id": "g2", "body": "b"}],
+    )
+    db.update_target_status(job_id, "g1", "failed", error="boom")
+    db.update_target_status(job_id, "g2", "skipped")
+    assert db.finalize_job_from_targets(job_id) == "failed"
+
+
+def test_posted_same_group_today_blocks_then_allows_next_day(tmp_path):
+    db = QueueDB(tmp_path / "jobs.db")
+    job_id = db.create_job({"property_id": "p1"}, [{"group_id": "g1", "body": "b"}])
+    db.update_target_status(job_id, "g1", "posted")
+    # Posted just now -> same JST day -> blocked.
+    assert db.posted_same_group_today("g1") is True
+    assert db.posted_same_group_today("other") is False
+
+    # Backdate the post to 30h ago -> a previous JST day -> the next day's run
+    # is allowed (this is exactly what the hours-based guard wrongly blocked).
+    old_ts = (datetime.now(UTC) - timedelta(hours=30)).isoformat()
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE job_targets SET posted_at=? WHERE job_id=? AND group_id=?",
+            (old_ts, job_id, "g1"),
+        )
+    assert db.posted_same_group_today("g1") is False
 
 
 # ===========================================================================

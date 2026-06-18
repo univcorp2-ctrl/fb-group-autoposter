@@ -55,7 +55,10 @@ class FacebookPoster:
             return "daily_limit"
         if not self._group_allowed_now(group):
             return "outside_active_hours"
-        if self.db.posted_same_group_recently(target["group_id"], self.settings.min_same_group_hours):
+        # One post per group per JST calendar day. This guarantees a post every
+        # day (morning posts, evening skips) instead of an hours-based interval
+        # that drifts later daily until it skips a whole day.
+        if self.db.posted_same_group_today(target["group_id"]):
             return "same_group_interval"
         if self.db.duplicate_property_posted_ever(job["property_id"], target["group_id"]):
             return "duplicate_property_guard"

@@ -16,6 +16,31 @@ def now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _jst_now() -> datetime:
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("Asia/Tokyo"))
+    except Exception:
+        from datetime import timezone
+
+        return datetime.now(timezone(timedelta(hours=9)))
+
+
+def jst_today_utc_bounds() -> tuple[str, str]:
+    """UTC ISO bounds [start, end) covering the current JST calendar day.
+
+    Cadence is reasoned about in JST (the schedule is JST), but timestamps are
+    stored in UTC. Comparing stored UTC ISO strings against these UTC bounds is
+    timezone-correct and DB-agnostic (lexicographic order matches chronological
+    order because every stored timestamp uses the same +00:00 suffix).
+    """
+    now_jst = _jst_now()
+    start_jst = now_jst.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_utc = start_jst.astimezone(UTC)
+    return start_utc.isoformat(), (start_utc + timedelta(hours=24)).isoformat()
+
+
 class QueueDB:
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -180,15 +205,23 @@ class QueueDB:
         return [dict(r) for r in rows]
 
     def finalize_job_from_targets(self, job_id: str) -> str:
+        # Only a 'failed' target is a real failure. 'skipped' is a guard saying
+        # "correctly did nothing" (daily cap, same-group spacing, duplicate,
+        # outside active hours) and must not be reported as a failure — that was
+        # surfacing as a scary `failed` summary even on perfectly healthy runs.
+        # 'uncertain' very likely published, so it counts as success here.
         targets = self.get_targets(job_id)
+        succeeded = [t for t in targets if t["status"] in ("posted", "uncertain")]
+        failed = [t for t in targets if t["status"] == "failed"]
         if not targets:
             status = "failed"
-        elif all(t["status"] == "posted" for t in targets):
-            status = "done"
-        elif any(t["status"] == "posted" for t in targets):
+        elif failed and succeeded:
             status = "partial_failed"
-        else:
+        elif failed:
             status = "failed"
+        else:
+            # all posted/uncertain/skipped -> nothing went wrong
+            status = "done"
         self.update_job_status(job_id, status)
         return status
 
@@ -208,20 +241,44 @@ class QueueDB:
         return (datetime.now(UTC) - last).total_seconds() / 60
 
     def count_posts_today(self) -> int:
-        # Count posted AND uncertain (uncertain very likely published). Fall back
-        # to the job's updated_at when posted_at is missing (older uncertain rows).
-        today = datetime.now(UTC).date().isoformat()
+        # Count posted AND uncertain (uncertain very likely published) within the
+        # current JST calendar day. Fall back to the job's updated_at when
+        # posted_at is missing (older uncertain rows).
+        start, end = jst_today_utc_bounds()
         with self.connect() as conn:
             row = conn.execute(
                 """
                 SELECT COUNT(*) AS c
                 FROM job_targets t JOIN jobs j ON j.job_id = t.job_id
                 WHERE t.status IN ('posted', 'uncertain')
-                  AND substr(COALESCE(t.posted_at, j.updated_at), 1, 10) = ?
+                  AND COALESCE(t.posted_at, j.updated_at) >= ?
+                  AND COALESCE(t.posted_at, j.updated_at) <  ?
                 """,
-                (today,),
+                (start, end),
             ).fetchone()
         return int(row["c"])
+
+    def posted_same_group_today(self, group_id: str) -> bool:
+        # Calendar-day (JST) spacing: at most one post per group per day. The
+        # morning run posts (group not yet done today); the evening run skips
+        # (already done). This guarantees exactly one post per group every day
+        # with no gap days — unlike an hours-based interval, which drifts the
+        # post later each day until a whole day gets skipped. Counts uncertain
+        # too, and uses the job's updated_at when posted_at is missing.
+        start, end = jst_today_utc_bounds()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM job_targets t JOIN jobs j ON j.job_id = t.job_id
+                WHERE t.group_id = ? AND t.status IN ('posted', 'uncertain')
+                  AND COALESCE(t.posted_at, j.updated_at) >= ?
+                  AND COALESCE(t.posted_at, j.updated_at) <  ?
+                LIMIT 1
+                """,
+                (group_id, start, end),
+            ).fetchone()
+        return row is not None
 
     def posted_same_group_recently(self, group_id: str, hours: int) -> bool:
         # Guarantee a full gap before posting to the same group again. Counts

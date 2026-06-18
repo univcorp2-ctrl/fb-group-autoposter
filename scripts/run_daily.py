@@ -4,10 +4,12 @@ Designed to be scheduled (e.g. twice a day). Each run:
   1. selects the newest broker-OK (仲介回しOK) EstateBoard property that has
      not been posted yet, and writes it to the inbox,
   2. runs the posting pipeline, which posts only when within the group's
-     active hours and the same-group interval guard allows it.
+     active hours and the group has not already been posted today (JST).
 
-Safe by design: MAX_POSTS_PER_DAY and MIN_SAME_GROUP_HOURS cap the cadence,
-so running this more often than needed never over-posts.
+Safe by design: the calendar-day (JST) same-group guard means at most one post
+per group per day. The morning run posts; the evening run sees "already posted
+today" and skips. Running this more often than needed never over-posts and
+never produces a duplicate, while still guaranteeing a post every single day.
 """
 
 from __future__ import annotations
