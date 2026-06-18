@@ -18,12 +18,26 @@ $Python = Join-Path $Root '.venv\Scripts\python.exe'
 if (!(Test-Path $Python)) { $Python = 'python' }
 
 function New-DailyRun {
-    param([string]$Name, [string]$Script, [string]$At, [int]$RandomDelayMin, [string]$Desc)
+    param(
+        [string]$Name, [string]$Script, [string]$At, [int]$RandomDelayMin, [string]$Desc,
+        [switch]$AlsoAtLogon
+    )
     $action = New-ScheduledTaskAction -Execute $Python -Argument "scripts\$Script" -WorkingDirectory $Root
     if ($RandomDelayMin -gt 0) {
         $trigger = New-ScheduledTaskTrigger -Daily -At $At -RandomDelay (New-TimeSpan -Minutes $RandomDelayMin)
     } else {
         $trigger = New-ScheduledTaskTrigger -Daily -At $At
+    }
+    $triggers = @($trigger)
+    if ($AlsoAtLogon) {
+        # Catch-up: if the PC was off at the scheduled time, post shortly after the
+        # next logon instead of skipping the whole day. The calendar-day guard
+        # (one post per group per JST day) makes this safe — a logon after a run
+        # already happened today just skips. Guarantees a post on any day the PC
+        # is used within active hours.
+        $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        $logon.Delay = 'PT4M'
+        $triggers += $logon
     }
     # Resilience so a daily run is not silently skipped:
     #   - StartWhenAvailable: if the PC was off/asleep at the scheduled time,
@@ -41,11 +55,12 @@ function New-DailyRun {
         -RestartInterval (New-TimeSpan -Minutes 10) `
         -MultipleInstances IgnoreNew `
         -ExecutionTimeLimit (New-TimeSpan -Hours 1)
-    Register-ScheduledTask -TaskName $Name -Action $action -Trigger $trigger -Settings $settings -Description $Desc -Force | Out-Null
+    Register-ScheduledTask -TaskName $Name -Action $action -Trigger $triggers -Settings $settings -Description $Desc -Force | Out-Null
 }
 
 # --- Posting: morning + evening (random delay up to 45 min for naturalness) ---
-New-DailyRun -Name 'FBAutoposter-Morning' -Script 'run_daily.py' -At '09:30' -RandomDelayMin 45 -Desc 'Post one fresh broker-OK property (morning)'
+# Morning also runs ~4 min after logon as a catch-up so a day is never skipped.
+New-DailyRun -Name 'FBAutoposter-Morning' -Script 'run_daily.py' -At '09:30' -RandomDelayMin 45 -Desc 'Post one fresh broker-OK property (morning + logon catch-up)' -AlsoAtLogon
 New-DailyRun -Name 'FBAutoposter-Evening' -Script 'run_daily.py' -At '20:30' -RandomDelayMin 45 -Desc 'Post one fresh broker-OK property (evening)'
 
 # --- Monitoring: after each posting window ---
