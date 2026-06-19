@@ -11,20 +11,27 @@ Facebook非公開グループ向けの物件配信パイプラインです。物
 
 ## Architecture
 
+毎日のトリガー → 完遂ループ → 文面生成 → キュー → 投稿 → 検証、という流れ。
+**JST暦日1回ガード**で重複なし・毎日1回。`ensure` ループとセッション自動復旧で「止まらず完遂」。
+
 ```mermaid
 flowchart LR
-  A[PDF / URL / manual dict] --> B[ingest.py]
-  B --> C[generator.py Claude API]
-  C --> D[(SQLite jobs.db)]
-  D --> E[Telegram approval gate]
-  E --> F[orchestrator.py]
-  F --> G[poster.py Playwright]
-  G --> H[verifier.py screenshots]
-  G --> I[healer.py Vision fallback]
-  H --> J[Telegram report]
+  T["Windowsタスク x8<br/>Morning/Midday/Afternoon/Evening<br/>Keepalive/Monitor/Discover"] --> RD["run_daily.py"]
+  RD --> ENS["ensure.py 完遂ループ"]
+  EB["EstateBoard"] --> RD
+  ENS --> RC["orchestrator.run_cycle"]
+  RC --> GEN["generator Claude API"]
+  GEN --> DB[("SQLite jobs.db")]
+  DB --> POST["poster.py Playwright"]
+  POST --> GUARD{"暦日1回ガード"}
+  GUARD -->|OK| FB(("Facebook グループ"))
+  GUARD -->|"投稿済み/時間外"| SKIP["skip"]
+  KA["keepalive.py"] --> SESS["セッション維持 + backup/restore"]
+  POST --> MON["monitor.py 監視"]
 ```
 
-詳細は [`docs/architecture.md`](docs/architecture.md) を参照。
+詳細図（完遂ループ・セッション復旧・状態遷移・多層フォールバック）は
+[`docs/architecture.md`](docs/architecture.md) を参照。
 深掘り検証は [`docs/deep_verification.md`](docs/deep_verification.md) を参照。
 
 ## 初回セットアップ
