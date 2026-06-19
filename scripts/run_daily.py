@@ -23,11 +23,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from config import Settings
+from config import Settings, load_groups
+from src.ensure import ensure_posted_today
 from src.estateboard_adapter import select_postable
 from src.logging_setup import setup_logging
 from src.orchestrator import run_cycle
 from src.queue_db import QueueDB
+from src.session import restore_profile
 
 log = logging.getLogger("run_daily")
 
@@ -69,11 +71,31 @@ def main() -> None:
     setup_logging()
     settings = Settings.load()
     source = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_SOURCE
-    fresh = refresh_inbox(settings, source=source, count=1)
-    if fresh == 0:
-        log.warning("no fresh properties to post; nothing queued")
-    summary = asyncio.run(run_cycle(settings))
-    log.info("run_daily summary: %s", json.dumps(summary, ensure_ascii=False))
+    groups = load_groups()
+    db = QueueDB(settings.db_path)
+
+    async def run_once() -> None:
+        # One full cycle: pull a fresh property into the inbox, then post it.
+        fresh = refresh_inbox(settings, source=source, count=1)
+        if fresh == 0:
+            log.warning("no fresh properties to post; nothing queued")
+        summary = await run_cycle(settings)
+        log.info("cycle summary: %s", json.dumps(summary, ensure_ascii=False))
+
+    def restore_session() -> bool:
+        # Recovery fallback: an expired login is restored from the latest healthy
+        # profile backup, then the loop retries. Returns True if a backup existed.
+        used = restore_profile(settings.profile_dir)
+        if used:
+            log.warning("restored profile from backup: %s", used.name)
+        else:
+            log.error("session expired and no profile backup to restore; manual login_once.py needed")
+        return used is not None
+
+    result = asyncio.run(
+        ensure_posted_today(settings, groups, db, run_once=run_once, restore_session=restore_session)
+    )
+    log.info("run_daily ensure result: %s", json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

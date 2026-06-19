@@ -58,10 +58,19 @@ function New-DailyRun {
     Register-ScheduledTask -TaskName $Name -Action $action -Trigger $triggers -Settings $settings -Description $Desc -Force | Out-Null
 }
 
-# --- Posting: morning + evening (random delay up to 45 min for naturalness) ---
-# Morning also runs ~4 min after logon as a catch-up so a day is never skipped.
+# --- Session keepalive: keep the FB login warm + snapshot a healthy profile ---
+# Runs before the morning post and on every logon so backups stay fresh and an
+# expired session is detected early (auto-restored by the posting loop).
+New-DailyRun -Name 'FBAutoposter-Keepalive' -Script 'keepalive.py' -At '08:00' -RandomDelayMin 20 -Desc 'Keep FB session alive + back up healthy profile (+ logon)' -AlsoAtLogon
+
+# --- Posting: morning + several fallbacks + evening ---
+# Each run is idempotent (one post per group per JST day). The extra midday and
+# afternoon runs are FALLBACKS: they only post if an earlier run failed, so the
+# day's post is never missed. Morning also runs ~4 min after logon as catch-up.
 New-DailyRun -Name 'FBAutoposter-Morning' -Script 'run_daily.py' -At '09:30' -RandomDelayMin 45 -Desc 'Post one fresh broker-OK property (morning + logon catch-up)' -AlsoAtLogon
-New-DailyRun -Name 'FBAutoposter-Evening' -Script 'run_daily.py' -At '20:30' -RandomDelayMin 45 -Desc 'Post one fresh broker-OK property (evening)'
+New-DailyRun -Name 'FBAutoposter-Midday' -Script 'run_daily.py' -At '13:00' -RandomDelayMin 30 -Desc 'Posting fallback (only posts if morning missed)'
+New-DailyRun -Name 'FBAutoposter-Afternoon' -Script 'run_daily.py' -At '16:30' -RandomDelayMin 30 -Desc 'Posting fallback (only posts if earlier runs missed)'
+New-DailyRun -Name 'FBAutoposter-Evening' -Script 'run_daily.py' -At '20:30' -RandomDelayMin 45 -Desc 'Posting fallback (only posts if earlier runs missed)'
 
 # --- Monitoring: after each posting window ---
 New-DailyRun -Name 'FBAutoposter-Monitor-AM' -Script 'monitor.py' -At '12:00' -RandomDelayMin 0 -Desc 'Posting health check (after morning run)'
