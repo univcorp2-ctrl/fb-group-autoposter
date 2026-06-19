@@ -97,6 +97,15 @@ def main() -> None:
     )
     log.info("run_daily ensure result: %s", json.dumps(result, ensure_ascii=False))
 
+    # Keep the at-a-glance posting-status DB (Excel + CSV) current after every run.
+    try:
+        from src.status_report import build_status_files
+
+        status = build_status_files(source, str(settings.db_path), ROOT / "output", root=ROOT)
+        log.info("status DB refreshed: %s", json.dumps(status["counts"], ensure_ascii=False))
+    except Exception as exc:  # noqa: BLE001 - status DB is best-effort, never block posting
+        log.warning("status DB refresh skipped: %s: %s", type(exc).__name__, exc)
+
 
 if __name__ == "__main__":
     main()

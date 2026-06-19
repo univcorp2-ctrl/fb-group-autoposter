@@ -27,3 +27,7 @@ __pycache__/
 data/group_candidates.json
 data/group_candidates.md
 login_wait.log
+
+# posting-status DB (regenerated from EstateBoard export + jobs.db each run)
+output/posting_status.xlsx
+output/posting_status.csv
