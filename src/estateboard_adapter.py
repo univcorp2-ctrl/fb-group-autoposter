@@ -190,20 +190,57 @@ def to_property(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _raw_float(value: Any, *, default: float) -> float:
+    """Parse a raw numeric field; `default` (e.g. +inf/-inf) when missing/invalid."""
+    try:
+        if value in (None, ""):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _sort_eligible(eligible: list[dict[str, Any]], order: str) -> list[dict[str, Any]]:
+    """Order eligible items by the requested strategy.
+
+    - "newest"     : createdAt descending (default, back-compat)
+    - "price_asc"  : cheapest first (missing price -> +inf, sinks to the end)
+    - "price_desc" : most expensive first (missing price -> -inf, sinks to end)
+    - "yield_desc" : highest yield first (missing yield -> -inf, sinks to end)
+    """
+    if order == "price_asc":
+        return sorted(eligible, key=lambda it: _raw_float(_get(it, "price"), default=float("inf")))
+    if order == "price_desc":
+        return sorted(
+            eligible, key=lambda it: _raw_float(_get(it, "price"), default=float("-inf")), reverse=True
+        )
+    if order == "yield_desc":
+        return sorted(
+            eligible,
+            key=lambda it: _raw_float(_get(it, "yieldAssumedFullOccupancy"), default=float("-inf")),
+            reverse=True,
+        )
+    # "newest" (default) and any unknown order fall back to createdAt desc.
+    return sorted(eligible, key=lambda it: str(it.get("createdAt") or ""), reverse=True)
+
+
 def select_postable(
     items: list[dict[str, Any]],
     *,
     limit: int | None = None,
     exclude_ids: set[str] | None = None,
+    order: str = "newest",
 ) -> list[dict[str, Any]]:
-    """Newest-first postable (broker-OK) properties, mapped to property dicts.
+    """Ordered postable (broker-OK) properties, mapped to property dicts.
 
     `exclude_ids` filters out property_ids already posted so each daily run
-    picks a fresh listing.
+    picks a fresh listing. `order` controls the selection strategy so each
+    group can pick its OWN next property by its OWN configured order. The
+    default ("newest") keeps the original behavior for back-compat.
     """
     exclude = exclude_ids or set()
     eligible = [it for it in items if is_postable(it)]
-    eligible.sort(key=lambda it: str(it.get("createdAt") or ""), reverse=True)
+    eligible = _sort_eligible(eligible, order)
     mapped: list[dict[str, Any]] = []
     for it in eligible:
         prop = to_property(it)

@@ -2,6 +2,30 @@ groups:
   - id: "1281008662437696"
     name: "不動産投資家コミュニティ"
     post_url: "https://www.facebook.com/groups/1281008662437696"
+    # selection_order: each group independently picks its OWN next unposted
+    # property by this order. "newest" = most recently created first.
+    selection_order: "newest"
+    tone: "プロフェッショナル"
+    max_chars: 1200
+    active_hours: [7, 23]
+    allow_links: false
+    allow_images: true
+    forbidden: ["保証", "絶対", "確実"]
+    signature: ""
+    contact: |-
+      ━━━━━━━━━━━━━
+      📩 ご質問・資料請求はお気軽に
+      Messenger でメッセージ、または
+      ✉️ bukken511+ag@gmail.com
+      ━━━━━━━━━━━━━
+    enabled: true
+
+  # NOTE: "name" is a placeholder — rename this to the real group name later.
+  - id: "1261566862455883"
+    name: "収益物件シェアグループ"
+    post_url: "https://www.facebook.com/groups/1261566862455883"
+    # This group posts the CHEAPEST unposted property first (price ascending).
+    selection_order: "price_asc"
     tone: "プロフェッショナル"
     max_chars: 1200
     active_hours: [7, 23]

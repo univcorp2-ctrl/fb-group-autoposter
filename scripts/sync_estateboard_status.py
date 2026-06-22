@@ -48,6 +48,19 @@ DEFAULT_EB_ROOT = Path(
 )
 POSTED_COLUMN = "投稿済"
 POSTED_LABEL = "✅ 投稿済"
+POSTED_TO_COLUMN = "投稿先"
+POSTED_DATE_COLUMN = "投稿日"
+
+
+def _group_name_map() -> dict[str, str]:
+    """Build {group_id: human name} from groups.yaml (best-effort)."""
+    try:
+        from config import load_groups
+
+        return {str(g["id"]): str(g.get("name") or g["id"]) for g in load_groups()}
+    except Exception as exc:  # noqa: BLE001 - never block the sync on config issues
+        log.warning("could not load group names: %s: %s", type(exc).__name__, exc)
+        return {}
 
 
 def _now_iso() -> str:
@@ -102,11 +115,25 @@ def _atomic_write(path: Path, render: Any) -> None:
     os.replace(tmp, path)
 
 
-def patch_master(master_path: Path, posted_meta: dict[str, dict[str, Any]]) -> tuple[int, set[str]]:
-    """Stamp posted records in master_properties.jsonl. Returns (count, display_ids)."""
+def _group_names(group_ids: Any, name_map: dict[str, str]) -> list[str]:
+    """Resolve group_ids -> human names, falling back to the id when unknown."""
+    return [name_map.get(str(gid), str(gid)) for gid in sorted(group_ids)]
+
+
+def patch_master(
+    master_path: Path,
+    posted_meta: dict[str, dict[str, Any]],
+    name_map: dict[str, str],
+) -> tuple[int, dict[str, dict[str, str]]]:
+    """Stamp posted records in master_properties.jsonl.
+
+    Returns (count, display_info) where display_info maps the record's display
+    id -> {"groups": "name1, name2", "date": "YYYY-MM-DD"} for the dashboard.
+    `_posted_groups` is stored on each record as a list of NAMES (id fallback).
+    """
     if not master_path.exists():
         log.warning("EstateBoard master not found, skipping master patch: %s", master_path)
-        return 0, set()
+        return 0, {}
 
     records: list[dict[str, Any]] = []
     with master_path.open(encoding="utf-8") as f:
@@ -116,15 +143,20 @@ def patch_master(master_path: Path, posted_meta: dict[str, dict[str, Any]]) -> t
                 records.append(json.loads(line))
 
     marked = 0
-    posted_display_ids: set[str] = set()
+    display_info: dict[str, dict[str, str]] = {}
     for rec in records:
         key = _join_key(rec)
         info = posted_meta.get(key)
         if info:
-            rec["_posted_to_fb"] = info["posted_at"] or _now_iso()
-            rec["_posted_groups"] = sorted(info["groups"])
+            posted_at = info["posted_at"] or _now_iso()
+            names = _group_names(info["groups"], name_map)
+            rec["_posted_to_fb"] = posted_at
+            rec["_posted_groups"] = names  # NAMES (id fallback), not raw ids
             rec["_posted_screenshot"] = info["screenshot"] or ""
-            posted_display_ids.add(str(rec.get("id")))
+            display_info[str(rec.get("id"))] = {
+                "groups": ", ".join(names),
+                "date": str(posted_at)[:10],
+            }
             marked += 1
         elif rec.get("_posted_to_fb"):
             # Not posted per current truth -> clear any stale stamp.
@@ -137,32 +169,41 @@ def patch_master(master_path: Path, posted_meta: dict[str, dict[str, Any]]) -> t
 
     _atomic_write(master_path, render)
     log.info("master patched: %d records marked posted (of %d)", marked, len(records))
-    return marked, posted_display_ids
+    return marked, display_info
 
 
-def patch_data_json(data_path: Path, posted_display_ids: set[str]) -> int:
-    """Add a leftmost 投稿済 column to docs/data.json. Returns items marked."""
+_INJECTED_COLUMNS = (POSTED_COLUMN, POSTED_TO_COLUMN, POSTED_DATE_COLUMN)
+
+
+def patch_data_json(data_path: Path, display_info: dict[str, dict[str, str]]) -> int:
+    """Add leading 投稿済 / 投稿先 / 投稿日 columns to docs/data.json.
+
+    投稿先 = comma-joined group NAMES the property was posted to (right after
+    投稿済); 投稿日 = the posting date. Returns the count of items marked.
+    """
     if not data_path.exists():
         log.warning("EstateBoard data.json not found, skipping dashboard patch: %s", data_path)
         return 0
 
     data = json.loads(data_path.read_text(encoding="utf-8"))
-    columns = data.get("columns") or []
-    if POSTED_COLUMN in columns:
-        columns = [c for c in columns if c != POSTED_COLUMN]
-    data["columns"] = [POSTED_COLUMN] + list(columns)
+    columns = [c for c in (data.get("columns") or []) if c not in _INJECTED_COLUMNS]
+    # 投稿済 → 投稿先 → 投稿日 then the rest.
+    data["columns"] = [POSTED_COLUMN, POSTED_TO_COLUMN, POSTED_DATE_COLUMN] + list(columns)
 
     marked = 0
     new_items: list[dict[str, Any]] = []
     for item in data.get("items", []):
-        is_posted = str(item.get("ID")) in posted_display_ids
-        value = POSTED_LABEL if is_posted else ""
+        info = display_info.get(str(item.get("ID")))
+        is_posted = info is not None
         if is_posted:
             marked += 1
-        # Rebuild each item with 投稿済 first.
-        rebuilt = {POSTED_COLUMN: value}
+        rebuilt = {
+            POSTED_COLUMN: POSTED_LABEL if is_posted else "",
+            POSTED_TO_COLUMN: info["groups"] if is_posted else "",
+            POSTED_DATE_COLUMN: info["date"] if is_posted else "",
+        }
         for k, v in item.items():
-            if k != POSTED_COLUMN:
+            if k not in _INJECTED_COLUMNS:
                 rebuilt[k] = v
         new_items.append(rebuilt)
     data["items"] = new_items
@@ -189,11 +230,12 @@ def sync_estateboard_status(
         return {"master_marked": 0, "data_marked": 0, "skipped": True}
 
     posted_meta = load_posted_meta(str(db_path))
+    name_map = _group_name_map()
     master_path = eb_root_path / "output" / "received" / "master_properties.jsonl"
     data_path = eb_root_path / "docs" / "data.json"
 
-    master_marked, posted_display_ids = patch_master(master_path, posted_meta)
-    data_marked = patch_data_json(data_path, posted_display_ids)
+    master_marked, display_info = patch_master(master_path, posted_meta, name_map)
+    data_marked = patch_data_json(data_path, display_info)
 
     summary = {
         "master_marked": master_marked,

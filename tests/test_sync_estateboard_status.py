@@ -2,7 +2,14 @@
 import json
 import sqlite3
 
-from scripts.sync_estateboard_status import POSTED_COLUMN, POSTED_LABEL, sync_estateboard_status
+import scripts.sync_estateboard_status as bridge
+from scripts.sync_estateboard_status import (
+    POSTED_COLUMN,
+    POSTED_DATE_COLUMN,
+    POSTED_LABEL,
+    POSTED_TO_COLUMN,
+    sync_estateboard_status,
+)
 
 
 def _make_jobs_db(path):
@@ -55,7 +62,7 @@ def _read_jsonl(path):
         return [json.loads(line) for line in f if line.strip()]
 
 
-def test_sync_marks_master_and_data_json(tmp_path):
+def test_sync_marks_master_and_data_json(tmp_path, monkeypatch):
     # Arrange: a temp EstateBoard tree + a temp jobs.db with one posted property.
     db_path = tmp_path / "jobs.db"
     _make_jobs_db(db_path)
@@ -69,23 +76,31 @@ def test_sync_marks_master_and_data_json(tmp_path):
     _make_master(master)
     _make_data_json(data_json)
 
+    # Resolve group_id g1 -> a human community NAME (not the raw id).
+    monkeypatch.setattr(bridge, "_group_name_map", lambda: {"g1": "収益物件シェアグループ"})
+
     # Act
     summary = sync_estateboard_status(db_path, eb_root=eb_root)
 
-    # Assert: master — matching record stamped, non-matching left alone.
+    # Assert: master — matching record stamped with group NAMES; non-match untouched.
     by_id = {r["id"]: r for r in _read_jsonl(master)}
     assert by_id[99]["_posted_to_fb"] == "2026-06-10T00:00:00+00:00"
-    assert by_id[99]["_posted_groups"] == ["g1"]
+    assert by_id[99]["_posted_groups"] == ["収益物件シェアグループ"]  # NAME, not "g1"
     assert by_id[99]["_posted_screenshot"] == "screenshots/s.png"
     assert "_posted_to_fb" not in by_id[7]
 
-    # Assert: data.json gains a leftmost 投稿済 column with the label on the right item.
+    # Assert: data.json gains leading 投稿済 / 投稿先 / 投稿日 columns.
     data = json.loads(data_json.read_text(encoding="utf-8"))
     assert data["columns"][0] == POSTED_COLUMN
+    assert data["columns"][1] == POSTED_TO_COLUMN  # 投稿先 right after 投稿済
+    assert data["columns"][2] == POSTED_DATE_COLUMN
     items = {it["ID"]: it for it in data["items"]}
     assert list(data["items"][0].keys())[0] == POSTED_COLUMN  # 投稿済 is first key
     assert items[99][POSTED_COLUMN] == POSTED_LABEL
+    assert items[99][POSTED_TO_COLUMN] == "収益物件シェアグループ"  # community NAME
+    assert items[99][POSTED_DATE_COLUMN] == "2026-06-10"
     assert items[7][POSTED_COLUMN] == ""
+    assert items[7][POSTED_TO_COLUMN] == ""
 
     assert summary["master_marked"] == 1
     assert summary["data_marked"] == 1

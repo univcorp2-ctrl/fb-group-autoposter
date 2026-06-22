@@ -27,7 +27,7 @@ from config import Settings, load_groups
 from src.ensure import ensure_posted_today
 from src.estateboard_adapter import select_postable
 from src.logging_setup import setup_logging
-from src.orchestrator import run_cycle
+from src.orchestrator import run_cycle_grouped
 from src.queue_db import QueueDB
 from src.session import restore_profile
 
@@ -130,11 +130,10 @@ def main() -> None:
     db = QueueDB(settings.db_path)
 
     async def run_once() -> None:
-        # One full cycle: pull a fresh property into the inbox, then post it.
-        fresh = refresh_inbox(settings, source=source, count=1)
-        if fresh == 0:
-            log.warning("no fresh properties to post; nothing queued")
-        summary = await run_cycle(settings)
+        # One full grouped cycle: each group independently selects its OWN next
+        # unposted property (by its configured selection_order), then posts.
+        # (Replaces the old refresh_inbox + run_cycle one-property-to-all flow.)
+        summary = await run_cycle_grouped(settings, source=source)
         log.info("cycle summary: %s", json.dumps(summary, ensure_ascii=False))
 
     def restore_session() -> bool:

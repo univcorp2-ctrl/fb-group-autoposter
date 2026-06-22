@@ -5,12 +5,14 @@ import asyncio
 import json
 import logging
 import os
+import random
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 from config import Settings, load_groups
 from src.approval import TelegramApproval
+from src.estateboard_adapter import select_postable
 from src.generator import generate_variants
 from src.ingest import scan_inbox
 from src.logging_setup import setup_logging
@@ -97,6 +99,79 @@ async def run_cycle(settings: Settings, *, selftest: bool = False) -> dict[str, 
             summary["approved_processed"] = int(summary["approved_processed"]) + 1
             summary["statuses"].append({"job_id": job["job_id"], "status": status})
         db.mark_heartbeat("orchestrator")
+    if notifier.enabled:
+        notifier.send_message(f"📊 pipeline summary\n{json.dumps(summary, ensure_ascii=False, indent=2)}")
+    return summary
+
+
+async def run_cycle_grouped(
+    settings: Settings,
+    *,
+    source: str | Path,
+    sleeper: Any = asyncio.sleep,
+) -> dict[str, object]:
+    """Daily flow where EACH group picks its OWN next property by its OWN order.
+
+    Unlike `run_cycle` (one property to all groups), this independently selects
+    the next unposted property per group (by that group's `selection_order`),
+    generates a single-group variant, queues + auto-approves it, then posts the
+    approved jobs with a randomized sleep between posts (block avoidance).
+
+    The JST calendar-day one-post-per-group guard is preserved: a group already
+    posted today is skipped before selection, and the poster's preflight is the
+    final backstop.
+    """
+    from scripts.run_daily import _load_items
+
+    setup_logging()
+    settings.validate_runtime(require_external=not settings.dry_run)
+    groups = load_groups()
+    db = QueueDB(settings.db_path)
+    notifier = TelegramApproval(settings, db)
+    summary: dict[str, Any] = {"created": 0, "approved_processed": 0, "skipped_groups": 0, "statuses": []}
+
+    try:
+        items = _load_items(Path(source))
+    except FileNotFoundError:
+        log.warning("EstateBoard source not found: %s", source)
+        items = []
+
+    with pipeline_lock():
+        db.reset_stale_posting_jobs()
+        db.mark_heartbeat("orchestrator")
+
+        for group in groups:
+            if db.posted_same_group_today(group["id"]):
+                summary["skipped_groups"] = int(summary["skipped_groups"]) + 1
+                continue
+            order = group.get("selection_order", "newest")
+            picks = select_postable(
+                items,
+                limit=1,
+                exclude_ids=db.posted_property_ids_for_group(group["id"]),
+                order=order,
+            )
+            if not picks:
+                log.warning("no fresh property for group %s (order=%s)", group["id"], order)
+                continue
+            prop = picks[0]
+            batch = generate_variants(prop, [group], settings)
+            job_id = db.create_job(prop, batch.variants, degraded=batch.degraded)
+            notifier.auto_or_send_preview(job_id)
+            summary["created"] = int(summary["created"]) + 1
+
+        poster = FacebookPoster(settings, db, groups, notifier)
+        approved = db.approved_jobs()
+        for index, job in enumerate(approved):
+            status = await poster.post_job(job)
+            summary["approved_processed"] = int(summary["approved_processed"]) + 1
+            summary["statuses"].append({"job_id": job["job_id"], "status": status})
+            # Randomized spacing BETWEEN posts (not after the last) to avoid
+            # robotic cadence that trips block detection.
+            if index < len(approved) - 1:
+                await sleeper(random.randint(settings.min_interval_min * 60, settings.max_interval_min * 60))
+        db.mark_heartbeat("orchestrator")
+
     if notifier.enabled:
         notifier.send_message(f"📊 pipeline summary\n{json.dumps(summary, ensure_ascii=False, indent=2)}")
     return summary

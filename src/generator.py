@@ -53,6 +53,67 @@ def build_hashtags(property_data: dict[str, Any]) -> list[str]:
     return ordered[:6]
 
 
+_FORBIDDEN_PITCH_WORDS = ("保証", "絶対", "確実")
+PITCH_PREFIX = "🔑 推しポイント："
+_WALK_RE = re.compile(r"徒歩\s*(\d+)\s*分")
+
+
+def _parse_yield(value: Any) -> float | None:
+    """Parse a yield like '8.5%' or 8.5 into a float, or None."""
+    if value in (None, ""):
+        return None
+    try:
+        return float(str(value).replace("%", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def build_pitch(property_data: dict[str, Any]) -> str:
+    """A short, factual one-line buyer-merit (推しポイント). No fabrication.
+
+    Collects up to 3 merits from available fields (yield, 駅徒歩, structure,
+    所有権/分かれ, area), prefixes 🔑 推しポイント：, and ends with a soft
+    benefit phrase. Never uses forbidden words; kept to ~60 chars.
+    """
+    merits: list[str] = []
+
+    y = _parse_yield(property_data.get("yield_pct"))
+    if y is not None and y > 0:
+        merits.append(f"高利回り{y:g}%" if y >= 8 else f"利回り{y:g}%")
+
+    access = str(property_data.get("access", "") or "")
+    walk = _WALK_RE.search(access)
+    highlights = [str(h) for h in (property_data.get("highlights") or [])]
+    if walk:
+        merits.append(f"駅徒歩{walk.group(1)}分")
+    elif "駅近" in highlights or "駅近" in access:
+        merits.append("駅近")
+
+    structure = str(property_data.get("structure", "") or "")
+    if "SRC造" in structure or "SRC造" in highlights:
+        merits.append("SRC造で資産性◎")
+    elif "RC造" in structure or "RC造" in highlights:
+        merits.append("RC造で資産性◎")
+
+    if "所有権" in highlights:
+        merits.append("所有権")
+    if "分かれ" in highlights:
+        merits.append("分かれ")
+
+    location = str(property_data.get("location", "") or "")
+    if not merits and location:
+        merits.append(f"{location[:8]}エリア")
+
+    selected = merits[:3]
+    benefit = "長期保有・利回り重視の方に。"
+    core = "／".join(selected) if selected else "投資検討に好適"
+    pitch = f"{PITCH_PREFIX}{core}　{benefit}"
+    # Defensive: never emit a forbidden word even if a field smuggled one in.
+    for word in _FORBIDDEN_PITCH_WORDS:
+        pitch = pitch.replace(word, "")
+    return pitch
+
+
 def fallback_body(property_data: dict[str, Any], group: dict[str, Any], *, revision_instruction: str = "") -> str:
     property_id = property_data.get("property_id", "unknown")
     rng = random.Random(_stable_seed(property_id, group["id"]))
@@ -77,6 +138,10 @@ def fallback_body(property_data: dict[str, Any], group: dict[str, Any], *, revis
         f"📐 土地：{property_data.get('land_area', '記載なし')}／建物：{property_data.get('building_area', '記載なし')}",
         f"🗓 築年：{property_data.get('year_built', '記載なし')}",
     ]
+    # 推しポイント (mandatory buyer-merit). Placed near the top so the group
+    # rules' max_chars truncation never cuts it (it sits well before the
+    # contact/hashtags block that may be trimmed on long bodies).
+    lines += ["", build_pitch(property_data)]
     if highlights:
         bullet = " / ".join(str(x) for x in highlights)
         lines += ["", f"✨ {bullet}"]
@@ -98,6 +163,7 @@ def _call_claude(settings: Any, property_data: dict[str, Any], group: dict[str, 
     from anthropic import Anthropic
 
     client = Anthropic(api_key=settings.anthropic_api_key)
+    pitch = build_pitch(property_data)
     prompt = f"""
 あなたは不動産Facebookグループ向け投稿文面を作る編集者です。
 以下の物件情報を、指定グループ向けの投稿本文にしてください。
@@ -107,7 +173,12 @@ def _call_claude(settings: Any, property_data: dict[str, Any], group: dict[str, 
 - 誇大表現は禁止。禁止語は使わない。
 - group.allow_links=false の場合はURLを入れない。
 - max_chars以内。
+- 本文の上部に「{PITCH_PREFIX}…」で始まる短い推しポイントの行をちょうど1行入れる
+  （事実ベース・誇張なし）。下記 pitch をそのまま使ってよい。
 - 返答は本文のみ。前置き不要。
+
+pitch:
+{pitch}
 
 property_data:
 {json.dumps(property_data, ensure_ascii=False, indent=2)}
@@ -132,6 +203,21 @@ revision_instruction:
     return "\n".join(chunks).strip()
 
 
+def _inject_pitch(body: str, pitch: str) -> str:
+    """Insert the pitch line near the top of the body (after the price line if
+    found, else after the first line) so truncation never removes it."""
+    lines = body.split("\n")
+    anchor = 0
+    for i, line in enumerate(lines):
+        if "価格" in line or "💰" in line:
+            anchor = i + 1
+            break
+    else:
+        anchor = 1 if lines else 0
+    lines[anchor:anchor] = ["", pitch]
+    return "\n".join(lines)
+
+
 def generate_variants(
     property_data: dict[str, Any],
     groups: list[dict[str, Any]],
@@ -154,6 +240,12 @@ def generate_variants(
         if not body:
             body = fallback_body(property_data, group, revision_instruction=revision_instruction)
         body = apply_group_rules(body, group).body
+        # Guarantee the 推しポイント line is present regardless of Claude/fallback.
+        # Inject it near the top (before any contact/hashtags block) so the
+        # group rules' max_chars truncation never cuts it, then re-apply rules.
+        if "推しポイント" not in body:
+            body = _inject_pitch(body, build_pitch(property_data))
+            body = apply_group_rules(body, group).body
         seed = _stable_seed(property_data.get("property_id", "unknown"), group["id"])
         variants.append(
             {

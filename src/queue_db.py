@@ -363,3 +363,21 @@ class QueueDB:
                 """
             ).fetchall()
         return {row["property_id"] for row in rows}
+
+    def posted_property_ids_for_group(self, group_id: str) -> set[str]:
+        """property_ids already posted to THIS group (so it never repeats one).
+
+        Per-group history: each group independently excludes only the properties
+        it has itself posted, so different groups can post different properties.
+        """
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT j.property_id
+                FROM jobs j
+                JOIN job_targets t ON t.job_id = j.job_id
+                WHERE t.group_id = ? AND t.status IN ('posted', 'uncertain')
+                """,
+                (group_id,),
+            ).fetchall()
+        return {row["property_id"] for row in rows}
