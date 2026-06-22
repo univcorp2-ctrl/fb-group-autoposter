@@ -38,6 +38,44 @@ DEFAULT_SOURCE = Path(
 )
 
 
+ALERT_FILE = ROOT / "logs" / "ALERT_SESSION_DEAD.txt"
+
+
+def _alert_session_dead(result: dict) -> None:
+    """Persist a loud, Telegram-independent alert that the FB login is dead."""
+    from datetime import datetime, timezone
+
+    from src.session import login_required_message
+
+    msg = login_required_message()
+    try:
+        ALERT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ALERT_FILE.write_text(
+            f"{datetime.now(timezone.utc).isoformat()}  reason={result.get('reason')}\n{msg}\n",
+            encoding="utf-8",
+        )
+    except Exception:  # noqa: BLE001 - alerting must never crash the run
+        pass
+    log.critical("FB SESSION DEAD — posting halted until manual re-login: %s", msg)
+    try:
+        from src.approval import TelegramApproval
+
+        notifier = TelegramApproval(Settings.load())
+        if getattr(notifier, "enabled", False):
+            notifier.alert(f"⚠️ {msg}")
+    except Exception:  # noqa: BLE001 - best-effort, no-op when Telegram disabled
+        pass
+
+
+def _clear_session_alert() -> None:
+    """Remove the session-dead sentinel once a run no longer reports a dead session."""
+    try:
+        if ALERT_FILE.exists():
+            ALERT_FILE.unlink()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _load_items(source: Path) -> list[dict]:
     data = json.loads(source.read_text(encoding="utf-8"))
     if isinstance(data, dict):
@@ -96,6 +134,15 @@ def main() -> None:
         ensure_posted_today(settings, groups, db, run_once=run_once, restore_session=restore_session)
     )
     log.info("run_daily ensure result: %s", json.dumps(result, ensure_ascii=False))
+
+    # A dead/unrecoverable session is the one failure a retry can never fix — it
+    # needs a human re-login. Surface it loudly even when Telegram is disabled:
+    # write a sentinel file (cleared on the next healthy run) and log CRITICAL so
+    # the monitor and the operator both see it instead of silent zero-posting.
+    if result.get("reason") in {"session_unrecoverable", "no_backup_to_restore"}:
+        _alert_session_dead(result)
+    else:
+        _clear_session_alert()
 
     # Keep the at-a-glance posting-status DB (Excel + CSV) current after every run.
     try:
