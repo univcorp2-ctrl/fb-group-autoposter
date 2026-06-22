@@ -106,6 +106,44 @@ def test_sync_marks_master_and_data_json(tmp_path, monkeypatch):
     assert summary["data_marked"] == 1
 
 
+def test_posted_property_missing_from_dashboard_is_appended(tmp_path, monkeypatch):
+    # A posted property that is NOT in data.json (e.g. priced above the enrich
+    # band) must still appear on the dashboard — the bridge appends it.
+    db_path = tmp_path / "jobs.db"
+    _make_jobs_db(db_path)  # posts eb-2362 -> master id 99
+    eb_root = tmp_path / "EstateBoard"
+    received = eb_root / "output" / "received"
+    docs = eb_root / "docs"
+    received.mkdir(parents=True)
+    docs.mkdir(parents=True)
+    master = received / "master_properties.jsonl"
+    # Master record 99 carries price + name fields used to build the appended row.
+    with open(master, "w", encoding="utf-8") as f:
+        f.write(json.dumps({
+            "id": 99, "propertyId": 2362, "property.label": "高額タワー",
+            "property.price": 1_515_000_000, "property.propertyType": "WHOLE_BUILDING_MANSION",
+        }, ensure_ascii=False) + "\n")
+    # data.json does NOT contain id 99.
+    (docs / "data.json").write_text(json.dumps({
+        "generated_at": "2026-06-20T00:00:00", "count": 1,
+        "columns": ["チェック", "コメント", "ID", "物件名", "価格(万円)"],
+        "items": [{"チェック": False, "コメント": "", "ID": 7, "物件名": "別物件", "価格(万円)": 3000}],
+    }, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(bridge, "_group_name_map", lambda: {"g1": "収益物件シェアグループ"})
+
+    sync_estateboard_status(db_path, eb_root=eb_root)
+
+    data = json.loads((docs / "data.json").read_text(encoding="utf-8"))
+    items = {it["ID"]: it for it in data["items"]}
+    assert "99" in items or 99 in items  # appended row present
+    appended = items.get("99") or items.get(99)
+    assert appended[POSTED_COLUMN] == POSTED_LABEL
+    assert appended[POSTED_TO_COLUMN] == "収益物件シェアグループ"
+    assert appended["物件名"] == "高額タワー"
+    assert appended["価格(万円)"] == 151500  # yen -> 万円
+    assert data["count"] == len(data["items"]) == 2
+
+
 def test_sync_absent_repo_is_noop(tmp_path):
     db_path = tmp_path / "jobs.db"
     _make_jobs_db(db_path)

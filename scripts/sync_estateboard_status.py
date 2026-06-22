@@ -39,6 +39,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config import Settings  # noqa: E402
+from src.estateboard_adapter import PROPERTY_TYPE_JA  # noqa: E402
 from src.logging_setup import setup_logging  # noqa: E402
 
 log = logging.getLogger("sync_estateboard_status")
@@ -120,6 +121,39 @@ def _group_names(group_ids: Any, name_map: dict[str, str]) -> list[str]:
     return [name_map.get(str(gid), str(gid)) for gid in sorted(group_ids)]
 
 
+def _prop(record: dict[str, Any], key: str) -> Any:
+    """Read a `property.*` value from a flattened or nested master record."""
+    if f"property.{key}" in record:
+        return record[f"property.{key}"]
+    prop = record.get("property")
+    if isinstance(prop, dict):
+        return prop.get(key)
+    return None
+
+
+def _display_fields(record: dict[str, Any]) -> dict[str, Any]:
+    """Dashboard columns we can fill for a posted property that is missing from
+    docs/data.json (e.g. priced outside the enrich price band). Lets a posted
+    listing show on the web regardless of price; unknown columns stay blank."""
+    try:
+        price = float(_prop(record, "price"))
+    except (TypeError, ValueError):
+        price = 0.0
+    city = str(_prop(record, "cityLabel") or "")
+    rest = str(_prop(record, "restAddress") or "")
+    return {
+        "ID": str(record.get("id") or ""),
+        "物件名": str(_prop(record, "label") or record.get("label") or ""),
+        "種別": PROPERTY_TYPE_JA.get(str(_prop(record, "propertyType") or ""), ""),
+        "都道府県": str(_prop(record, "prefectureLabel") or ""),
+        "市区町村": city,
+        "住所": (city + rest) if (city or rest) else "",
+        "最寄駅": str(_prop(record, "nearestStation1") or ""),
+        "価格(万円)": round(price / 10000) if price else "",
+        "詳細URL": str(record.get("detail_url") or ""),
+    }
+
+
 def patch_master(
     master_path: Path,
     posted_meta: dict[str, dict[str, Any]],
@@ -156,6 +190,7 @@ def patch_master(
             display_info[str(rec.get("id"))] = {
                 "groups": ", ".join(names),
                 "date": str(posted_at)[:10],
+                "fields": _display_fields(rec),
             }
             marked += 1
         elif rec.get("_posted_to_fb"):
@@ -188,15 +223,19 @@ def patch_data_json(data_path: Path, display_info: dict[str, dict[str, str]]) ->
     data = json.loads(data_path.read_text(encoding="utf-8"))
     columns = [c for c in (data.get("columns") or []) if c not in _INJECTED_COLUMNS]
     # 投稿済 → 投稿先 → 投稿日 then the rest.
-    data["columns"] = [POSTED_COLUMN, POSTED_TO_COLUMN, POSTED_DATE_COLUMN] + list(columns)
+    full_columns = [POSTED_COLUMN, POSTED_TO_COLUMN, POSTED_DATE_COLUMN] + list(columns)
+    data["columns"] = full_columns
 
     marked = 0
+    seen_ids: set[str] = set()
     new_items: list[dict[str, Any]] = []
     for item in data.get("items", []):
-        info = display_info.get(str(item.get("ID")))
+        item_id = str(item.get("ID"))
+        info = display_info.get(item_id)
         is_posted = info is not None
         if is_posted:
             marked += 1
+            seen_ids.add(item_id)
         rebuilt = {
             POSTED_COLUMN: POSTED_LABEL if is_posted else "",
             POSTED_TO_COLUMN: info["groups"] if is_posted else "",
@@ -206,13 +245,36 @@ def patch_data_json(data_path: Path, display_info: dict[str, dict[str, str]]) ->
             if k not in _INJECTED_COLUMNS:
                 rebuilt[k] = v
         new_items.append(rebuilt)
+
+    # Posted properties that are NOT in the dashboard dataset (e.g. priced
+    # outside the enrich price band) would otherwise be invisible on the web.
+    # Append a row for each from the master fields so EVERY post shows up.
+    appended = 0
+    for disp_id, info in display_info.items():
+        if disp_id in seen_ids:
+            continue
+        row = {c: "" for c in full_columns}
+        row[POSTED_COLUMN] = POSTED_LABEL
+        row[POSTED_TO_COLUMN] = info["groups"]
+        row[POSTED_DATE_COLUMN] = info["date"]
+        for k, v in (info.get("fields") or {}).items():
+            if k in row:
+                row[k] = v
+        new_items.append(row)
+        appended += 1
+        marked += 1
+
     data["items"] = new_items
+    data["count"] = len(new_items)
 
     def render(f: Any) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
     _atomic_write(data_path, render)
-    log.info("data.json patched: %d items marked posted (of %d)", marked, len(new_items))
+    log.info(
+        "data.json patched: %d marked posted (%d appended that were missing) of %d items",
+        marked, appended, len(new_items),
+    )
     return marked
 
 
