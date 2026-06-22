@@ -73,24 +73,38 @@ def _alert_session_dead(result: dict, settings: Settings, db: QueueDB) -> None:
         log.critical("FB LOGIN CHALLENGE (%s) — posting halted until manual re-login: %s", kind, msg)
     else:
         log.critical("FB SESSION DEAD — posting halted until manual re-login: %s", msg)
+    # Record a persistent, acknowledge-until-cleared alert. The scheduled
+    # re-notifier (scripts/renotify_alerts.py) keeps re-sending it to Telegram
+    # until the operator taps ✅ or a healthy run clears it — so a dead session
+    # can never go silently unnoticed (the whole point of this requirement).
     try:
         from src.approval import TelegramApproval
 
-        notifier = TelegramApproval(settings, db)
-        if getattr(notifier, "enabled", False):
-            notifier.alert(f"⚠️ {msg}")
+        alert_kind = kind if kind in _CHALLENGE_KINDS else "session_dead"
+        TelegramApproval(settings, db).raise_persistent_alert(alert_kind, msg)
     except Exception:  # noqa: BLE001 - best-effort, no-op when Telegram disabled
         pass
 
 
-def _clear_session_alert() -> None:
-    """Remove the session-dead sentinels once a run no longer reports a dead session."""
+def _clear_session_alert(settings: Settings | None = None, db: QueueDB | None = None) -> None:
+    """Clear the session-dead sentinels + persistent alerts once a run no longer
+    reports a dead session (the login recovered)."""
     for sentinel in (ALERT_FILE, CHECKPOINT_ALERT_FILE):
         try:
             if sentinel.exists():
                 sentinel.unlink()
         except Exception:  # noqa: BLE001
             pass
+    if settings is None or db is None:
+        return
+    try:
+        from src.approval import TelegramApproval
+
+        notifier = TelegramApproval(settings, db)
+        for kind in ("session_dead", *_CHALLENGE_KINDS):
+            notifier.clear_persistent_alert(kind)
+    except Exception:  # noqa: BLE001 - recovery notice is best-effort
+        pass
 
 
 def _load_items(source: Path) -> list[dict]:
@@ -158,7 +172,7 @@ def main() -> None:
     if result.get("reason") in {"session_unrecoverable", "no_backup_to_restore"}:
         _alert_session_dead(result, settings, db)
     else:
-        _clear_session_alert()
+        _clear_session_alert(settings, db)
 
     # Keep the at-a-glance posting-status DB (Excel + CSV) current after every run.
     try:

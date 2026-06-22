@@ -117,6 +117,7 @@ async def main() -> None:
     known = _known_group_ids()
     now = datetime.now(UTC).isoformat()
     discovered_new = 0
+    new_candidates: list[dict] = []
 
     async with async_playwright() as p:
         ctx = await p.chromium.launch_persistent_context(
@@ -141,6 +142,7 @@ async def main() -> None:
                 r["first_seen"] = now
                 r["last_seen"] = now
                 existing[gid] = r
+                new_candidates.append(r)
                 discovered_new += 1
             print(f"keyword '{kw}': {len(results)} groups seen")
         await ctx.close()
@@ -166,6 +168,34 @@ async def main() -> None:
     CANDIDATES_MD.write_text("\n".join(lines), encoding="utf-8")
     print(f"discovered {discovered_new} new candidates; total {len(candidates)}")
     print(f"written: {CANDIDATES_JSON}  and  {CANDIDATES_MD}")
+
+    # Notify the operator about NEW postable communities so good groups are not
+    # buried in a file no one opens. We only flag candidates — joining stays a
+    # manual decision (auto-join is a strong ban signal).
+    if new_candidates:
+        _notify_new_candidates(settings, new_candidates)
+
+
+def _notify_new_candidates(settings: Settings, new_candidates: list[dict]) -> None:
+    """Send a concise Telegram list of newly found candidate groups."""
+    try:
+        from src.approval import TelegramApproval
+        from src.queue_db import QueueDB
+
+        notifier = TelegramApproval(settings, QueueDB(settings.db_path))
+        if not getattr(notifier, "enabled", False):
+            return
+        top = new_candidates[:10]
+        lines = [f"🔎 投稿候補になりそうな新規グループ {len(new_candidates)}件を発見しました（自動参加はしません）:", ""]
+        for c in top:
+            members = f"／{c['members']}" if c.get("members") else ""
+            lines.append(f"・{c.get('name') or c['group_id']}{members}\n　{c['url']}")
+        if len(new_candidates) > len(top):
+            lines.append(f"\n…ほか {len(new_candidates) - len(top)}件。data/group_candidates.md を参照。")
+        lines.append("\n良いグループに手動参加後、groups.yaml にURLを追加すれば投稿対象になります。")
+        notifier.send_message("\n".join(lines))
+    except Exception as exc:  # noqa: BLE001 - discovery notice must never crash the run
+        print(f"[warn] candidate notification skipped: {exc}")
 
 
 if __name__ == "__main__":

@@ -7,15 +7,17 @@ from typing import Any
 
 import requests
 
+from src.alerts import AlertStore
 from src.queue_db import QueueDB
 
 log = logging.getLogger(__name__)
 
 
 class TelegramApproval:
-    def __init__(self, settings: Any, db: QueueDB):
+    def __init__(self, settings: Any, db: QueueDB, alert_store: AlertStore | None = None):
         self.settings = settings
         self.db = db
+        self.alert_store = alert_store or AlertStore()
         self.base_url = f"https://api.telegram.org/bot{settings.telegram_bot_token}" if settings.telegram_bot_token else ""
         self.offset_path = Path("data/telegram_offset.txt")
         self.offset_path.parent.mkdir(parents=True, exist_ok=True)
@@ -140,8 +142,55 @@ class TelegramApproval:
                     self.send_message(f"[{target['group_id']}]\n{target['body']}")
             elif action == "revise":
                 self.send_message(f"✏️ 修正指示を通常メッセージで返信してください。job_id={job_id}")
+            elif action == "ack":
+                # `job_id` here carries the alert kind (e.g. "session_dead").
+                if self.alert_store.acknowledge(job_id):
+                    self.send_message(
+                        f"🆗 確認を受け付けました（{job_id}）。このセッション復旧アラートの再通知を停止します。"
+                    )
+                else:
+                    self.send_message(f"（{job_id} の未確認アラートは見つかりませんでした）")
             handled += 1
         return handled
 
     def alert(self, text: str) -> None:
         self.send_message(f"🔴 {text}")
+
+    def raise_persistent_alert(self, kind: str, message: str) -> None:
+        """Record an acknowledge-until-cleared alert and send it once now.
+
+        The store keeps the obligation alive across process exits; the scheduled
+        re-notifier (`scripts/renotify_alerts.py`) keeps re-sending it until the
+        operator taps ✅ or a healthy run clears it. Recording always happens even
+        when Telegram is disabled, so nothing is silently dropped."""
+        self.alert_store.raise_alert(kind, message)
+        self.send_persistent_alert(kind, message)
+
+    def send_persistent_alert(self, kind: str, message: str) -> None:
+        """(Re)send a persistent alert with an inline ✅ acknowledge button."""
+        buttons = {
+            "inline_keyboard": [
+                [{"text": "✅ 確認した（対応します）", "callback_data": f"ack:{kind}"}]
+            ]
+        }
+        try:
+            self.send_message(f"🔴🔁 {message}\n\n※ 確認するまで通知し続けます。", reply_markup=buttons)
+            self.alert_store.mark_notified(kind)
+        except Exception as exc:  # noqa: BLE001 - never let notification crash the caller
+            log.warning("persistent alert send failed (%s): %s", kind, exc)
+
+    def clear_persistent_alert(self, kind: str, *, notify_recovery: bool = True) -> None:
+        """Clear an open alert (condition resolved) and optionally announce it."""
+        if self.alert_store.clear(kind) and notify_recovery:
+            try:
+                self.send_message(f"✅ 復旧を確認しました（{kind}）。再通知を停止します。")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("recovery notice send failed (%s): %s", kind, exc)
+
+    def renotify_pending(self) -> int:
+        """Re-send every unacknowledged open alert. Returns how many were sent."""
+        sent = 0
+        for alert in self.alert_store.pending_unacknowledged():
+            self.send_persistent_alert(alert["kind"], alert.get("message", ""))
+            sent += 1
+        return sent

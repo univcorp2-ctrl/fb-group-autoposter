@@ -142,6 +142,17 @@ class FacebookPoster:
                         sanitized_error = f"{type(exc).__name__}: {exc}"[:500]
                         self.db.update_target_status(job["job_id"], target["group_id"], "failed", error=sanitized_error, screenshot=screenshot, increment_attempts=True)
                         suggest_disable = self.db.record_group_result(target["group_id"], success=False, threshold=self.settings.group_fail_threshold)
+                        # Notify EVERY failure (not only at the threshold): the run
+                        # will auto-retry this group on its next scheduled/logon
+                        # trigger (the JST day-guard keeps that idempotent), so the
+                        # operator is told both that it failed and that recovery is
+                        # already in motion.
+                        group_name = group.get("name", target["group_id"])
+                        if self.notifier:
+                            self.notifier.alert(
+                                f"投稿失敗（自動リトライします）: {group_name}\n"
+                                f"property={job['property_id']}\n{sanitized_error}"
+                            )
                         if suggest_disable and self.notifier:
                             self.notifier.alert(f"連続失敗閾値到達。groups.yamlでenabled:false検討: {target['group_id']}")
                     if posted_in_browser >= self.settings.max_groups_per_browser:

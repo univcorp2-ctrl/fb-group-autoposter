@@ -84,6 +84,29 @@ New-DailyRun -Name 'FBAutoposter-StatusDB' -Script 'build_status_db.py' -At '09:
 # --- Group discovery: refresh candidate real-estate / investor groups daily ---
 New-DailyRun -Name 'FBAutoposter-Discover' -Script 'discover_groups.py' -At '07:00' -RandomDelayMin 30 -Desc 'Discover candidate FB groups (review list only, no auto-join)'
 
+# --- Alert re-notifier: keep pinging Telegram until the operator acknowledges ---
+# A dead login / checkpoint can never be fixed by a retry — it needs a human.
+# This task processes any tapped ✅ acknowledgements AND re-sends every still-
+# unacknowledged alert, every 30 minutes all day, so a session-recovery need is
+# never missed. It is cheap and a no-op when nothing is pending. Also at logon.
+function New-RepeatingRun {
+    param([string]$Name, [string]$Script, [int]$EveryMinutes, [string]$Desc)
+    $action = New-ScheduledTaskAction -Execute $Python -Argument "scripts\$Script" -WorkingDirectory $Root
+    $trigger = New-ScheduledTaskTrigger -Once -At '00:00' `
+        -RepetitionInterval (New-TimeSpan -Minutes $EveryMinutes) `
+        -RepetitionDuration (New-TimeSpan -Days 1)
+    $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $logon.Delay = 'PT2M'
+    $settings = New-ScheduledTaskSettingsSet `
+        -StartWhenAvailable `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+    Register-ScheduledTask -TaskName $Name -Action $action -Trigger @($trigger, $logon) -Settings $settings -Description $Desc -Force | Out-Null
+}
+New-RepeatingRun -Name 'FBAutoposter-Renotify' -Script 'renotify_alerts.py' -EveryMinutes 30 -Desc 'Re-notify unacknowledged session/checkpoint alerts until operator confirms'
+
 Write-Host 'Registered tasks:'
 Get-ScheduledTask -TaskName 'FBAutoposter-*' | Select-Object TaskName, State | Format-Table -AutoSize
 
