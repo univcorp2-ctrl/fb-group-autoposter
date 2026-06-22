@@ -39,28 +39,44 @@ DEFAULT_SOURCE = Path(
 
 
 ALERT_FILE = ROOT / "logs" / "ALERT_SESSION_DEAD.txt"
+# A distinct sentinel for an unrecoverable login challenge (checkpoint/captcha/
+# 2FA). A restore can never clear these — the operator's action differs from a
+# plain cookie expiry, so it gets its own file the monitor can watch separately.
+CHECKPOINT_ALERT_FILE = ROOT / "logs" / "ALERT_CHECKPOINT.txt"
+_CHALLENGE_KINDS = {"checkpoint", "captcha", "two_factor"}
 
 
-def _alert_session_dead(result: dict) -> None:
+def _alert_session_dead(result: dict, settings: Settings, db: QueueDB) -> None:
     """Persist a loud, Telegram-independent alert that the FB login is dead."""
     from datetime import datetime, timezone
 
-    from src.session import login_required_message
+    from src.session import challenge_message, login_required_message
 
-    msg = login_required_message()
+    kind = result.get("challenge")
+    # Use the kind-specific guidance when a real challenge was detected; fall
+    # back to the generic message for a plain (kind-less) session expiry.
+    msg = challenge_message(kind) if kind in _CHALLENGE_KINDS else login_required_message()
     try:
         ALERT_FILE.parent.mkdir(parents=True, exist_ok=True)
         ALERT_FILE.write_text(
             f"{datetime.now(timezone.utc).isoformat()}  reason={result.get('reason')}\n{msg}\n",
             encoding="utf-8",
         )
+        if kind in _CHALLENGE_KINDS:
+            CHECKPOINT_ALERT_FILE.write_text(
+                f"{datetime.now(timezone.utc).isoformat()}  reason={result.get('reason')}  kind={kind}\n{msg}\n",
+                encoding="utf-8",
+            )
     except Exception:  # noqa: BLE001 - alerting must never crash the run
         pass
-    log.critical("FB SESSION DEAD — posting halted until manual re-login: %s", msg)
+    if kind in _CHALLENGE_KINDS:
+        log.critical("FB LOGIN CHALLENGE (%s) — posting halted until manual re-login: %s", kind, msg)
+    else:
+        log.critical("FB SESSION DEAD — posting halted until manual re-login: %s", msg)
     try:
         from src.approval import TelegramApproval
 
-        notifier = TelegramApproval(Settings.load())
+        notifier = TelegramApproval(settings, db)
         if getattr(notifier, "enabled", False):
             notifier.alert(f"⚠️ {msg}")
     except Exception:  # noqa: BLE001 - best-effort, no-op when Telegram disabled
@@ -68,12 +84,13 @@ def _alert_session_dead(result: dict) -> None:
 
 
 def _clear_session_alert() -> None:
-    """Remove the session-dead sentinel once a run no longer reports a dead session."""
-    try:
-        if ALERT_FILE.exists():
-            ALERT_FILE.unlink()
-    except Exception:  # noqa: BLE001
-        pass
+    """Remove the session-dead sentinels once a run no longer reports a dead session."""
+    for sentinel in (ALERT_FILE, CHECKPOINT_ALERT_FILE):
+        try:
+            if sentinel.exists():
+                sentinel.unlink()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _load_items(source: Path) -> list[dict]:
@@ -140,7 +157,7 @@ def main() -> None:
     # write a sentinel file (cleared on the next healthy run) and log CRITICAL so
     # the monitor and the operator both see it instead of silent zero-posting.
     if result.get("reason") in {"session_unrecoverable", "no_backup_to_restore"}:
-        _alert_session_dead(result)
+        _alert_session_dead(result, settings, db)
     else:
         _clear_session_alert()
 

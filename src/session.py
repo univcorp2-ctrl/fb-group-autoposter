@@ -70,5 +70,48 @@ def restore_profile(profile_dir: str | Path, backup: str | Path | None = None) -
     return src
 
 
+async def classify_challenge(page: Any) -> str | None:
+    """Identify the kind of login challenge on the current page.
+
+    A profile restore can recover a plain expired cookie, but it can NEVER clear
+    a checkpoint / captcha / 2FA challenge — only a human re-login does. Knowing
+    the kind lets the caller alert with the right operator action instead of a
+    generic "session dead" message. Returns one of "checkpoint", "captcha",
+    "two_factor", "login", or None (page looks logged in / no challenge).
+    """
+    url = page.url.lower()
+    if "checkpoint" in url:
+        return "checkpoint"
+    if "/two_step_verification" in url or "/two_factor" in url or "approvals_code" in url:
+        return "two_factor"
+    if "/recover" in url or "/login" in url or url.rstrip("/").endswith("facebook.com/login"):
+        return "login"
+    # DOM markers (page may be on a normal URL but show an inline challenge).
+    for kind, key in (("captcha", "captcha_markers"), ("two_factor", "two_factor_markers"), ("checkpoint", "checkpoint_markers")):
+        for selector in SELECTORS.get(key, []):
+            try:
+                if await page.query_selector(selector):
+                    return kind
+            except Exception:
+                continue
+    return None
+
+
 def login_required_message() -> str:
     return "Facebookセッション切れまたはcheckpoint検知。scripts/login_once.pyで手動再ログインしてください。"
+
+
+# Per-kind operator guidance. A checkpoint/captcha/2FA needs a different human
+# action than a plain cookie expiry, so we spell out the cause; all kinds end
+# with the same re-login instruction reused from login_required_message().
+_CHALLENGE_CAUSE = {
+    "checkpoint": "Facebook本人確認 checkpoint を検知しました。",
+    "captcha": "Facebook画像認証（captcha）を検知しました。",
+    "two_factor": "Facebook2段階認証コードの入力を求められています。",
+    "login": "Facebookログイン切れを検知しました。",
+}
+
+
+def challenge_message(kind: str) -> str:
+    cause = _CHALLENGE_CAUSE.get(kind, "Facebookセッション要再ログイン。")
+    return f"{cause} scripts/login_once.pyで手動再ログインしてください。"

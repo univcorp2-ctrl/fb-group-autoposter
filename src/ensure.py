@@ -90,7 +90,7 @@ async def ensure_posted_today(
     start = time_fn()
     attempt = 0
     restores_used = 0
-    result: dict[str, Any] = {"attempts": 0, "posted": False, "reason": None, "restored": False}
+    result: dict[str, Any] = {"attempts": 0, "posted": False, "reason": None, "restored": False, "challenge": None}
 
     while True:
         if all_groups_done_today(db, groups):
@@ -108,19 +108,25 @@ async def ensure_posted_today(
         result["attempts"] = attempt
         try:
             await run_once()
-        except SessionExpired:
+        except SessionExpired as exc:
+            # Capture the challenge kind (checkpoint/captcha/two_factor) so the
+            # caller can alert with the specific operator action. A bare
+            # SessionExpired (plain cookie expiry) has no `kind`.
+            challenge = getattr(exc, "kind", "session_expired")
             if restores_used >= max_restores:
                 # Already restored a backup and the login is still expired — the
                 # backup is stale too. Stop now so the caller can alert for a
                 # manual re-login; never loop until the scheduler kills us.
                 log.error("session still expired after %d restore(s); stopping for manual re-login", restores_used)
                 result["reason"] = "session_unrecoverable"
+                result["challenge"] = challenge
                 return result
             restored = restore_session()
             result["restored"] = result["restored"] or restored
             if not restored:
                 log.error("session expired and no backup to restore; manual re-login required")
                 result["reason"] = "no_backup_to_restore"
+                result["challenge"] = challenge
                 return result
             restores_used += 1
             log.warning("session expired; profile restored from backup (%d/%d), will retry", restores_used, max_restores)

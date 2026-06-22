@@ -57,6 +57,7 @@ class Settings:
     db_path: Path
     profile_backup_keep: int
     browser_backend: str
+    browser_user_agent: str
 
     @classmethod
     def load(cls, env_file: str | Path | None = None) -> "Settings":
@@ -89,6 +90,13 @@ class Settings:
             db_path=Path(os.getenv("DB_PATH", "data/jobs.db")),
             profile_backup_keep=_int("PROFILE_BACKUP_KEEP", 7),
             browser_backend=os.getenv("BROWSER_BACKEND", "playwright"),
+            # A stable, realistic UA reduces checkpoint triggers. A CHANGING UA is
+            # a top trigger, so this must stay constant across runs (see .env.example).
+            browser_user_agent=os.getenv(
+                "BROWSER_USER_AGENT",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            ),
         )
         settings.ensure_dirs()
         return settings

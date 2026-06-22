@@ -43,6 +43,23 @@ SELECTORS: dict[str, list[str]] = {
         ':text("checkpoint")',
         ':text("本人確認")',
         ':text("security check")',
+        ':text("アカウントを保護")',
+        ':text("Confirm your identity")',
+    ],
+    "captcha_markers": [
+        'iframe[src*="recaptcha"]',
+        'iframe[title*="recaptcha"]',
+        'iframe[src*="captcha"]',
+        'div[class*="captcha"]',
+        ':text("ロボットではありません")',
+        ':text("セキュリティチェック")',
+    ],
+    "two_factor_markers": [
+        'input[name="approvals_code"]',
+        ':text("ログインコード")',
+        ':text("認証コード")',
+        ':text("two-factor")',
+        ':text("2段階認証")',
     ],
 }
 

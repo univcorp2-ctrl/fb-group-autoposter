@@ -12,7 +12,7 @@ from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wai
 from src.healer import heal_locate
 from src.queue_db import QueueDB
 from src.selectors import SELECTORS
-from src.session import is_logged_in, login_required_message
+from src.session import challenge_message, classify_challenge, is_logged_in, login_required_message
 from src.verifier import dry_run_screenshot_path, save_screenshot, verify_post_visible
 
 log = logging.getLogger(__name__)
@@ -29,6 +29,17 @@ class PostingBlocked(RuntimeError):
 
 class SessionExpired(RuntimeError):
     pass
+
+
+class CheckpointRequired(SessionExpired):
+    """A login challenge (checkpoint / captcha / 2FA) that a profile restore can
+    never fix — only a human re-login resolves it. Subclasses SessionExpired so
+    the recovery path still bounds restores and stops, but the `kind` lets the
+    caller alert with the specific cause (the operator's action differs)."""
+
+    def __init__(self, message: str, kind: str = "checkpoint"):
+        super().__init__(message)
+        self.kind = kind
 
 
 class FacebookPoster:
@@ -97,6 +108,7 @@ class FacebookPoster:
                 user_data_dir=str(self.settings.profile_dir),
                 headless=False,
                 viewport={"width": 1366, "height": 900},
+                user_agent=self.settings.browser_user_agent,
                 timeout=self.settings.page_hard_timeout * 1000,
             )
             page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
@@ -156,8 +168,9 @@ class FacebookPoster:
         if not self.settings.humanize:
             return
         await page.mouse.move(random.randint(100, 900), random.randint(100, 700), steps=random.randint(4, 12))
+        await page.mouse.move(random.randint(100, 900), random.randint(100, 700), steps=random.randint(3, 9))
         await page.mouse.wheel(0, random.randint(100, 400))
-        await page.wait_for_timeout(random.randint(500, 1800))
+        await page.wait_for_timeout(random.randint(800, 3200))
 
     @staticmethod
     def _split_body_for_typing(body: str) -> tuple[str, str]:
@@ -178,11 +191,11 @@ class FacebookPoster:
         # drops. delay=0 keeps even long bodies well under the action timeout.
         prefix, rest = self._split_body_for_typing(body)
         await textbox.click()
-        await page.wait_for_timeout(random.randint(300, 900))
-        await textbox.type(prefix, delay=random.randint(40, 110), timeout=20000)
+        await page.wait_for_timeout(random.randint(500, 1600))
+        await textbox.type(prefix, delay=random.randint(60, 160), timeout=20000)
         if rest:
             await textbox.type(rest, delay=0, timeout=60000)
-        await page.wait_for_timeout(random.randint(400, 1200))
+        await page.wait_for_timeout(random.randint(700, 2000))
 
     @retry(
         stop=stop_after_attempt(3),
@@ -192,8 +205,11 @@ class FacebookPoster:
     )
     async def _post_one(self, page: Any, job: dict[str, Any], target: dict[str, Any], group: dict[str, Any]) -> None:
         await page.goto(group["post_url"], wait_until="domcontentloaded", timeout=self.settings.page_hard_timeout * 1000)
+        # Short randomized dwell so the first interaction after navigation does not
+        # look robotically instant (a checkpoint trigger).
+        await page.wait_for_timeout(random.randint(1200, 3500))
         if not await is_logged_in(page):
-            raise SessionExpired(login_required_message())
+            await self._raise_session_challenge(page)
         await self._detect_blocking_markers(page)
         await self._human_pause(page)
         await self._click_first(page, "open_composer", "投稿コンポーザを開くボタン")
@@ -212,10 +228,22 @@ class FacebookPoster:
             if self.notifier:
                 self.notifier.alert(f"投稿成否が曖昧です。重複防止のため再投稿しません: job={job['job_id']} group={target['group_id']}")
 
+    async def _raise_session_challenge(self, page: Any) -> None:
+        """Raise the most specific session exception for the current page.
+
+        A checkpoint/captcha/2FA is unrecoverable by a profile restore, so we
+        raise CheckpointRequired (carrying the kind) to let the caller alert with
+        the right operator action; a plain not-logged-in page raises SessionExpired.
+        """
+        kind = await classify_challenge(page)
+        if kind:
+            raise CheckpointRequired(challenge_message(kind), kind=kind)
+        raise SessionExpired(login_required_message())
+
     async def _detect_blocking_markers(self, page: Any) -> None:
         url = page.url.lower()
         if "checkpoint" in url or "login" in url:
-            raise SessionExpired(login_required_message())
+            await self._raise_session_challenge(page)
         for selector in SELECTORS["posting_block_markers"]:
             try:
                 if await page.query_selector(selector):

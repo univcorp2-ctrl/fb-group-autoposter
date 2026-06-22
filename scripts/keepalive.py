@@ -27,7 +27,13 @@ from config import Settings  # noqa: E402
 from src.approval import TelegramApproval  # noqa: E402
 from src.logging_setup import setup_logging  # noqa: E402
 from src.queue_db import QueueDB  # noqa: E402
-from src.session import backup_profile, is_logged_in, login_required_message  # noqa: E402
+from src.session import (  # noqa: E402
+    backup_profile,
+    challenge_message,
+    classify_challenge,
+    is_logged_in,
+    login_required_message,
+)
 
 log = logging.getLogger("keepalive")
 STATUS = ROOT / "logs" / "session_status.json"
@@ -39,11 +45,13 @@ async def check_and_warm(settings: Settings) -> dict:
     healthy = False
     detail = ""
     backup = None
+    challenge = None
     async with async_playwright() as p:
         ctx = await p.chromium.launch_persistent_context(
             user_data_dir=str(settings.profile_dir),
             headless=False,
             viewport={"width": 1366, "height": 900},
+            user_agent=settings.browser_user_agent,
             timeout=settings.page_hard_timeout * 1000,
         )
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
@@ -52,6 +60,10 @@ async def check_and_warm(settings: Settings) -> dict:
             await page.wait_for_timeout(4000)
             healthy = await is_logged_in(page)
             detail = page.url
+            if not healthy:
+                # Distinguish a recoverable expiry from a checkpoint/captcha/2FA so
+                # the alert names the right operator action.
+                challenge = await classify_challenge(page)
             if healthy:
                 # small human-like activity keeps the session warm
                 try:
@@ -66,7 +78,12 @@ async def check_and_warm(settings: Settings) -> dict:
 
     if healthy:
         backup = backup_profile(settings.profile_dir, keep=settings.profile_backup_keep)
-    return {"healthy": healthy, "detail": detail, "backup": str(backup) if backup else None}
+    return {
+        "healthy": healthy,
+        "detail": detail,
+        "backup": str(backup) if backup else None,
+        "challenge": challenge,
+    }
 
 
 def main() -> int:
@@ -79,7 +96,7 @@ def main() -> int:
         result = asyncio.run(check_and_warm(settings))
     except Exception as exc:  # noqa: BLE001 - never crash the keepalive task
         log.warning("keepalive check error: %s: %s", type(exc).__name__, exc)
-        result = {"healthy": False, "detail": f"{type(exc).__name__}: {exc}", "backup": None}
+        result = {"healthy": False, "detail": f"{type(exc).__name__}: {exc}", "backup": None, "challenge": None}
 
     status = {"checked_at": datetime.now(UTC).isoformat(), **result}
     STATUS.parent.mkdir(parents=True, exist_ok=True)
@@ -89,9 +106,11 @@ def main() -> int:
         db.mark_heartbeat("session")
         log.info("session healthy; backup=%s", result["backup"])
     else:
-        log.error("session NOT healthy: %s", result["detail"])
+        kind = result.get("challenge")
+        msg = challenge_message(kind) if kind else login_required_message()
+        log.error("session NOT healthy (challenge=%s): %s", kind, result["detail"])
         if notifier.enabled:
-            notifier.alert(f"Facebookセッション要再ログイン: {login_required_message()}")
+            notifier.alert(f"Facebookセッション要再ログイン: {msg}")
     return 0
 
 
