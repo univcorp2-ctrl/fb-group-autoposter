@@ -3,7 +3,9 @@ groups:
     name: "不動産投資家コミュニティ"
     post_url: "https://www.facebook.com/groups/1281008662437696"
     # selection_order: each group independently picks its OWN next unposted
-    # property by this order. "newest" = most recently created first.
+    # property by this order. Distinct orders across groups keep the same
+    # property from being posted to multiple groups on the same day (which FB
+    # treats as spam). "newest" = most recently created first.
     selection_order: "newest"
     tone: "プロフェッショナル"
     max_chars: 1200
@@ -11,7 +13,12 @@ groups:
     allow_links: false
     allow_images: true
     forbidden: ["保証", "絶対", "確実"]
-    signature: ""
+    # signature is appended AFTER link-stripping, so the community invite link
+    # below always survives even though allow_links is false (only the
+    # property's own external URL is suppressed).
+    signature: |-
+      👥 投資家向けコミュニティも運営中です。ぜひご参加ください
+      https://www.facebook.com/groups/2217518449046952/
     contact: |-
       ━━━━━━━━━━━━━
       📩 ご質問・資料請求はお気軽に
@@ -32,7 +39,57 @@ groups:
     allow_links: false
     allow_images: true
     forbidden: ["保証", "絶対", "確実"]
-    signature: ""
+    signature: |-
+      👥 投資家向けコミュニティも運営中です。ぜひご参加ください
+      https://www.facebook.com/groups/2217518449046952/
+    contact: |-
+      ━━━━━━━━━━━━━
+      📩 ご質問・資料請求はお気軽に
+      Messenger でメッセージ、または
+      ✉️ bukken511+ag@gmail.com
+      ━━━━━━━━━━━━━
+    enabled: true
+
+  # NOTE: "name" is a placeholder — rename to the real group name later.
+  - id: "630451722001309"
+    name: "収益不動産コミュニティ"
+    post_url: "https://www.facebook.com/groups/630451722001309"
+    # Highest-yield unposted property first — a different angle from the other
+    # groups so each group's daily post is a different listing (anti-spam).
+    selection_order: "yield_desc"
+    tone: "プロフェッショナル"
+    max_chars: 1200
+    active_hours: [7, 23]
+    allow_links: false
+    allow_images: true
+    forbidden: ["保証", "絶対", "確実"]
+    signature: |-
+      👥 投資家向けコミュニティも運営中です。ぜひご参加ください
+      https://www.facebook.com/groups/2217518449046952/
+    contact: |-
+      ━━━━━━━━━━━━━
+      📩 ご質問・資料請求はお気軽に
+      Messenger でメッセージ、または
+      ✉️ bukken511+ag@gmail.com
+      ━━━━━━━━━━━━━
+    enabled: true
+
+  # NOTE: "name" is a placeholder — rename to the real group name later.
+  - id: "792499964217824"
+    name: "不動産投資 物件情報シェア"
+    post_url: "https://www.facebook.com/groups/792499964217824"
+    # Most-expensive unposted property first — yet another distinct order so
+    # the four groups post four different listings on a given day.
+    selection_order: "price_desc"
+    tone: "プロフェッショナル"
+    max_chars: 1200
+    active_hours: [7, 23]
+    allow_links: false
+    allow_images: true
+    forbidden: ["保証", "絶対", "確実"]
+    signature: |-
+      👥 投資家向けコミュニティも運営中です。ぜひご参加ください
+      https://www.facebook.com/groups/2217518449046952/
     contact: |-
       ━━━━━━━━━━━━━
       📩 ご質問・資料請求はお気軽に

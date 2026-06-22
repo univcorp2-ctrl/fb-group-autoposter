@@ -37,6 +37,18 @@ def test_apply_group_rules_link_forbidden_signature_and_limit():
     assert "保証" not in result.body
 
 
+def test_invite_link_in_signature_survives_allow_links_false():
+    # The community-invite link lives in `signature`, which is appended AFTER
+    # link-stripping — so it must survive even when allow_links is false, while
+    # the property's own URL in the body is still removed.
+    invite = "👥 ご参加ください\nhttps://www.facebook.com/groups/2217518449046952/"
+    body = "物件 https://example.com/detail/1 のご紹介"
+    result = apply_group_rules(body, group(signature=invite, max_chars=300))
+    assert "https://www.facebook.com/groups/2217518449046952/" in result.body
+    assert "example.com" not in result.body  # body URL stripped
+    assert result.removed_links is True
+
+
 def test_append_signature_once_is_idempotent():
     once = append_signature_once("本文", "署名")
     twice = append_signature_once(once, "署名")
