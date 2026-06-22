@@ -39,6 +39,17 @@ def main() -> None:
     result = build_status_files(source, str(settings.db_path), OUT_DIR, root=ROOT)
     log.info("status DB built: %s", json.dumps(result["counts"], ensure_ascii=False))
     log.info("excel: %s", result["excel"])
+
+    # Keep EstateBoard (master store + live dashboard) in sync on the scheduled
+    # StatusDB rebuild too. Best-effort: never crash the status build.
+    try:
+        from scripts.sync_estateboard_status import sync_estateboard_status
+
+        eb = sync_estateboard_status(settings.db_path)
+        log.info("EstateBoard status synced: %s", json.dumps(eb, ensure_ascii=False))
+    except Exception as exc:  # noqa: BLE001 - EstateBoard sync is best-effort
+        log.warning("EstateBoard status sync skipped: %s: %s", type(exc).__name__, exc)
+
     print(json.dumps({"counts": result["counts"], "excel": result["excel"], "csv": result["csv"]}, ensure_ascii=False))
 
 
