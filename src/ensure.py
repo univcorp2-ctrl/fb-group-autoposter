@@ -69,17 +69,27 @@ async def ensure_posted_today(
     max_seconds: int = 3000,
     base_backoff: int = 60,
     backoff_cap: int = 900,
+    max_restores: int = 1,
 ) -> dict[str, Any]:
     """Retry posting until today's post lands or this run is out of budget.
 
     `run_once` performs one full cycle (refresh inbox + post). `restore_session`
     recovers an expired login (returns True if a backup was restored). Both the
     sleeper and clock are injectable for tests.
+
+    Session recovery is bounded by `max_restores`: a backup is restored at most
+    that many times. If the login is STILL expired after a restore (the backup
+    is itself stale) or there is no backup to restore, the run stops immediately
+    with reason ``session_unrecoverable`` / ``no_backup_to_restore`` instead of
+    looping until the scheduler kills it. The caller alerts the operator for a
+    manual re-login — burning the whole time budget on a dead session only hides
+    the real problem (this was the actual production failure mode).
     """
     from src.poster import SessionExpired
 
     start = time_fn()
     attempt = 0
+    restores_used = 0
     result: dict[str, Any] = {"attempts": 0, "posted": False, "reason": None, "restored": False}
 
     while True:
@@ -99,9 +109,21 @@ async def ensure_posted_today(
         try:
             await run_once()
         except SessionExpired:
+            if restores_used >= max_restores:
+                # Already restored a backup and the login is still expired — the
+                # backup is stale too. Stop now so the caller can alert for a
+                # manual re-login; never loop until the scheduler kills us.
+                log.error("session still expired after %d restore(s); stopping for manual re-login", restores_used)
+                result["reason"] = "session_unrecoverable"
+                return result
             restored = restore_session()
             result["restored"] = result["restored"] or restored
-            log.warning("session expired; profile restored=%s, will retry", restored)
+            if not restored:
+                log.error("session expired and no backup to restore; manual re-login required")
+                result["reason"] = "no_backup_to_restore"
+                return result
+            restores_used += 1
+            log.warning("session expired; profile restored from backup (%d/%d), will retry", restores_used, max_restores)
         except Exception as exc:  # noqa: BLE001 - keep going no matter what
             log.warning("post attempt %d failed: %s: %s", attempt, type(exc).__name__, exc)
 

@@ -133,6 +133,44 @@ def test_session_expiry_triggers_restore_then_succeeds():
     assert restored["n"] == 1
 
 
+def test_session_unrecoverable_stops_after_one_restore():
+    # A stale backup that restores "successfully" but is itself expired must NOT
+    # loop forever: restore once, and if the login is still expired, give up so
+    # the operator is alerted (the real production failure mode).
+    db = FakeDB()
+    calls = {"n": 0}
+    restored = {"n": 0}
+
+    async def run_once():
+        calls["n"] += 1
+        raise SessionExpired("still expired")
+
+    def restore():
+        restored["n"] += 1
+        return True
+
+    res = _run(db, run_once=run_once, restore_session=restore)
+    assert res["posted"] is False
+    assert res["reason"] == "session_unrecoverable"
+    assert restored["n"] == 1  # restored exactly once, then stopped
+    assert calls["n"] == 2
+
+
+def test_no_backup_to_restore_stops_immediately():
+    db = FakeDB()
+    calls = {"n": 0}
+
+    async def run_once():
+        calls["n"] += 1
+        raise SessionExpired("expired")
+
+    res = _run(db, run_once=run_once, restore_session=lambda: False)
+    assert res["posted"] is False
+    assert res["reason"] == "no_backup_to_restore"
+    assert res["restored"] is False
+    assert calls["n"] == 1
+
+
 def test_budget_exhausted_stops_for_next_trigger():
     db = FakeDB()
 
