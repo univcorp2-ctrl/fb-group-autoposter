@@ -76,6 +76,11 @@ New-DailyRun -Name 'FBAutoposter-Evening' -Script 'run_daily.py' -At '20:30' -Ra
 New-DailyRun -Name 'FBAutoposter-Monitor-AM' -Script 'monitor.py' -At '12:00' -RandomDelayMin 0 -Desc 'Posting health check (after morning run)'
 New-DailyRun -Name 'FBAutoposter-Monitor-PM' -Script 'monitor.py' -At '23:00' -RandomDelayMin 0 -Desc 'Posting health check (after evening run)'
 
+# --- Posting-status DB: rebuild the at-a-glance Excel/CSV (投稿済/未投稿 一覧) ---
+# Runs after the 09:00 EstateBoard refresh so new listings appear, and at logon.
+# run_daily also rebuilds it after every posting run, so the 投稿済 flag stays current.
+New-DailyRun -Name 'FBAutoposter-StatusDB' -Script 'build_status_db.py' -At '09:15' -RandomDelayMin 10 -Desc 'Rebuild posting-status Excel/CSV (投稿済/未投稿 一覧)' -AlsoAtLogon
+
 # --- Group discovery: refresh candidate real-estate / investor groups daily ---
 New-DailyRun -Name 'FBAutoposter-Discover' -Script 'discover_groups.py' -At '07:00' -RandomDelayMin 30 -Desc 'Discover candidate FB groups (review list only, no auto-join)'
 
