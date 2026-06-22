@@ -13,12 +13,19 @@ groups:
     allow_links: false
     allow_images: true
     forbidden: ["保証", "絶対", "確実"]
-    # signature is appended AFTER link-stripping, so the community invite link
-    # below always survives even though allow_links is false (only the
-    # property's own external URL is suppressed).
+    # signature is appended AFTER link-stripping, so the LINE 公式アカウント and
+    # community invite links below always survive even though allow_links is
+    # false (only the property's own external URL is suppressed). The LINE link
+    # promotes our own 未公開物件 channel; the FB link invites to our community.
     signature: |-
-      👥 投資家向けコミュニティも運営中です。ぜひご参加ください
-      https://www.facebook.com/groups/2217518449046952/
+      ━━━━━━━━━━━━━
+      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
+      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
+      　 👉 https://lin.ee/8u8OJTSL
+
+      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
+      　 👉 https://www.facebook.com/groups/2217518449046952/
+      ━━━━━━━━━━━━━
     contact: |-
       ━━━━━━━━━━━━━
       📩 ご質問・資料請求はお気軽に
@@ -40,8 +47,14 @@ groups:
     allow_images: true
     forbidden: ["保証", "絶対", "確実"]
     signature: |-
-      👥 投資家向けコミュニティも運営中です。ぜひご参加ください
-      https://www.facebook.com/groups/2217518449046952/
+      ━━━━━━━━━━━━━
+      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
+      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
+      　 👉 https://lin.ee/8u8OJTSL
+
+      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
+      　 👉 https://www.facebook.com/groups/2217518449046952/
+      ━━━━━━━━━━━━━
     contact: |-
       ━━━━━━━━━━━━━
       📩 ご質問・資料請求はお気軽に
@@ -64,8 +77,14 @@ groups:
     allow_images: true
     forbidden: ["保証", "絶対", "確実"]
     signature: |-
-      👥 投資家向けコミュニティも運営中です。ぜひご参加ください
-      https://www.facebook.com/groups/2217518449046952/
+      ━━━━━━━━━━━━━
+      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
+      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
+      　 👉 https://lin.ee/8u8OJTSL
+
+      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
+      　 👉 https://www.facebook.com/groups/2217518449046952/
+      ━━━━━━━━━━━━━
     contact: |-
       ━━━━━━━━━━━━━
       📩 ご質問・資料請求はお気軽に
@@ -88,8 +107,14 @@ groups:
     allow_images: true
     forbidden: ["保証", "絶対", "確実"]
     signature: |-
-      👥 投資家向けコミュニティも運営中です。ぜひご参加ください
-      https://www.facebook.com/groups/2217518449046952/
+      ━━━━━━━━━━━━━
+      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
+      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
+      　 👉 https://lin.ee/8u8OJTSL
+
+      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
+      　 👉 https://www.facebook.com/groups/2217518449046952/
+      ━━━━━━━━━━━━━
     contact: |-
       ━━━━━━━━━━━━━
       📩 ご質問・資料請求はお気軽に
