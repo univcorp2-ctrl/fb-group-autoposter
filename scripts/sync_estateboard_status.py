@@ -69,20 +69,25 @@ def _now_iso() -> str:
 
 
 def load_posted_meta(db_path: str) -> dict[str, dict[str, Any]]:
-    """property_id -> {posted_at, groups, screenshot} for posted/uncertain rows.
+    """property_id -> {posted_at, groups, screenshot, permalinks} for VERIFIED rows.
 
-    posted_at = latest of all posted/uncertain targets for that property.
-    groups    = sorted set of group_ids the property was posted to.
-    screenshot= one screenshot path (the latest non-empty), or "".
+    Only status='posted' counts — i.e. a post we actually found live on the group
+    (permalink captured). 'uncertain' (submitted but unconfirmed) is deliberately
+    EXCLUDED so the dashboard's 投稿済 never shows a post that may not be public.
+
+    posted_at  = latest of all verified targets for that property.
+    groups     = sorted set of group_ids the property was verified-posted to.
+    screenshot = one screenshot path (the latest non-empty), or "".
+    permalinks = sorted list of direct post URLs.
     """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
             """
-            SELECT j.property_id AS pid, t.group_id, t.posted_at, t.screenshot
+            SELECT j.property_id AS pid, t.group_id, t.posted_at, t.screenshot, t.permalink
             FROM job_targets t JOIN jobs j ON j.job_id = t.job_id
-            WHERE t.status IN ('posted', 'uncertain')
+            WHERE t.status = 'posted'
             ORDER BY COALESCE(t.posted_at, '') ASC
             """
         ).fetchall()
@@ -92,7 +97,7 @@ def load_posted_meta(db_path: str) -> dict[str, dict[str, Any]]:
     meta: dict[str, dict[str, Any]] = {}
     for r in rows:
         pid = r["pid"]
-        entry = meta.setdefault(pid, {"posted_at": None, "groups": set(), "screenshot": ""})
+        entry = meta.setdefault(pid, {"posted_at": None, "groups": set(), "screenshot": "", "permalinks": set()})
         if r["group_id"]:
             entry["groups"].add(str(r["group_id"]))
         posted_at = r["posted_at"]
@@ -100,6 +105,8 @@ def load_posted_meta(db_path: str) -> dict[str, dict[str, Any]]:
             entry["posted_at"] = posted_at
         if r["screenshot"]:
             entry["screenshot"] = str(r["screenshot"])
+        if r["permalink"]:
+            entry["permalinks"].add(str(r["permalink"]))
     return meta
 
 

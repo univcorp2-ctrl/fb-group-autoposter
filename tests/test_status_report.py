@@ -2,6 +2,7 @@
 from src.status_report import (
     STATUS_FAILED,
     STATUS_POSTED,
+    STATUS_UNCERTAIN,
     STATUS_UNPOSTED,
     PostRecord,
     build_rows,
@@ -27,7 +28,8 @@ def _item(pid, label, *, broker="TRUE", published="PUBLISHED", price="100000000"
 
 def test_classify_maps_status():
     assert classify(PostRecord("posted")) == STATUS_POSTED
-    assert classify(PostRecord("uncertain")) == STATUS_POSTED
+    # 'uncertain' is submitted-but-unverified — must NOT be counted as 投稿済.
+    assert classify(PostRecord("uncertain")) == STATUS_UNCERTAIN
     assert classify(PostRecord("failed")) == STATUS_FAILED
     assert classify(PostRecord("skipped")) == STATUS_UNPOSTED
     assert classify(None) == STATUS_UNPOSTED

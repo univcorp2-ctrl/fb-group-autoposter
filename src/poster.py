@@ -10,6 +10,7 @@ from typing import Any
 from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential_jitter
 
 from src.healer import heal_locate
+from src.post_verify import cookie_user_id, find_my_post
 from src.queue_db import QueueDB
 from src.selectors import SELECTORS
 from src.session import challenge_message, classify_challenge, is_logged_in, login_required_message
@@ -31,6 +32,13 @@ class SessionExpired(RuntimeError):
     pass
 
 
+class PostNotVerified(RuntimeError):
+    """The post was submitted but could not be confirmed live on the group (no
+    permalink found) — e.g. an approval-gated group holding it for moderation, or
+    a silent block. NOT retried (re-submitting would create duplicate pending
+    posts) and NEVER counted as 投稿済."""
+
+
 class CheckpointRequired(SessionExpired):
     """A login challenge (checkpoint / captcha / 2FA) that a profile restore can
     never fix — only a human re-login resolves it. Subclasses SessionExpired so
@@ -48,6 +56,7 @@ class FacebookPoster:
         self.db = db
         self.groups_by_id = {g["id"]: g for g in groups}
         self.notifier = notifier
+        self._user_id: str | None = None  # logged-in bot user id (for verification)
 
     def _group_allowed_now(self, group: dict[str, Any]) -> bool:
         hours = group.get("active_hours", [0, 24])
@@ -112,6 +121,11 @@ class FacebookPoster:
                 timeout=self.settings.page_hard_timeout * 1000,
             )
             page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
+            # The bot's own user id (c_user cookie) lets us open
+            # /groups/{gid}/user/{c_user} to verify each post actually published.
+            self._user_id = await cookie_user_id(browser_context)
+            if not self._user_id:
+                log.warning("could not read c_user cookie; posts cannot be verified this run")
             try:
                 posted_in_browser = 0
                 targets = self.db.unposted_targets(job["job_id"])
@@ -132,6 +146,14 @@ class FacebookPoster:
                         if self.notifier:
                             self.notifier.alert(login_required_message())
                         raise
+                    except PostNotVerified:
+                        # Submitted but not confirmed live. _post_one already
+                        # recorded it 'uncertain' (NOT 投稿済) and alerted with the
+                        # group URL. Count a group failure so the threshold flags
+                        # an approval-gated group; do NOT re-post (avoid dup pending).
+                        suggest_disable = self.db.record_group_result(target["group_id"], success=False, threshold=self.settings.group_fail_threshold)
+                        if suggest_disable and self.notifier:
+                            self.notifier.alert(f"連続未確認の閾値到達。投稿承認制/制限の可能性。groups.yamlでenabled:false検討: {group.get('name', target['group_id'])}")
                     except PostingBlocked as exc:
                         self.db.update_target_status(job["job_id"], target["group_id"], "failed", error=str(exc), increment_attempts=True)
                         if self.notifier:
@@ -211,7 +233,7 @@ class FacebookPoster:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential_jitter(initial=1, max=8),
-        retry=retry_if_not_exception_type((SessionExpired, PostingBlocked)),
+        retry=retry_if_not_exception_type((SessionExpired, PostingBlocked, PostNotVerified)),
         reraise=True,
     )
     async def _post_one(self, page: Any, job: dict[str, Any], target: dict[str, Any], group: dict[str, Any]) -> None:
@@ -230,14 +252,47 @@ class FacebookPoster:
         await self._detect_blocking_markers(page)
         await self._verify_composer_contains(page, target["body"])
         await self._click_first(page, "post_button", "投稿を確定するボタン", strict_after=True)
-        ok = await verify_post_visible(page, target["body"])
-        screenshot = await save_screenshot(page, prefix="posted" if ok else "uncertain", job_id=job["job_id"], group_id=target["group_id"])
-        if ok:
-            self.db.update_target_status(job["job_id"], target["group_id"], "posted", screenshot=screenshot)
-        else:
-            self.db.update_target_status(job["job_id"], target["group_id"], "uncertain", error="post result could not be verified", screenshot=screenshot)
+        # Let the composer settle/close, then VERIFY for real: find this post's
+        # direct permalink on the bot's in-group posts page. A closed composer is
+        # NOT proof of publication (approval-gated groups close it but hold the
+        # post) — only a found permalink is. This is the fix for false "posted".
+        await verify_post_visible(page, target["body"])
+        permalink = None
+        if self._user_id:
+            permalink = await find_my_post(page, target["group_id"], self._user_id, target["body"])
+        group_name = group.get("name", target["group_id"])
+        if permalink:
+            await self._open_permalink(page, permalink)
+            screenshot = await save_screenshot(page, prefix="posted", job_id=job["job_id"], group_id=target["group_id"])
+            self.db.update_target_status(job["job_id"], target["group_id"], "posted", screenshot=screenshot, permalink=permalink)
             if self.notifier:
-                self.notifier.alert(f"投稿成否が曖昧です。重複防止のため再投稿しません: job={job['job_id']} group={target['group_id']}")
+                self.notifier.send_message(
+                    f"✅ 投稿を確認しました（{group_name}）\n物件: {job['property_id']}\n🔗 {permalink}"
+                )
+            return
+        # Submitted but not found live -> record 'uncertain' (blocks same-day
+        # re-post to avoid duplicate pending submissions) but NOT counted as 投稿済.
+        screenshot = await save_screenshot(page, prefix="uncertain", job_id=job["job_id"], group_id=target["group_id"])
+        self.db.update_target_status(
+            job["job_id"], target["group_id"], "uncertain",
+            error="post not found live on group after submit (approval-gated/blocked?)",
+            screenshot=screenshot,
+        )
+        if self.notifier:
+            self.notifier.alert(
+                f"⚠️ 投稿を確認できませんでした（{group_name}）。承認制グループ/制限の可能性があります。\n"
+                f"確認URL: {group['post_url']}\n物件: {job['property_id']}（投稿済みにはカウントしません）"
+            )
+        raise PostNotVerified(f"post not verified live in group {target['group_id']}")
+
+    async def _open_permalink(self, page: Any, permalink: str) -> None:
+        """Open the confirmed post's permalink so the success screenshot shows the
+        actual published post (double-check evidence)."""
+        try:
+            await page.goto(permalink, wait_until="domcontentloaded", timeout=self.settings.page_hard_timeout * 1000)
+            await page.wait_for_timeout(2500)
+        except Exception as exc:  # noqa: BLE001 - screenshot is best-effort
+            log.warning("could not open permalink for screenshot: %s", exc)
 
     async def _raise_session_challenge(self, page: Any) -> None:
         """Raise the most specific session exception for the current page.

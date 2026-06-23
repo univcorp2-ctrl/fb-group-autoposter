@@ -22,12 +22,15 @@ from src.estateboard_adapter import (
 )
 
 STATUS_POSTED = "✅ 投稿済"
+STATUS_UNCERTAIN = "⚠️ 未確認（要確認）"
 STATUS_FAILED = "⚠️ 失敗"
 STATUS_UNPOSTED = "⬜ 未投稿"
 
-# Sort so history (posted) and actionable failures float to the top, then the
-# big unposted backlog newest-first.
-_STATUS_ORDER = {STATUS_POSTED: 0, STATUS_FAILED: 1, STATUS_UNPOSTED: 2}
+# Sort so verified history (posted) and actionable items (未確認/失敗) float to
+# the top, then the big unposted backlog newest-first. 投稿済 means VERIFIED:
+# the post was actually found live on the group (permalink). 未確認 = we clicked
+# post but could not confirm it went public (e.g. approval-gated group).
+_STATUS_ORDER = {STATUS_POSTED: 0, STATUS_UNCERTAIN: 1, STATUS_FAILED: 2, STATUS_UNPOSTED: 3}
 
 
 @dataclass(frozen=True)
@@ -71,7 +74,8 @@ def load_post_records(db_path: str) -> dict[str, PostRecord]:
     conn.close()
 
     best: dict[str, PostRecord] = {}
-    rank = {"posted": 3, "uncertain": 3, "failed": 2, "skipped": 1, "pending": 0}
+    # Verified 'posted' outranks 'uncertain' so a confirmed post always wins.
+    rank = {"posted": 4, "uncertain": 3, "failed": 2, "skipped": 1, "pending": 0}
     for r in rows:
         rec = PostRecord(r["status"], r["posted_at"], r["screenshot"], r["permalink"], r["body"])
         cur = best.get(r["pid"])
@@ -81,8 +85,12 @@ def load_post_records(db_path: str) -> dict[str, PostRecord]:
 
 
 def classify(record: PostRecord | None) -> str:
-    if record and record.status in ("posted", "uncertain"):
+    # Only a VERIFIED post (found live on the group) counts as 投稿済. 'uncertain'
+    # means submitted-but-unconfirmed and must NOT masquerade as posted.
+    if record and record.status == "posted":
         return STATUS_POSTED
+    if record and record.status == "uncertain":
+        return STATUS_UNCERTAIN
     if record and record.status == "failed":
         return STATUS_FAILED
     return STATUS_UNPOSTED
@@ -142,7 +150,7 @@ def _neg_str(s: str | None) -> str:
 
 
 def summarize(rows: list[PropertyStatus]) -> dict[str, int]:
-    counts = {STATUS_POSTED: 0, STATUS_FAILED: 0, STATUS_UNPOSTED: 0}
+    counts = {STATUS_POSTED: 0, STATUS_UNCERTAIN: 0, STATUS_FAILED: 0, STATUS_UNPOSTED: 0}
     for r in rows:
         counts[r.status] = counts.get(r.status, 0) + 1
     counts["total"] = len(rows)
@@ -168,8 +176,8 @@ COLUMNS: list[tuple[str, str, int]] = [
     ("掲載日", "created_at", 11),
     ("本文プレビュー", "body_preview", 40),
 ]
-_FILL = {STATUS_POSTED: "C6EFCE", STATUS_FAILED: "FFC7CE", STATUS_UNPOSTED: "F2F2F2"}
-_FONT = {STATUS_POSTED: "006100", STATUS_FAILED: "9C0006", STATUS_UNPOSTED: "808080"}
+_FILL = {STATUS_POSTED: "C6EFCE", STATUS_UNCERTAIN: "FFEB9C", STATUS_FAILED: "FFC7CE", STATUS_UNPOSTED: "F2F2F2"}
+_FONT = {STATUS_POSTED: "006100", STATUS_UNCERTAIN: "9C6500", STATUS_FAILED: "9C0006", STATUS_UNPOSTED: "808080"}
 
 
 def _abs_path(root: Any, path: str) -> str:
