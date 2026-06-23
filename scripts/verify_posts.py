@@ -73,7 +73,7 @@ async def run(*, headed: bool, probe: bool) -> dict:
         target_gids = {r["group_id"] for r in claimed} | set(groups.keys())
         for gid in target_gids:
             try:
-                posts = await collect_my_posts(page, gid, c_user)
+                posts = await collect_my_posts(page, gid, c_user, post_url=groups.get(gid, {}).get("post_url"))
             except Exception as exc:  # noqa: BLE001
                 log.warning("could not read group %s: %s", gid, exc)
                 posts = []

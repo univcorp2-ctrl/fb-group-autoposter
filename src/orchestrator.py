@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import random
+import sys
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -27,13 +29,38 @@ def _pid_is_running(pid: int) -> bool:
         return False
     if pid == os.getpid():
         return True
+    if sys.platform == "win32":
+        # os.kill(pid, 0) is unreliable on Windows (raises WinError 87 /
+        # SystemError for dead pids), which made a stale lock from a terminated
+        # run crash EVERY later run and silently halt posting. Query the process
+        # via the Win32 API instead and confirm it has not exited.
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            return bool(ok) and code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except PermissionError:
         return True
-    except OSError:
+    except (OSError, SystemError, ProcessLookupError):
         return False
     return True
+
+
+# A lock older than this is considered stale regardless of pid, as a backstop:
+# posting runs are capped at ~1h by the scheduler, so a 2h-old lock means the
+# owner died without cleaning up (terminated run). Never block forever.
+_LOCK_STALE_SECONDS = 2 * 60 * 60
 
 
 @contextmanager
@@ -43,8 +70,16 @@ def pipeline_lock(path: str | Path = "data/pipeline.lock") -> Iterator[None]:
     if lock.exists():
         try:
             pid = int(lock.read_text(encoding="utf-8").strip() or "0")
-            if pid and pid != os.getpid() and _pid_is_running(pid):
+            try:
+                age = time.time() - lock.stat().st_mtime
+            except OSError:
+                age = 0.0
+            owner_alive = bool(pid) and pid != os.getpid() and _pid_is_running(pid)
+            if owner_alive and age < _LOCK_STALE_SECONDS:
                 raise RuntimeError(f"pipeline lock exists: {lock} pid={pid}")
+            # Stale (owner dead, or lock too old to be real) -> reclaim it.
+            if age >= _LOCK_STALE_SECONDS:
+                log.warning("reclaiming stale pipeline lock (age=%.0fs, pid=%s)", age, pid)
             lock.unlink(missing_ok=True)
         except ValueError:
             lock.unlink(missing_ok=True)

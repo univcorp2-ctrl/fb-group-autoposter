@@ -57,9 +57,8 @@ async def cookie_user_id(context: Any) -> str | None:
     return None
 
 
-async def collect_my_posts(page: Any, group_id: str, user_id: str, *, scrolls: int = 4) -> list[dict[str, str]]:
-    """[{permalink, text}] for the bot's posts shown in this group (newest first)."""
-    url = f"https://www.facebook.com/groups/{group_id}/user/{user_id}"
+async def _collect_from_url(page: Any, url: str, *, scrolls: int) -> list[dict[str, str]]:
+    """[{permalink, text}] for every post anchor visible after loading `url`."""
     await page.goto(url, wait_until="domcontentloaded", timeout=60000)
     await page.wait_for_timeout(3500)
     for _ in range(scrolls):
@@ -83,6 +82,36 @@ async def collect_my_posts(page: Any, group_id: str, user_id: str, *, scrolls: i
     return list(seen.values())
 
 
+async def collect_my_posts(
+    page: Any,
+    group_id: str,
+    user_id: str,
+    *,
+    post_url: str | None = None,
+    scrolls: int = 4,
+) -> list[dict[str, str]]:
+    """Posts to match against, gathered from BOTH the group's chronological feed
+    and the bot's in-group posts page.
+
+    Why both: the bot's posts page (/groups/{id}/user/{uid}) is precise but
+    LAZY-LOADS unreliably for some groups — it can omit a freshly published post
+    entirely (a false negative that made real posts look unposted). The group's
+    CHRONOLOGICAL feed reliably shows a just-published post near the top. We merge
+    both sources so a post is found if EITHER shows it."""
+    base = post_url or f"https://www.facebook.com/groups/{group_id}"
+    feed_url = base + ("&" if "?" in base else "?") + "sorting_setting=CHRONOLOGICAL"
+    user_url = f"https://www.facebook.com/groups/{group_id}/user/{user_id}"
+
+    merged: dict[str, dict[str, str]] = {}
+    for url in (feed_url, user_url):
+        try:
+            for post in await _collect_from_url(page, url, scrolls=scrolls):
+                merged.setdefault(post["permalink"], post)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("collect from %s failed: %s", url, exc)
+    return list(merged.values())
+
+
 def match_permalink(body: str, posts: list[dict[str, str]]) -> str | None:
     needle = needle_of(body)
     if len(needle) < 4:  # too short to be distinctive
@@ -99,16 +128,17 @@ async def find_my_post(
     user_id: str,
     body: str,
     *,
+    post_url: str | None = None,
     attempts: int = 3,
 ) -> str | None:
     """Return the permalink of the bot's post matching `body`, or None.
 
-    Retries because a fresh post can take a few seconds to appear in the
-    user-in-group listing. None means the post is NOT visible — treat as NOT
-    published (e.g. an approval-gated group holding it for moderation)."""
+    Looks in BOTH the group's chronological feed and the bot's in-group posts
+    page, and retries because a fresh post can take a few seconds to surface.
+    None means the post is genuinely not visible in either place."""
     for attempt in range(attempts):
         try:
-            posts = await collect_my_posts(page, group_id, user_id)
+            posts = await collect_my_posts(page, group_id, user_id, post_url=post_url)
             permalink = match_permalink(body, posts)
             if permalink:
                 return permalink

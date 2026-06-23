@@ -259,7 +259,9 @@ class FacebookPoster:
         await verify_post_visible(page, target["body"])
         permalink = None
         if self._user_id:
-            permalink = await find_my_post(page, target["group_id"], self._user_id, target["body"])
+            permalink = await find_my_post(
+                page, target["group_id"], self._user_id, target["body"], post_url=group.get("post_url")
+            )
         group_name = group.get("name", target["group_id"])
         if permalink:
             await self._open_permalink(page, permalink)
