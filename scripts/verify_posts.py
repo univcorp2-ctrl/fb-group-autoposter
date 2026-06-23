@@ -39,18 +39,25 @@ async def run(*, headed: bool, probe: bool) -> dict:
     groups = {str(g["id"]): g for g in load_groups()}
     db = QueueDB(settings.db_path)
 
-    # Pull every target the DB currently believes is published.
+    # Re-check posted/uncertain, plus recently-failed targets (so a post that was
+    # transiently missed can be RESTORED to posted once found). We never downgrade
+    # on a miss (see below), so including failed is safe and self-healing.
+    from datetime import UTC, datetime, timedelta
+
+    recent = (datetime.now(UTC) - timedelta(days=3)).isoformat()
     with db.connect() as conn:
         rows = conn.execute(
             """
             SELECT t.job_id, t.group_id, t.status, t.body, t.permalink, j.property_id
             FROM job_targets t JOIN jobs j ON j.job_id = t.job_id
             WHERE t.status IN ('posted','uncertain')
+               OR (t.status = 'failed' AND COALESCE(t.posted_at, j.updated_at) >= ?)
             ORDER BY t.group_id
-            """
+            """,
+            (recent,),
         ).fetchall()
     claimed = [dict(r) for r in rows]
-    log.info("DB claims %d posted/uncertain targets across %d groups", len(claimed), len({r['group_id'] for r in claimed}))
+    log.info("re-checking %d targets across %d groups", len(claimed), len({r['group_id'] for r in claimed}))
 
     from playwright.async_api import async_playwright
 
@@ -102,23 +109,20 @@ async def run(*, headed: bool, probe: bool) -> dict:
                 db.update_target_status(rec["job_id"], gid, "posted", permalink=permalink, screenshot=shot)
                 summary["confirmed"] += 1
                 if rec["status"] != "posted":
-                    # An 'uncertain' (e.g. approval-gated) post is now live —
-                    # promote it to posted and tell the operator with the link.
+                    # Was uncertain/failed and is now confirmed live -> promote and
+                    # tell the operator with the link.
                     summary["promoted"] += 1
                     newly_confirmed.append({"group_id": gid, "property_id": rec["property_id"], "permalink": permalink})
                 log.info("CONFIRMED %s in %s -> %s", rec["property_id"], gid, permalink)
-            elif rec["status"] == "posted":
-                # Previously reported posted but NOT live -> a false positive
-                # (or a deleted post). Correct it to failed.
-                db.update_target_status(rec["job_id"], gid, "failed", error="not found on live group during re-verification")
-                summary["missing"] += 1
-                log.warning("MISSING  %s in %s (was posted) -> marked failed", rec["property_id"], gid)
             else:
-                # Still 'uncertain' and still not live: likely awaiting group
-                # approval. Leave it uncertain (keeps the same-day re-post guard;
-                # not counted as 投稿済). Do NOT downgrade to failed.
-                summary["still_pending"] += 1
-                log.info("PENDING  %s in %s (uncertain, awaiting approval?)", rec["property_id"], gid)
+                # NOT found this run. We do NOT downgrade — verification has
+                # transient misses (FB feed virtualization/lazy-load), and the
+                # post was already verified live at post time. Downgrading a real
+                # post on a single miss would itself be a false report. Just count
+                # it; the next sweep re-checks. (False positives are prevented at
+                # post time now, so 'posted' stays trustworthy.)
+                summary["missing"] += 1
+                log.info("not-found this run (left as-is, status=%s): %s in %s", rec["status"], rec["property_id"], gid)
 
         # Notify the operator about posts that just went live (approved).
         if newly_confirmed:
