@@ -57,45 +57,57 @@ async def cookie_user_id(context: Any) -> str | None:
     return None
 
 
-async def _scan_url(page: Any, url: str, *, scrolls: int) -> tuple[list[dict[str, str]], str]:
-    """Load `url`, scroll, and return (article posts, whole-page normalized text).
+_ARTICLE_JS = """arts => arts.map(a => {
+    const link = a.querySelector('a[href*="/posts/"], a[href*="/permalink/"]');
+    return { href: link ? link.href : '', text: (a.innerText || '').slice(0, 500) };
+})"""
 
-    Article posts pair each post's text with its permalink anchor. The whole-page
-    text is a robust fallback: if FB's DOM nesting hides the permalink, the page
-    text still proves the post is present."""
+
+async def _scan_url(page: Any, url: str, *, scrolls: int) -> tuple[list[dict[str, str]], str]:
+    """Load `url` and return (article posts, accumulated normalized page text).
+
+    CRITICAL: Facebook's feed is virtualized — scrolling unloads the TOP posts
+    from the DOM. A freshly published post lives at the top, so we must scrape
+    BEFORE scrolling and ACCUMULATE across scroll steps; scraping only after
+    scrolling misses the newest post (the false-negative bug)."""
     await page.goto(url, wait_until="domcontentloaded", timeout=60000)
     await page.wait_for_timeout(3500)
+
+    posts: list[dict[str, str]] = []
+    seen: set[str] = set()
+    text_parts: list[str] = []
+    noperma = 0
+
+    async def _harvest() -> None:
+        nonlocal noperma
+        try:
+            records = await page.eval_on_selector_all('div[role="article"]', _ARTICLE_JS)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("article scrape failed on %s: %s", url, exc)
+            records = []
+        for r in records:
+            href = (r.get("href") or "").split("?")[0]
+            m = POST_HREF_RE.search(href)
+            if m:
+                key = m.group(0)
+                if key in seen:
+                    continue
+                seen.add(key)
+                posts.append({"permalink": f"https://www.facebook.com{m.group(0)}", "text": r.get("text") or ""})
+            elif r.get("text"):
+                noperma += 1
+                posts.append({"permalink": "", "text": r.get("text") or ""})
+        try:
+            text_parts.append(norm(await page.inner_text("body")))
+        except Exception:  # noqa: BLE001
+            pass
+
+    await _harvest()  # top first (fresh posts live here)
     for _ in range(scrolls):
         await page.mouse.wheel(0, 2500)
         await page.wait_for_timeout(1300)
-    records = await page.eval_on_selector_all(
-        'div[role="article"]',
-        """arts => arts.map(a => {
-            const link = a.querySelector('a[href*="/posts/"], a[href*="/permalink/"]');
-            return { href: link ? link.href : '', text: (a.innerText || '').slice(0, 500) };
-        })""",
-    )
-    posts: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for r in records:
-        href = (r.get("href") or "").split("?")[0]
-        m = POST_HREF_RE.search(href)
-        key = m.group(0) if m else f"noperma:{len(posts)}"
-        if key in seen:
-            continue
-        seen.add(key)
-        posts.append(
-            {
-                "permalink": f"https://www.facebook.com{m.group(0)}" if m else "",
-                "text": r.get("text") or "",
-            }
-        )
-    page_text = ""
-    try:
-        page_text = norm(await page.inner_text("body"))
-    except Exception:  # noqa: BLE001
-        pass
-    return posts, page_text
+        await _harvest()
+    return posts, "".join(text_parts)
 
 
 def _verify_urls(group_id: str, user_id: str, post_url: str | None) -> list[str]:
