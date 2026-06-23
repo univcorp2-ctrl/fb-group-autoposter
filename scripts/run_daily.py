@@ -107,6 +107,58 @@ def _clear_session_alert(settings: Settings | None = None, db: QueueDB | None = 
         pass
 
 
+def _send_completion_report(settings: Settings, db: QueueDB, groups: list[dict]) -> None:
+    """Double-checked completion report to Telegram: list today's VERIFIED posts
+    (with their direct permalinks) and any unverified/failed ones (with the group
+    URL to check). Reads the DB, whose 'posted' rows were each confirmed live by
+    permalink at post time — so the report only calls something done when it is
+    genuinely verified, and always ships the link to double-check."""
+    from datetime import datetime, timedelta, timezone
+
+    from src.approval import TelegramApproval
+
+    jst = timezone(timedelta(hours=9))
+    start = datetime.now(jst).replace(hour=0, minute=0, second=0, microsecond=0)
+    start_utc = start.astimezone(timezone.utc).isoformat()
+    names = {str(g["id"]): g.get("name", g["id"]) for g in groups}
+    urls = {str(g["id"]): g.get("post_url", "") for g in groups}
+
+    with db.connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT t.group_id, t.status, t.permalink, j.property_id
+            FROM job_targets t JOIN jobs j ON j.job_id = t.job_id
+            WHERE COALESCE(t.posted_at, j.updated_at) >= ?
+            ORDER BY t.group_id
+            """,
+            (start_utc,),
+        ).fetchall()
+
+    verified = [r for r in rows if r["status"] == "posted"]
+    unverified = [r for r in rows if r["status"] in ("uncertain", "failed")]
+    if not verified and not unverified:
+        return  # nothing happened today; stay quiet
+
+    lines = [f"📋 本日の投稿完了報告（{start.strftime('%Y-%m-%d')}）", ""]
+    lines.append(f"✅ 検証済み投稿 {len(verified)}件:")
+    for r in verified:
+        lines.append(f"・{names.get(r['group_id'], r['group_id'])}：{r['property_id']}")
+        lines.append(f"　🔗 {r['permalink'] or '(リンク未取得)'}")
+    if unverified:
+        lines.append("")
+        lines.append(f"⚠️ 未確認/失敗 {len(unverified)}件（投稿済みにはカウントしません・要確認）:")
+        for r in unverified:
+            lines.append(f"・{names.get(r['group_id'], r['group_id'])}：{r['property_id']}")
+            lines.append(f"　確認: {urls.get(r['group_id'], '')}")
+
+    try:
+        notifier = TelegramApproval(settings, db)
+        if getattr(notifier, "enabled", False):
+            notifier.send_message("\n".join(lines))
+    except Exception as exc:  # noqa: BLE001 - report is best-effort
+        log.warning("completion report skipped: %s: %s", type(exc).__name__, exc)
+
+
 def _load_items(source: Path) -> list[dict]:
     data = json.loads(source.read_text(encoding="utf-8"))
     if isinstance(data, dict):
@@ -192,6 +244,10 @@ def main() -> None:
         log.info("EstateBoard status synced: %s", json.dumps(eb, ensure_ascii=False))
     except Exception as exc:  # noqa: BLE001 - EstateBoard sync is best-effort
         log.warning("EstateBoard status sync skipped: %s: %s", type(exc).__name__, exc)
+
+    # Double-checked completion report: only VERIFIED (permalink-confirmed) posts
+    # are reported as done, each with its link; unverified ones are flagged.
+    _send_completion_report(settings, db, groups)
 
 
 if __name__ == "__main__":
