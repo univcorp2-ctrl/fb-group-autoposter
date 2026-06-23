@@ -31,13 +31,15 @@ def test_needle_is_distinctive_between_two_of_our_posts():
 
 
 # --------------------------------------------------------------------------- #
-# find_my_post against a fake page (drives collect_my_posts + match end to end)
+# find_my_post against a fake page (drives _scan_url + match end to end)
 # --------------------------------------------------------------------------- #
 class FakePage:
-    """Minimal Playwright-page stand-in returning canned anchors."""
+    """Minimal Playwright-page stand-in. `articles` are returned by
+    eval_on_selector_all; `body_text` by inner_text('body')."""
 
-    def __init__(self, anchors):
-        self._anchors = anchors  # list of {href, text}
+    def __init__(self, articles, body_text=""):
+        self._articles = articles  # list of {href, text}
+        self._body_text = body_text
 
     async def goto(self, *a, **k):
         return None
@@ -54,24 +56,34 @@ class FakePage:
         return FakePage._Mouse()
 
     async def eval_on_selector_all(self, _selector, _script):
-        return self._anchors
+        return self._articles
+
+    async def inner_text(self, _selector):
+        return self._body_text
 
 
 def test_find_my_post_returns_permalink_when_present():
-    anchors = [
+    body = "不動産投資向けの案件です。\n🏢 中野区中野本町5丁目一棟収益レジデンス"
+    articles = [
         {"href": "https://www.facebook.com/groups/9/posts/777?x=1", "text": "サカモトヒロシ1時間·不動産投資向けの案件です。中野区中野本町5丁目一棟収益レジデンス"},
     ]
-    page = FakePage(anchors)
-    body = "不動産投資向けの案件です。\n🏢 中野区中野本町5丁目一棟収益レジデンス"
+    page = FakePage(articles, body_text="中野区中野本町5丁目一棟収益レジデンス")
     permalink = asyncio.run(find_my_post(page, "9", "123", body, attempts=1))
     assert permalink == "https://www.facebook.com/groups/9/posts/777"
 
 
-def test_find_my_post_returns_none_when_only_old_posts():
-    # Approval-gated group: our new post is NOT visible, only old manual posts.
-    anchors = [
-        {"href": "https://www.facebook.com/groups/9/posts/111", "text": "サカモトヒロシ4月20日·#物件紹介 スピード案件"},
-    ]
-    page = FakePage(anchors)
+def test_find_my_post_returns_none_when_absent():
     body = "不動産投資向けの案件です。\n🏢 中野区中野本町5丁目一棟収益レジデンス"
+    articles = [{"href": "https://www.facebook.com/groups/9/posts/111", "text": "サカモトヒロシ4月20日·#物件紹介 スピード案件"}]
+    page = FakePage(articles, body_text="サカモトヒロシ4月20日 別の古い投稿")
     assert asyncio.run(find_my_post(page, "9", "123", body, attempts=1)) is None
+
+
+def test_find_my_post_pagetext_fallback_returns_group_link():
+    # Post IS public (needle in page text) but no permalink anchor was parsed ->
+    # return the group URL as a best-effort link rather than a false negative.
+    body = "不動産投資向けの案件です。\n🏢 高円寺北二丁目 一棟"
+    articles = [{"href": "", "text": ""}]  # DOM hid the permalink
+    page = FakePage(articles, body_text="サカモトヒロシ1時間 高円寺北二丁目 一棟 価格")
+    out = asyncio.run(find_my_post(page, "9", "123", body, post_url="https://www.facebook.com/groups/9", attempts=1))
+    assert out == "https://www.facebook.com/groups/9"

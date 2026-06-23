@@ -57,29 +57,53 @@ async def cookie_user_id(context: Any) -> str | None:
     return None
 
 
-async def _collect_from_url(page: Any, url: str, *, scrolls: int) -> list[dict[str, str]]:
-    """[{permalink, text}] for every post anchor visible after loading `url`."""
+async def _scan_url(page: Any, url: str, *, scrolls: int) -> tuple[list[dict[str, str]], str]:
+    """Load `url`, scroll, and return (article posts, whole-page normalized text).
+
+    Article posts pair each post's text with its permalink anchor. The whole-page
+    text is a robust fallback: if FB's DOM nesting hides the permalink, the page
+    text still proves the post is present."""
     await page.goto(url, wait_until="domcontentloaded", timeout=60000)
     await page.wait_for_timeout(3500)
     for _ in range(scrolls):
         await page.mouse.wheel(0, 2500)
         await page.wait_for_timeout(1300)
     records = await page.eval_on_selector_all(
-        'a[href*="/posts/"], a[href*="/permalink/"]',
-        """els => els.map(e => {
-            const art = e.closest('[role="article"]');
-            return { href: e.href, text: (art?.innerText || '').slice(0, 400) };
+        'div[role="article"]',
+        """arts => arts.map(a => {
+            const link = a.querySelector('a[href*="/posts/"], a[href*="/permalink/"]');
+            return { href: link ? link.href : '', text: (a.innerText || '').slice(0, 500) };
         })""",
     )
-    seen: dict[str, dict[str, str]] = {}
+    posts: list[dict[str, str]] = []
+    seen: set[str] = set()
     for r in records:
         href = (r.get("href") or "").split("?")[0]
         m = POST_HREF_RE.search(href)
-        if not m:
+        key = m.group(0) if m else f"noperma:{len(posts)}"
+        if key in seen:
             continue
-        key = m.group(0)
-        seen.setdefault(key, {"permalink": f"https://www.facebook.com{key}", "text": r.get("text") or ""})
-    return list(seen.values())
+        seen.add(key)
+        posts.append(
+            {
+                "permalink": f"https://www.facebook.com{m.group(0)}" if m else "",
+                "text": r.get("text") or "",
+            }
+        )
+    page_text = ""
+    try:
+        page_text = norm(await page.inner_text("body"))
+    except Exception:  # noqa: BLE001
+        pass
+    return posts, page_text
+
+
+def _verify_urls(group_id: str, user_id: str, post_url: str | None) -> list[str]:
+    """Where to look, most-reliable first: the plain group feed shows the author's
+    freshly published post at the top (proven), then the bot's in-group page."""
+    urls = [post_url or f"https://www.facebook.com/groups/{group_id}"]
+    urls.append(f"https://www.facebook.com/groups/{group_id}/user/{user_id}")
+    return urls
 
 
 async def collect_my_posts(
@@ -90,23 +114,16 @@ async def collect_my_posts(
     post_url: str | None = None,
     scrolls: int = 4,
 ) -> list[dict[str, str]]:
-    """Posts to match against, gathered from BOTH the group's chronological feed
-    and the bot's in-group posts page.
-
-    Why both: the bot's posts page (/groups/{id}/user/{uid}) is precise but
-    LAZY-LOADS unreliably for some groups — it can omit a freshly published post
-    entirely (a false negative that made real posts look unposted). The group's
-    CHRONOLOGICAL feed reliably shows a just-published post near the top. We merge
-    both sources so a post is found if EITHER shows it."""
-    base = post_url or f"https://www.facebook.com/groups/{group_id}"
-    feed_url = base + ("&" if "?" in base else "?") + "sorting_setting=CHRONOLOGICAL"
-    user_url = f"https://www.facebook.com/groups/{group_id}/user/{user_id}"
-
+    """Posts to match against, merged from the group feed + the bot's posts page."""
     merged: dict[str, dict[str, str]] = {}
-    for url in (feed_url, user_url):
+    idx = 0
+    for url in _verify_urls(group_id, user_id, post_url):
         try:
-            for post in await _collect_from_url(page, url, scrolls=scrolls):
-                merged.setdefault(post["permalink"], post)
+            posts, _ = await _scan_url(page, url, scrolls=scrolls)
+            for post in posts:
+                key = post["permalink"] or f"noperma:{url}:{idx}"
+                idx += 1
+                merged.setdefault(key, post)
         except Exception as exc:  # noqa: BLE001
             log.warning("collect from %s failed: %s", url, exc)
     return list(merged.values())
@@ -118,7 +135,7 @@ def match_permalink(body: str, posts: list[dict[str, str]]) -> str | None:
         return None
     for post in posts:
         if needle in norm(post["text"]):
-            return post["permalink"]
+            return post["permalink"] or None
     return None
 
 
@@ -133,17 +150,36 @@ async def find_my_post(
 ) -> str | None:
     """Return the permalink of the bot's post matching `body`, or None.
 
-    Looks in BOTH the group's chronological feed and the bot's in-group posts
-    page, and retries because a fresh post can take a few seconds to surface.
-    None means the post is genuinely not visible in either place."""
+    Strategy, retried (a fresh post can take a few seconds to surface):
+      1. Scan the plain group feed (author sees their new post at the top), then
+         the bot's in-group page.
+      2. Match the property-title needle against each article -> return its
+         permalink.
+      3. Fallback: if no article carried a permalink but the needle IS in the
+         page text, the post IS public — return the group URL as a best-effort
+         link rather than a false negative.
+    None means the post was not found anywhere (genuinely not visible)."""
+    needle = needle_of(body)
+    if len(needle) < 4:
+        return None
     for attempt in range(attempts):
-        try:
-            posts = await collect_my_posts(page, group_id, user_id, post_url=post_url)
-            permalink = match_permalink(body, posts)
-            if permalink:
-                return permalink
-        except Exception as exc:  # noqa: BLE001
-            log.warning("verify attempt %d failed for group %s: %s", attempt + 1, group_id, exc)
+        page_text_hit_url: str | None = None
+        for url in _verify_urls(group_id, user_id, post_url):
+            try:
+                posts, page_text = await _scan_url(page, url, scrolls=4)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("verify scan failed for %s: %s", url, exc)
+                continue
+            for post in posts:
+                if needle in norm(post["text"]) and post["permalink"]:
+                    return post["permalink"]
+            if needle in page_text and page_text_hit_url is None:
+                page_text_hit_url = post_url or url
+        if page_text_hit_url:
+            # Confirmed present (page text) but no clean permalink anchor — better
+            # a best-effort group link than a false "not posted".
+            log.info("post confirmed via page text (no exact permalink) in group %s", group_id)
+            return page_text_hit_url
         if attempt < attempts - 1:
             await page.wait_for_timeout(4000)
     return None
