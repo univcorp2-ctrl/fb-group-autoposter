@@ -174,7 +174,12 @@ class TelegramApproval:
             ]
         }
         try:
-            self.send_message(f"🔴🔁 {message}\n\n※ 確認するまで通知し続けます。", reply_markup=buttons)
+            self.send_message(
+                f"🔴🔁 {message}\n\n"
+                "※ 復旧（再ログイン）まで通知し続けます。\n"
+                f"　止めるには ✅ ボタン、または PCで `python scripts/ack_alert.py {kind}` を実行してください。",
+                reply_markup=buttons,
+            )
             self.alert_store.mark_notified(kind)
         except Exception as exc:  # noqa: BLE001 - never let notification crash the caller
             log.warning("persistent alert send failed (%s): %s", kind, exc)
