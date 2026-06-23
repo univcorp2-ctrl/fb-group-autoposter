@@ -84,6 +84,14 @@ New-DailyRun -Name 'FBAutoposter-StatusDB' -Script 'build_status_db.py' -At '09:
 # --- Group discovery: refresh candidate real-estate / investor groups daily ---
 New-DailyRun -Name 'FBAutoposter-Discover' -Script 'discover_groups.py' -At '07:00' -RandomDelayMin 30 -Desc 'Discover candidate FB groups (review list only, no auto-join)'
 
+# --- Post verification: re-check live that posts are public; promote approved ---
+# Visits each group as the bot, confirms posts by their real permalink, promotes
+# approval-gated 'uncertain' posts to 投稿済 once they go live (with Telegram
+# notice), and corrects any stale 'posted' that is not actually live. Runs after
+# the posting windows so manual approvals are picked up the same day.
+New-DailyRun -Name 'FBAutoposter-Verify' -Script 'verify_posts.py' -At '11:30' -RandomDelayMin 20 -Desc 'Re-verify posts live by permalink; promote approved posts'
+New-DailyRun -Name 'FBAutoposter-Verify-PM' -Script 'verify_posts.py' -At '21:30' -RandomDelayMin 20 -Desc 'Re-verify posts live by permalink (evening); promote approved posts'
+
 # --- Alert re-notifier: keep pinging Telegram until the operator acknowledges ---
 # A dead login / checkpoint can never be fixed by a retry — it needs a human.
 # This task processes any tapped ✅ acknowledgements AND re-sends every still-

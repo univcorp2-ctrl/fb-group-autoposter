@@ -149,11 +149,11 @@ class FacebookPoster:
                     except PostNotVerified:
                         # Submitted but not confirmed live. _post_one already
                         # recorded it 'uncertain' (NOT 投稿済) and alerted with the
-                        # group URL. Count a group failure so the threshold flags
-                        # an approval-gated group; do NOT re-post (avoid dup pending).
-                        suggest_disable = self.db.record_group_result(target["group_id"], success=False, threshold=self.settings.group_fail_threshold)
-                        if suggest_disable and self.notifier:
-                            self.notifier.alert(f"連続未確認の閾値到達。投稿承認制/制限の可能性。groups.yamlでenabled:false検討: {group.get('name', target['group_id'])}")
+                        # group URL. Record the result for stats but do NOT re-post
+                        # (avoid dup pending). No disable-suggestion alert: the
+                        # operator opted to keep posting to approval-gated groups;
+                        # the scheduled verify sweep promotes posts once approved.
+                        self.db.record_group_result(target["group_id"], success=False, threshold=self.settings.group_fail_threshold)
                     except PostingBlocked as exc:
                         self.db.update_target_status(job["job_id"], target["group_id"], "failed", error=str(exc), increment_attempts=True)
                         if self.notifier:

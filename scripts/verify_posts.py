@@ -90,6 +90,9 @@ async def run(*, headed: bool, probe: bool) -> dict:
             return summary
 
         # Correct the DB against reality.
+        summary["promoted"] = 0
+        summary["still_pending"] = 0
+        newly_confirmed: list[dict] = []
         for rec in claimed:
             summary["checked"] += 1
             gid = rec["group_id"]
@@ -98,11 +101,39 @@ async def run(*, headed: bool, probe: bool) -> dict:
                 shot = await save_screenshot(await _open(page, permalink), prefix="verified", job_id=rec["job_id"], group_id=gid)
                 db.update_target_status(rec["job_id"], gid, "posted", permalink=permalink, screenshot=shot)
                 summary["confirmed"] += 1
+                if rec["status"] != "posted":
+                    # An 'uncertain' (e.g. approval-gated) post is now live —
+                    # promote it to posted and tell the operator with the link.
+                    summary["promoted"] += 1
+                    newly_confirmed.append({"group_id": gid, "property_id": rec["property_id"], "permalink": permalink})
                 log.info("CONFIRMED %s in %s -> %s", rec["property_id"], gid, permalink)
-            else:
+            elif rec["status"] == "posted":
+                # Previously reported posted but NOT live -> a false positive
+                # (or a deleted post). Correct it to failed.
                 db.update_target_status(rec["job_id"], gid, "failed", error="not found on live group during re-verification")
                 summary["missing"] += 1
-                log.warning("MISSING  %s in %s (DB said %s) -> marked failed", rec["property_id"], gid, rec["status"])
+                log.warning("MISSING  %s in %s (was posted) -> marked failed", rec["property_id"], gid)
+            else:
+                # Still 'uncertain' and still not live: likely awaiting group
+                # approval. Leave it uncertain (keeps the same-day re-post guard;
+                # not counted as 投稿済). Do NOT downgrade to failed.
+                summary["still_pending"] += 1
+                log.info("PENDING  %s in %s (uncertain, awaiting approval?)", rec["property_id"], gid)
+
+        # Notify the operator about posts that just went live (approved).
+        if newly_confirmed:
+            try:
+                from src.approval import TelegramApproval
+
+                notifier = TelegramApproval(settings, db)
+                if getattr(notifier, "enabled", False):
+                    lines = [f"✅ 公開を確認しました（{len(newly_confirmed)}件・承認済み）:", ""]
+                    for c in newly_confirmed:
+                        name = groups.get(c["group_id"], {}).get("name", c["group_id"])
+                        lines.append(f"・{name}：{c['property_id']}\n　🔗 {c['permalink']}")
+                    notifier.send_message("\n".join(lines))
+            except Exception as exc:  # noqa: BLE001
+                log.warning("promotion notice skipped: %s", exc)
 
         await ctx.close()
     return summary
