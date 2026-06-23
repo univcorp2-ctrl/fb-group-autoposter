@@ -92,9 +92,15 @@ New-DailyRun -Name 'FBAutoposter-Discover' -Script 'discover_groups.py' -At '07:
 function New-RepeatingRun {
     param([string]$Name, [string]$Script, [int]$EveryMinutes, [string]$Desc)
     $action = New-ScheduledTaskAction -Execute $Python -Argument "scripts\$Script" -WorkingDirectory $Root
-    $trigger = New-ScheduledTaskTrigger -Once -At '00:00' `
+    # A DAILY trigger that recurs every day, with a 30-min repetition grafted on
+    # so it fires all day, every day. (The earlier -Once trigger only covered the
+    # first 24h after registration and then stopped firing — NextRunTime went
+    # blank. The repetition duration must be < 24h to avoid overlap.)
+    $trigger = New-ScheduledTaskTrigger -Daily -At '00:00'
+    $rep = New-ScheduledTaskTrigger -Once -At '00:00' `
         -RepetitionInterval (New-TimeSpan -Minutes $EveryMinutes) `
-        -RepetitionDuration (New-TimeSpan -Days 1)
+        -RepetitionDuration (New-TimeSpan -Hours 23 -Minutes 59)
+    $trigger.Repetition = $rep.Repetition
     $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
     $logon.Delay = 'PT2M'
     $settings = New-ScheduledTaskSettingsSet `
