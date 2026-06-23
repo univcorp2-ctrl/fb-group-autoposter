@@ -26,6 +26,30 @@ def test_strip_links_removes_http_and_https():
     assert "http" not in out
 
 
+def test_apply_group_rules_is_idempotent_and_keeps_signature_urls():
+    # Regression: applying the rules twice must NOT duplicate the signature nor
+    # strip the signature's own URLs (LINE / community invite), even when
+    # allow_links is false. This was the cause of the duplicated, URL-stripped
+    # signature seen in real posts.
+    sig = (
+        "━━━\n"
+        "📲 未公開物件を配信中\n"
+        "👉 https://lin.ee/8u8OJTSL\n"
+        "👥 コミュニティ\n"
+        "👉 https://www.facebook.com/groups/2217518449046952/\n"
+        "━━━"
+    )
+    g = group(signature=sig, max_chars=1200)
+    once = apply_group_rules("物件本文 https://example.com/listing", g).body
+    twice = apply_group_rules(once, g).body
+    assert once == twice, "apply_group_rules must be idempotent"
+    # Signature URLs survive (appended after link-stripping); each appears once.
+    assert once.count("https://lin.ee/8u8OJTSL") == 1
+    assert once.count("https://www.facebook.com/groups/2217518449046952/") == 1
+    # The property's own external link is still stripped (allow_links false).
+    assert "https://example.com/listing" not in once
+
+
 def test_apply_group_rules_link_forbidden_signature_and_limit():
     result = apply_group_rules("絶対おすすめ 保証 https://example.com " + "あ" * 200, group())
     assert result.removed_links is True

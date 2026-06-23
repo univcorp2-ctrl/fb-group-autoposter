@@ -53,11 +53,19 @@ def enforce_max_chars(body: str, max_chars: int, signature: str | None = None) -
 
 
 def apply_group_rules(body: str, group: dict[str, Any]) -> RuleResult:
+    signature = group.get("signature", "") or ""
+    # Idempotency: if a previous apply already appended the signature, remove it
+    # BEFORE link-stripping. Otherwise strip_links (allow_links=false) would
+    # delete the signature's own URLs (e.g. the LINE / community-invite links),
+    # and append_signature_once would then add a second, intact copy — producing
+    # a duplicated signature whose first copy has empty 👉 lines. Removing it
+    # first makes apply_group_rules safe to call any number of times.
+    if signature.strip() and signature in body:
+        body = body.replace(signature, "").rstrip()
     removed_links = False
     if not group.get("allow_links", True):
         body, removed_links = strip_links(body)
     body, removed_forbidden = remove_forbidden_words(body, group.get("forbidden", []))
-    signature = group.get("signature", "") or ""
     body = append_signature_once(body, signature)
     body, truncated = enforce_max_chars(body, int(group.get("max_chars", 1500)), signature)
     return RuleResult(
