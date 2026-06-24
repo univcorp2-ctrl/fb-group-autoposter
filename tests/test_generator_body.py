@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from src.generator import build_hashtags, fallback_body
+from types import SimpleNamespace
+
+from src.generator import build_hashtags, fallback_body, generate_variants
 
 GROUP = {
     "id": "g1",
@@ -55,3 +57,27 @@ def test_fallback_body_removes_forbidden_words():
     prop = dict(PROP, title="絶対に儲かる物件")
     body = fallback_body(prop, GROUP)
     assert "絶対" not in body
+
+
+def test_generated_post_always_includes_line_and_community_links():
+    # Regression: every post MUST carry the LINE official-account link and the
+    # community-invite link (they live in `signature`, appended after link
+    # stripping). This guards against the duplication/strip bug ever silently
+    # dropping them again, even when allow_links is false.
+    signature = (
+        "━━━\n"
+        "📲 未公開物件をLINEで配信中\n"
+        "👉 https://lin.ee/8u8OJTSL\n"
+        "👥 コミュニティ\n"
+        "👉 https://www.facebook.com/groups/2217518449046952/\n"
+        "━━━"
+    )
+    group = dict(GROUP, signature=signature, allow_links=False)
+    settings = SimpleNamespace(anthropic_api_key="")  # force fallback path
+    batch = generate_variants(PROP, [group], settings)
+    body = batch.variants[0]["body"]
+    assert "https://lin.ee/8u8OJTSL" in body, "LINE link missing from post"
+    assert "https://www.facebook.com/groups/2217518449046952/" in body, "community invite missing"
+    # Property's own external URL is still stripped (allow_links false).
+    assert "estate-board.com" not in body
+    assert len(body) <= group["max_chars"]

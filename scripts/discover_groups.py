@@ -27,22 +27,61 @@ sys.path.insert(0, str(ROOT))
 
 from config import Settings, load_groups
 
-KEYWORDS = [
-    "不動産投資",
-    "収益物件",
-    "一棟 収益",
-    "不動産投資家",
-    "投資家 交流",
-    "富裕層 投資",
-    "資産運用 不動産",
-    "不動産オーナー",
-    "大家 交流",
-    "経営者 投資 交流",
-]
+# Keywords grouped by AUDIENCE CATEGORY, so each candidate carries a category we
+# can reason about when proposing it. Categories cover the core real-estate
+# audience PLUS adjacent communities where property posts OR other distribution
+# (e.g. the LINE 未公開物件 channel) would be welcome.
+KEYWORD_CATEGORIES: dict[str, list[str]] = {
+    "不動産投資（コア）": [
+        "不動産投資", "収益物件", "一棟 収益", "不動産投資家",
+        "不動産オーナー", "大家 交流", "資産運用 不動産", "区分マンション 投資",
+    ],
+    "投資・資産形成（隣接）": [
+        "投資家 交流", "資産形成", "FIRE 投資", "副業 投資", "資産運用",
+    ],
+    "富裕層・経営者（別件配信もOK）": [
+        "富裕層 投資", "経営者 交流", "社長 交流", "起業家 交流", "ドクター 投資",
+    ],
+    "物件・売買情報": [
+        "不動産 売買", "物件情報 共有", "不動産 情報交換",
+    ],
+}
+# Why each category is a fit — shown in the daily proposal so the operator can
+# decide quickly.
+CATEGORY_RATIONALE: dict[str, str] = {
+    "不動産投資（コア）": "本業の収益物件投稿に最適。最優先で参加検討。",
+    "投資・資産形成（隣接）": "投資家層が濃く、物件投稿＋LINE配信の導線が刺さりやすい。",
+    "富裕層・経営者（別件配信もOK）": "購買力が高く、不動産以外の配信(LINE未公開物件等)も歓迎されやすい。",
+    "物件・売買情報": "物件情報の共有が前提の場なので投稿が自然になじむ。",
+}
+_KEYWORD_TO_CATEGORY = {kw: cat for cat, kws in KEYWORD_CATEGORIES.items() for kw in kws}
+KEYWORDS = list(_KEYWORD_TO_CATEGORY.keys())
 
 CANDIDATES_JSON = ROOT / "data" / "group_candidates.json"
 CANDIDATES_MD = ROOT / "data" / "group_candidates.md"
 GROUP_ID_RE = re.compile(r"/groups/(\d+)")
+
+
+def _parse_member_count(text: str) -> int:
+    """Best-effort parse of a members string ('1.2万人のメンバー', '3,456 members')
+    into an int for ranking. Returns 0 when unknown."""
+    if not text:
+        return 0
+    import re as _re
+
+    m = _re.search(r"([\d.,]+)\s*万", text)
+    if m:
+        try:
+            return int(float(m.group(1).replace(",", "")) * 10000)
+        except ValueError:
+            return 0
+    m = _re.search(r"([\d,]{2,})", text)
+    if m:
+        try:
+            return int(m.group(1).replace(",", ""))
+        except ValueError:
+            return 0
+    return 0
 
 
 def _load_existing() -> dict[str, dict]:
@@ -105,6 +144,7 @@ async def _search_keyword(page, keyword: str) -> list[dict]:
             "members": members,
             "privacy": privacy,
             "keyword": keyword,
+            "category": _KEYWORD_TO_CATEGORY.get(keyword, "その他"),
         }
     return list(found.values())
 
@@ -158,12 +198,14 @@ async def main() -> None:
         "",
         "> 自動参加はしません（ban回避）。良いグループに手動で参加し、URLを groups.yaml に追加してください。",
         "",
-        "| 名前 | メンバー | 公開/非公開 | URL | 検出キーワード |",
-        "|------|----------|-------------|-----|----------------|",
+        "| カテゴリ | 名前 | メンバー | 公開/非公開 | URL | 検出キーワード |",
+        "|----------|------|----------|-------------|-----|----------------|",
     ]
-    for c in candidates[:200]:
+    ranked = sorted(candidates, key=lambda c: _parse_member_count(c.get("members", "")), reverse=True)
+    for c in ranked[:200]:
         lines.append(
-            f"| {c.get('name','')} | {c.get('members','')} | {c.get('privacy','')} | {c['url']} | {c.get('keyword','')} |"
+            f"| {c.get('category','')} | {c.get('name','')} | {c.get('members','')} | "
+            f"{c.get('privacy','')} | {c['url']} | {c.get('keyword','')} |"
         )
     CANDIDATES_MD.write_text("\n".join(lines), encoding="utf-8")
     print(f"discovered {discovered_new} new candidates; total {len(candidates)}")
@@ -177,7 +219,12 @@ async def main() -> None:
 
 
 def _notify_new_candidates(settings: Settings, new_candidates: list[dict]) -> None:
-    """Send a concise Telegram list of newly found candidate groups."""
+    """Send a thoughtful daily PROPOSAL of where to post next.
+
+    Groups candidates by audience category, ranks each by member count, leads
+    with the best 3 picks (with reasoning), and explains which kind of content
+    fits each category (property posts vs other distribution). Joining stays
+    manual on purpose (auto-join is a strong ban signal)."""
     try:
         from src.approval import TelegramApproval
         from src.queue_db import QueueDB
@@ -185,14 +232,31 @@ def _notify_new_candidates(settings: Settings, new_candidates: list[dict]) -> No
         notifier = TelegramApproval(settings, QueueDB(settings.db_path))
         if not getattr(notifier, "enabled", False):
             return
-        top = new_candidates[:10]
-        lines = [f"🔎 投稿候補になりそうな新規グループ {len(new_candidates)}件を発見しました（自動参加はしません）:", ""]
-        for c in top:
-            members = f"／{c['members']}" if c.get("members") else ""
-            lines.append(f"・{c.get('name') or c['group_id']}{members}\n　{c['url']}")
-        if len(new_candidates) > len(top):
-            lines.append(f"\n…ほか {len(new_candidates) - len(top)}件。data/group_candidates.md を参照。")
-        lines.append("\n良いグループに手動参加後、groups.yaml にURLを追加すれば投稿対象になります。")
+
+        ranked = sorted(new_candidates, key=lambda c: _parse_member_count(c.get("members", "")), reverse=True)
+        lines = [
+            f"🔎 今日のコミュニティ提案：投稿できそうな新規グループ {len(new_candidates)}件",
+            "（自動参加はしません。良い所に手動参加→groups.yamlにURL追加で投稿対象に）",
+            "",
+            "⭐ おすすめ参加先 TOP3:",
+        ]
+        for c in ranked[:3]:
+            mem = f"（{c['members']}）" if c.get("members") else ""
+            note = CATEGORY_RATIONALE.get(c.get("category", ""), "")
+            lines.append(f"・{c.get('name') or c['group_id']}{mem}\n　{c['url']}\n　▶ {c.get('category','')}：{note}")
+
+        by_cat: dict[str, list[dict]] = {}
+        for c in ranked:
+            by_cat.setdefault(c.get("category", "その他"), []).append(c)
+        for cat, items in by_cat.items():
+            lines.append("")
+            lines.append(f"■ {cat}（{len(items)}件）— {CATEGORY_RATIONALE.get(cat,'')}")
+            for c in items[:5]:
+                mem = f"／{c['members']}" if c.get("members") else ""
+                lines.append(f"・{c.get('name') or c['group_id']}{mem}\n　{c['url']}")
+            if len(items) > 5:
+                lines.append(f"　…ほか{len(items)-5}件")
+        lines.append("\n全件は data/group_candidates.md を参照。")
         notifier.send_message("\n".join(lines))
     except Exception as exc:  # noqa: BLE001 - discovery notice must never crash the run
         print(f"[warn] candidate notification skipped: {exc}")
