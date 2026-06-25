@@ -134,6 +134,13 @@ function New-RepeatingRun {
 }
 New-RepeatingRun -Name 'FBAutoposter-Renotify' -Script 'renotify_alerts.py' -EveryMinutes 30 -Desc 'Re-notify unacknowledged session/checkpoint alerts until operator confirms'
 
+# --- EstateBoard bridge: sync posting status -> data.json -> Cloudflare Pages ---
+# Runs in the BACKGROUND every 2 hours so the public dashboard
+# (estateboard.pages.dev) always reflects posting status + 投稿先 hyperlinks.
+# Cheap & idempotent: it only commits/pushes/deploys when data actually changed
+# (git detects no diff -> no deploy). Also runs after every posting/verify run.
+New-RepeatingRun -Name 'FBAutoposter-Bridge' -Script 'sync_estateboard_status.py' -EveryMinutes 120 -Desc 'Sync FB posting status to EstateBoard dashboard + deploy to Cloudflare (background)'
+
 Write-Host 'Registered tasks:'
 Get-ScheduledTask -TaskName 'FBAutoposter-*' | Select-Object TaskName, State | Format-Table -AutoSize
 

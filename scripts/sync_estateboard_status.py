@@ -51,6 +51,9 @@ POSTED_COLUMN = "投稿済"
 POSTED_LABEL = "✅ 投稿済"
 POSTED_TO_COLUMN = "投稿先"
 POSTED_DATE_COLUMN = "投稿日"
+# Row-data field (not a visible column) holding the direct post permalink so the
+# dashboard can render 投稿先 as a hyperlink to the actual Facebook post.
+POSTED_TO_URL_FIELD = "投稿先URL"
 
 
 def _group_name_map() -> dict[str, str]:
@@ -97,7 +100,9 @@ def load_posted_meta(db_path: str) -> dict[str, dict[str, Any]]:
     meta: dict[str, dict[str, Any]] = {}
     for r in rows:
         pid = r["pid"]
-        entry = meta.setdefault(pid, {"posted_at": None, "groups": set(), "screenshot": "", "permalinks": set()})
+        entry = meta.setdefault(
+            pid, {"posted_at": None, "groups": set(), "screenshot": "", "permalinks": set(), "to_url": ""}
+        )
         if r["group_id"]:
             entry["groups"].add(str(r["group_id"]))
         posted_at = r["posted_at"]
@@ -107,6 +112,9 @@ def load_posted_meta(db_path: str) -> dict[str, dict[str, Any]]:
             entry["screenshot"] = str(r["screenshot"])
         if r["permalink"]:
             entry["permalinks"].add(str(r["permalink"]))
+            # Rows are ASC by posted_at, so the last permalink seen is the latest
+            # -> the primary direct-post URL the dashboard links 投稿先 to.
+            entry["to_url"] = str(r["permalink"])
     return meta
 
 
@@ -197,6 +205,7 @@ def patch_master(
             display_info[str(rec.get("id"))] = {
                 "groups": ", ".join(names),
                 "date": str(posted_at)[:10],
+                "to_url": info.get("to_url", ""),  # direct post permalink for the 投稿先 hyperlink
                 "fields": _display_fields(rec),
             }
             marked += 1
@@ -247,9 +256,12 @@ def patch_data_json(data_path: Path, display_info: dict[str, dict[str, str]]) ->
             POSTED_COLUMN: POSTED_LABEL if is_posted else "",
             POSTED_TO_COLUMN: info["groups"] if is_posted else "",
             POSTED_DATE_COLUMN: info["date"] if is_posted else "",
+            # Row-data only (NOT a visible column): the dashboard's 投稿先 formatter
+            # turns the group name into a hyperlink to this direct post URL.
+            POSTED_TO_URL_FIELD: info.get("to_url", "") if is_posted else "",
         }
         for k, v in item.items():
-            if k not in _INJECTED_COLUMNS:
+            if k not in _INJECTED_COLUMNS and k != POSTED_TO_URL_FIELD:
                 rebuilt[k] = v
         new_items.append(rebuilt)
 
@@ -264,6 +276,7 @@ def patch_data_json(data_path: Path, display_info: dict[str, dict[str, str]]) ->
         row[POSTED_COLUMN] = POSTED_LABEL
         row[POSTED_TO_COLUMN] = info["groups"]
         row[POSTED_DATE_COLUMN] = info["date"]
+        row[POSTED_TO_URL_FIELD] = info.get("to_url", "")
         for k, v in (info.get("fields") or {}).items():
             if k in row:
                 row[k] = v
