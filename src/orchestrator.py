@@ -175,21 +175,27 @@ async def run_cycle_grouped(
         db.reset_stale_posting_jobs()
         db.mark_heartbeat("orchestrator")
 
+        # Properties chosen for an earlier group THIS run, so no two groups ever
+        # post the SAME listing on the same day — even when their selection_order
+        # overlaps (which happens once there are more groups than distinct orders).
+        selected_this_run: set[str] = set()
         for group in groups:
             if db.posted_same_group_today(group["id"]):
                 summary["skipped_groups"] = int(summary["skipped_groups"]) + 1
                 continue
             order = group.get("selection_order", "newest")
+            exclude = db.posted_property_ids_for_group(group["id"]) | selected_this_run
             picks = select_postable(
                 items,
                 limit=1,
-                exclude_ids=db.posted_property_ids_for_group(group["id"]),
+                exclude_ids=exclude,
                 order=order,
             )
             if not picks:
                 log.warning("no fresh property for group %s (order=%s)", group["id"], order)
                 continue
             prop = picks[0]
+            selected_this_run.add(prop["property_id"])
             batch = generate_variants(prop, [group], settings)
             job_id = db.create_job(prop, batch.variants, degraded=batch.degraded)
             notifier.auto_or_send_preview(job_id)

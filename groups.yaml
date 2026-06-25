@@ -122,3 +122,36 @@ groups:
       ✉️ bukken511+ag@gmail.com
       ━━━━━━━━━━━━━
     enabled: true
+
+  # 投資家向け（株・FX・仮想通貨・不動産）9,691人。2026-06-25 追加。
+  # ※ Bot アカウント(サカモト ヒロシ)がこのグループのメンバーである必要あり。
+  #   未参加だと投稿できず verify が未投稿として検知する（その場合は要手動参加）。
+  - id: "628818327463444"
+    name: "投資家になろう（株・FX・仮想通貨・不動産）"
+    post_url: "https://www.facebook.com/groups/628818327463444"
+    # High-yield first — fits an investor audience. The orchestrator also excludes
+    # any property already selected for another group THIS run, so no two groups
+    # post the same listing on the same day regardless of order overlap.
+    selection_order: "yield_desc"
+    tone: "プロフェッショナル"
+    max_chars: 1200
+    active_hours: [7, 23]
+    allow_links: false
+    allow_images: true
+    forbidden: ["保証", "絶対", "確実"]
+    signature: |-
+      ━━━━━━━━━━━━━
+      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
+      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
+      　 👉 https://lin.ee/8u8OJTSL
+
+      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
+      　 👉 https://www.facebook.com/groups/2217518449046952/
+      ━━━━━━━━━━━━━
+    contact: |-
+      ━━━━━━━━━━━━━
+      📩 ご質問・資料請求はお気軽に
+      Messenger でメッセージ、または
+      ✉️ bukken511+ag@gmail.com
+      ━━━━━━━━━━━━━
+    enabled: true
