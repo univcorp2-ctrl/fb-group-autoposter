@@ -349,11 +349,36 @@ def _git_sync_eb(eb_root: Path, master_path: Path, data_path: Path) -> bool:
         push = _git("push")
         if push.returncode != 0:
             log.warning("EstateBoard push failed: %s", (push.stderr or push.stdout)[:200])
-            return False
-        log.info("EstateBoard committed + pushed (dashboard will redeploy)")
+        # The live dashboard (estateboard.pages.dev) is deployed via
+        # `wrangler pages deploy docs`, NOT git auto-deploy — so a git push alone
+        # does NOT update the public site. Deploy here so posting status appears
+        # live. Best-effort: needs local wrangler auth (present on the operator's
+        # PC); skipped cleanly in CI/headless without it.
+        deployed = _wrangler_deploy_eb(eb_root)
+        log.info("EstateBoard committed + pushed; deployed=%s", deployed)
         return True
     except Exception as exc:  # noqa: BLE001 - sync must never crash the run
         log.warning("EstateBoard git sync skipped: %s: %s", type(exc).__name__, exc)
+        return False
+
+
+def _wrangler_deploy_eb(eb_root: Path) -> bool:
+    """Deploy docs/ to Cloudflare Pages so the public dashboard reflects the
+    patched data.json. Mirrors EstateBoard's daily_pipeline deploy step."""
+    import subprocess
+
+    try:
+        cp = subprocess.run(
+            ["npx", "wrangler", "pages", "deploy", "docs",
+             "--project-name=estateboard", "--commit-dirty=true"],
+            cwd=str(eb_root), capture_output=True, text=True, timeout=600, shell=True, check=False,
+        )
+        if cp.returncode != 0:
+            log.warning("wrangler deploy skipped/failed: %s", (cp.stderr or cp.stdout)[-200:])
+            return False
+        return True
+    except Exception as exc:  # noqa: BLE001 - deploy is best-effort
+        log.warning("wrangler deploy skipped: %s: %s", type(exc).__name__, exc)
         return False
 
 
