@@ -14,6 +14,7 @@ data/jobs.db
 data/pipeline.lock
 data/telegram_offset.txt
 data/pending_alerts.json
+data/engagement.json
 data/inbox/*
 !data/inbox/.gitkeep
 __pycache__/

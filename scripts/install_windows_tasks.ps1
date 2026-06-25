@@ -92,6 +92,10 @@ New-DailyRun -Name 'FBAutoposter-Discover' -Script 'discover_groups.py' -At '07:
 New-DailyRun -Name 'FBAutoposter-Verify' -Script 'verify_posts.py' -At '11:30' -RandomDelayMin 20 -Desc 'Re-verify posts live by permalink; promote approved posts'
 New-DailyRun -Name 'FBAutoposter-Verify-PM' -Script 'verify_posts.py' -At '21:30' -RandomDelayMin 20 -Desc 'Re-verify posts live by permalink (evening); promote approved posts'
 
+# --- Engagement monitor: reactions/comments on published posts -> Telegram ---
+New-DailyRun -Name 'FBAutoposter-Engagement' -Script 'monitor_engagement.py' -At '12:30' -RandomDelayMin 20 -Desc 'Monitor reactions/comments on posts; report to Telegram'
+New-DailyRun -Name 'FBAutoposter-Engagement-PM' -Script 'monitor_engagement.py' -At '22:30' -RandomDelayMin 20 -Desc 'Monitor reactions/comments on posts (evening); report to Telegram'
+
 # --- Alert re-notifier: keep pinging Telegram until the operator acknowledges ---
 # A dead login / checkpoint can never be fixed by a retry — it needs a human.
 # This task processes any tapped ✅ acknowledgements AND re-sends every still-
