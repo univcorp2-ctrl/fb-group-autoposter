@@ -37,6 +37,8 @@ class Settings:
     claude_vision_model: str
     telegram_bot_token: str
     telegram_chat_id: str
+    notion_token: str
+    notion_database_id: str
     dry_run: bool
     auto_approve: bool
     auto_approve_skip_degraded: bool
@@ -70,6 +72,8 @@ class Settings:
             claude_vision_model=os.getenv("CLAUDE_VISION_MODEL", "claude-sonnet-4-6"),
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
+            notion_token=os.getenv("NOTION_TOKEN", ""),
+            notion_database_id=os.getenv("NOTION_DATABASE_ID", ""),
             dry_run=_bool("DRY_RUN", True),
             auto_approve=_bool("AUTO_APPROVE", False),
             auto_approve_skip_degraded=_bool("AUTO_APPROVE_SKIP_DEGRADED", True),

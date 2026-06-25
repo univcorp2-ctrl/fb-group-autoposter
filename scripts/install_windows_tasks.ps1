@@ -96,6 +96,15 @@ New-DailyRun -Name 'FBAutoposter-Verify-PM' -Script 'verify_posts.py' -At '21:30
 New-DailyRun -Name 'FBAutoposter-Engagement' -Script 'monitor_engagement.py' -At '12:30' -RandomDelayMin 20 -Desc 'Monitor reactions/comments on posts; report to Telegram'
 New-DailyRun -Name 'FBAutoposter-Engagement-PM' -Script 'monitor_engagement.py' -At '22:30' -RandomDelayMin 20 -Desc 'Monitor reactions/comments on posts (evening); report to Telegram'
 
+# --- FB notifications: keep only reactions/comments on OUR posts -> Telegram ---
+New-DailyRun -Name 'FBAutoposter-Notifications' -Script 'monitor_notifications.py' -At '10:00' -RandomDelayMin 20 -Desc 'Summarize FB notifications about our posts (filter noise) -> Telegram'
+New-DailyRun -Name 'FBAutoposter-Notifications-PM' -Script 'monitor_notifications.py' -At '20:00' -RandomDelayMin 20 -Desc 'Summarize FB notifications about our posts (evening) -> Telegram'
+
+# --- Notion sync: record daily engagement to Notion DB (needs NOTION_TOKEN) ---
+# Runs ~15 min after the engagement scrape so data/engagement.json is fresh.
+New-DailyRun -Name 'FBAutoposter-NotionSync' -Script 'sync_notion_engagement.py' -At '12:45' -RandomDelayMin 15 -Desc 'Record daily post engagement to Notion DB'
+New-DailyRun -Name 'FBAutoposter-NotionSync-PM' -Script 'sync_notion_engagement.py' -At '22:45' -RandomDelayMin 15 -Desc 'Record daily post engagement to Notion DB (evening)'
+
 # --- Alert re-notifier: keep pinging Telegram until the operator acknowledges ---
 # A dead login / checkpoint can never be fixed by a retry — it needs a human.
 # This task processes any tapped ✅ acknowledgements AND re-sends every still-
