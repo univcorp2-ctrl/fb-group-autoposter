@@ -183,7 +183,7 @@ groups:
       Messenger でメッセージ、または
       ✉️ bukken511+ag@gmail.com
       ━━━━━━━━━━━━━
-    enabled: false
+    enabled: true
 
   # 宣伝/PR/告知が規約で歓迎・2万人。banリスク低くLINE配信に最適。
   # ⚠️ Bot(サカモト ヒロシ)が未参加のため enabled:false。手動参加後に true へ。
@@ -212,7 +212,7 @@ groups:
       Messenger でメッセージ、または
       ✉️ bukken511+ag@gmail.com
       ━━━━━━━━━━━━━
-    enabled: false
+    enabled: true
 
   # 経営者層・9千人。購買力高く不動産以外の配信もOK。
   # ⚠️ Bot(サカモト ヒロシ)が未参加のため enabled:false。手動参加後に true へ。
@@ -241,7 +241,7 @@ groups:
       Messenger でメッセージ、または
       ✉️ bukken511+ag@gmail.com
       ━━━━━━━━━━━━━
-    enabled: false
+    enabled: true
 
   # 空き家/再生・8.5千人。地方戸建・低価格物件と相性◎。
   # ⚠️ Bot(サカモト ヒロシ)が未参加のため enabled:false。手動参加後に true へ。
@@ -299,4 +299,4 @@ groups:
       Messenger でメッセージ、または
       ✉️ bukken511+ag@gmail.com
       ━━━━━━━━━━━━━
-    enabled: false
+    enabled: true

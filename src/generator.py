@@ -114,6 +114,94 @@ def build_pitch(property_data: dict[str, Any]) -> str:
     return pitch
 
 
+INVEST_PREFIX = "💡 投資シミュレーション（想定・概算）"
+# Loan assumptions used for the CF / payoff estimate. Stated in the post so the
+# numbers are transparent, not presented as a promise.
+_LOAN_RATE = 0.02          # 2%/yr
+_LOAN_MONTHS = 300         # 25 years, full loan
+_EXPENSE_RATIO = 0.20      # operating expenses as a share of gross rent
+_HOLD_MONTHS = 60          # 5-year hold for the payoff (残債圧縮) figure
+
+
+def _parse_price_yen(value: Any) -> float | None:
+    """Parse a price string ('8,800万円', '1億2,000万円', '13億円') into yen."""
+    if value in (None, ""):
+        return None
+    s = str(value)
+    total = 0.0
+    oku = re.search(r"([\d.]+)\s*億", s)
+    man = re.search(r"([\d,]+)\s*万", s)
+    if oku:
+        try:
+            total += float(oku.group(1)) * 1e8
+        except ValueError:
+            pass
+    if man:
+        try:
+            total += float(man.group(1).replace(",", "")) * 1e4
+        except ValueError:
+            pass
+    if total > 0:
+        return total
+    digits = re.sub(r"[^\d]", "", s)
+    if digits:
+        v = float(digits)
+        return v if v > 0 else None
+    return None
+
+
+def _lender_hint(property_data: dict[str, Any], y: float | None) -> str:
+    """Suggest the TYPE of lender (with example names) that typically finances a
+    property of this profile. Framed as 想定/例 — informational, not a promise."""
+    blob = str(property_data.get("structure", "") or "") + " ".join(
+        str(h) for h in (property_data.get("highlights") or [])
+    )
+    if "区分" in blob:
+        return "オリックス銀行・SBJ銀行 等"
+    if any(k in blob for k in ("RC", "SRC", "鉄骨", "重量鉄骨")):
+        return "オリックス銀行・地銀／信金 等（例：静岡銀行）"
+    if (y is not None and y >= 10) or "木造" in blob or "戸建" in blob:
+        return "ノンバンク系 等（例：三井住友トラストL&F・セゾンファンデックス）"
+    return "投資家向け金融機関 等（例：オリックス銀行）"
+
+
+def build_investment_pitch(property_data: dict[str, Any]) -> str:
+    """Short, transparent investment simulation: likely lender, estimated annual
+    cash flow, and the 5-year loan-paydown (残債圧縮) as a sale-proceeds guide.
+    All clearly labelled 想定/概算 with assumptions stated. Returns '' when price
+    or yield is unavailable (so we never fabricate numbers)."""
+    price = _parse_price_yen(property_data.get("price"))
+    y = _parse_yield(property_data.get("yield_pct"))
+    if not price or y is None or y <= 0:
+        return ""
+    yf = y / 100.0
+    annual_rent = price * yf
+    r = _LOAN_RATE / 12
+    payment = price * (r / (1 - (1 + r) ** (-_LOAN_MONTHS)))
+    annual_debt = payment * 12
+    cf = annual_rent * (1 - _EXPENSE_RATIO) - annual_debt
+    bal = price * (1 + r) ** _HOLD_MONTHS - payment * (((1 + r) ** _HOLD_MONTHS - 1) / r)
+    principal_paid = price - bal
+
+    def man(v: float) -> int:
+        return round(v / 1e4)
+
+    cf_man = man(cf)
+    if cf_man >= 0:
+        cf_line = f"💵 想定キャッシュフロー：フルローン・金利2%・25年・経費20%想定で年間約{cf_man:,}万円"
+    else:
+        cf_line = f"💵 想定キャッシュフロー：年間約{cf_man:,}万円（自己資金を入れるとプラス化）"
+    return "\n".join(
+        [
+            INVEST_PREFIX,
+            f"🏦 想定融資：{_lender_hint(property_data, y)}",
+            cf_line,
+            f"📈 想定売却益の目安：5年保有で残債圧縮 約{man(principal_paid):,}万円（同条件売却でも手残りの目安）",
+            "※ 数値は一般的な条件での想定・概算です。実際の融資条件・収支はご属性と物件により異なります。",
+        ]
+    )
+
+
 def fallback_body(property_data: dict[str, Any], group: dict[str, Any], *, revision_instruction: str = "") -> str:
     property_id = property_data.get("property_id", "unknown")
     rng = random.Random(_stable_seed(property_id, group["id"]))
@@ -142,6 +230,9 @@ def fallback_body(property_data: dict[str, Any], group: dict[str, Any], *, revis
     # rules' max_chars truncation never cuts it (it sits well before the
     # contact/hashtags block that may be trimmed on long bodies).
     lines += ["", build_pitch(property_data)]
+    invest = build_investment_pitch(property_data)
+    if invest:
+        lines += ["", invest]
     if highlights:
         bullet = " / ".join(str(x) for x in highlights)
         lines += ["", f"✨ {bullet}"]
@@ -164,6 +255,7 @@ def _call_claude(settings: Any, property_data: dict[str, Any], group: dict[str, 
 
     client = Anthropic(api_key=settings.anthropic_api_key)
     pitch = build_pitch(property_data)
+    invest = build_investment_pitch(property_data)
     prompt = f"""
 あなたは不動産Facebookグループ向け投稿文面を作る編集者です。
 以下の物件情報を、指定グループ向けの投稿本文にしてください。
@@ -175,10 +267,15 @@ def _call_claude(settings: Any, property_data: dict[str, Any], group: dict[str, 
 - max_chars以内。
 - 本文の上部に「{PITCH_PREFIX}…」で始まる短い推しポイントの行をちょうど1行入れる
   （事実ベース・誇張なし）。下記 pitch をそのまま使ってよい。
+- 下記 invest_block（投資シミュレーション：想定融資・キャッシュフロー・売却益）を
+  そのまま本文に含める。数値や免責の一文は改変しない。
 - 返答は本文のみ。前置き不要。
 
 pitch:
 {pitch}
+
+invest_block:
+{invest}
 
 property_data:
 {json.dumps(property_data, ensure_ascii=False, indent=2)}
@@ -245,6 +342,11 @@ def generate_variants(
         # group rules' max_chars truncation never cuts it, then re-apply rules.
         if "推しポイント" not in body:
             body = _inject_pitch(body, build_pitch(property_data))
+            body = apply_group_rules(body, group).body
+        # Guarantee the investment simulation (想定融資/CF/売却益) is present.
+        invest = build_investment_pitch(property_data)
+        if invest and INVEST_PREFIX not in body:
+            body = f"{body.rstrip()}\n\n{invest}"
             body = apply_group_rules(body, group).body
         seed = _stable_seed(property_data.get("property_id", "unknown"), group["id"])
         variants.append(
