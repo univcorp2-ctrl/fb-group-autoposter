@@ -34,3 +34,4 @@ login_wait.log
 output/posting_status.xlsx
 output/posting_status.csv
 data/notifications_seen.json
+data/daiwa_drafts.json

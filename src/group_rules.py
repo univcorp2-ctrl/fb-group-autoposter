@@ -6,6 +6,29 @@ from typing import Any
 
 URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
+# Some sources carry a well-known supplier brand (e.g. Daiwa House) that must
+# NEVER appear in a public post — we promote the property as coming from a
+# "超大手有名企業ブランド" without naming the company. Replace every alias.
+BRAND_MASK = "超大手有名企業ブランド"
+_BRAND_ALIASES = (
+    "大和ハウス工業株式会社",
+    "大和ハウス工業",
+    "大和ハウス",
+    "ダイワハウス工業",
+    "ダイワハウス",
+    "Daiwa House Industry",
+    "Daiwa House",
+    "DaiwaHouse",
+)
+
+
+def mask_brands(text: str) -> str:
+    """Replace any supplier brand alias with the generic 超大手有名企業ブランド label."""
+    out = text or ""
+    for alias in _BRAND_ALIASES:
+        out = out.replace(alias, BRAND_MASK)
+    return out
+
 
 @dataclass(frozen=True)
 class RuleResult:
@@ -53,6 +76,9 @@ def enforce_max_chars(body: str, max_chars: int, signature: str | None = None) -
 
 
 def apply_group_rules(body: str, group: dict[str, Any]) -> RuleResult:
+    # Mask supplier brand names first so they can never leak into a public post,
+    # regardless of which source the property came from.
+    body = mask_brands(body)
     signature = group.get("signature", "") or ""
     # Idempotency: if a previous apply already appended the signature, remove it
     # BEFORE link-stripping. Otherwise strip_links (allow_links=false) would
