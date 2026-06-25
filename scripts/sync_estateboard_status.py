@@ -305,15 +305,56 @@ def sync_estateboard_status(
 
     master_marked, display_info = patch_master(master_path, posted_meta, name_map)
     data_marked = patch_data_json(data_path, display_info)
+    pushed = _git_sync_eb(eb_root_path, master_path, data_path)
 
     summary = {
         "master_marked": master_marked,
         "data_marked": data_marked,
         "posted_properties": len(posted_meta),
+        "pushed": pushed,
         "skipped": False,
     }
     log.info("EstateBoard sync done: %s", json.dumps(summary, ensure_ascii=False))
     return summary
+
+
+def _git_sync_eb(eb_root: Path, master_path: Path, data_path: Path) -> bool:
+    """Commit + push the patched EstateBoard files so the LIVE dashboard
+    (Cloudflare Pages deploys from the repo) reflects posting status in near
+    real time. Without this, the bridge only patched local files and the public
+    site stayed stale. Best-effort: never raises, never blocks posting.
+
+    The EstateBoard daily job may regenerate data.json without the marks; the
+    next posting/verify run re-patches and re-pushes here, so it self-heals."""
+    import subprocess
+
+    rels = [str(data_path.relative_to(eb_root))]
+    if master_path.exists():
+        rels.append(str(master_path.relative_to(eb_root)))
+
+    def _git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args], cwd=str(eb_root), capture_output=True, text=True, timeout=60, check=False
+        )
+
+    try:
+        # Only commit when something actually changed (avoid empty commits).
+        status = _git("status", "--porcelain", *rels)
+        if not status.stdout.strip():
+            return False
+        _git("add", *rels)
+        commit = _git("commit", "-m", "data: reflect FB posting status on dashboard")
+        if commit.returncode != 0 and "nothing to commit" in (commit.stdout + commit.stderr):
+            return False
+        push = _git("push")
+        if push.returncode != 0:
+            log.warning("EstateBoard push failed: %s", (push.stderr or push.stdout)[:200])
+            return False
+        log.info("EstateBoard committed + pushed (dashboard will redeploy)")
+        return True
+    except Exception as exc:  # noqa: BLE001 - sync must never crash the run
+        log.warning("EstateBoard git sync skipped: %s: %s", type(exc).__name__, exc)
+        return False
 
 
 def main() -> None:
