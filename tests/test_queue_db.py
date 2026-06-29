@@ -16,6 +16,22 @@ def test_queue_lifecycle_and_unique(tmp_path):
     assert db.duplicate_property_recently("p1", "g1") is True
 
 
+def test_posted_at_is_not_overwritten_on_reverify(tmp_path):
+    """Regression: a re-verify (posted -> posted, or uncertain -> posted) must keep
+    the ORIGINAL posted_at. Overwriting it collapsed historical posts onto the
+    verify time, inflating count_posts_today and blocking all new posting."""
+    db = QueueDB(tmp_path / "jobs.db")
+    job = db.create_job({"property_id": "p1", "title": "A"}, [{"group_id": "g1", "body": "b"}])
+    db.update_target_status(job, "g1", "posted", permalink="https://fb/p/1")
+    first = db.get_targets(job)[0]["posted_at"]
+    assert first
+    # Re-verify the same target later (new permalink/screenshot) — posted_at stays.
+    db.update_target_status(job, "g1", "posted", permalink="https://fb/p/1b", screenshot="s.png")
+    again = db.get_targets(job)[0]
+    assert again["posted_at"] == first  # preserved, NOT overwritten
+    assert again["permalink"] == "https://fb/p/1b"  # other fields still update
+
+
 def test_posted_property_ids_for_group_is_per_group(tmp_path):
     db = QueueDB(tmp_path / "jobs.db")
     # Two jobs, each targeting both groups, but only some targets posted.

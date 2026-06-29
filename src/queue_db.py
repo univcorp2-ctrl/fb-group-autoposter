@@ -142,13 +142,18 @@ class QueueDB:
         # 'uncertain' very likely DID publish (we just could not verify it), so
         # stamp it like a post. The same-group spacing guard and daily cap then
         # treat it as a real post and never over-post (block-avoidance first).
+        # IMPORTANT: posted_at is the FIRST-post time and must never be overwritten.
+        # The SQL uses COALESCE(posted_at, ?) so a later re-verify (uncertain->posted,
+        # or a verify sweep re-confirming) keeps the original time. Overwriting it
+        # collapsed many historical posts onto the verify time, which wrongly
+        # inflated count_posts_today() and blocked all new posting via daily_limit.
         posted_at = now_iso() if status in ("posted", "uncertain") else None
         with self.connect() as conn:
             if increment_attempts:
                 conn.execute(
                     """
                     UPDATE job_targets
-                    SET status=?, attempts=attempts + 1, last_error=?, posted_at=COALESCE(?, posted_at),
+                    SET status=?, attempts=attempts + 1, last_error=?, posted_at=COALESCE(posted_at, ?),
                         screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
                     WHERE job_id=? AND group_id=?
                     """,
@@ -158,7 +163,7 @@ class QueueDB:
                 conn.execute(
                     """
                     UPDATE job_targets
-                    SET status=?, last_error=?, posted_at=COALESCE(?, posted_at),
+                    SET status=?, last_error=?, posted_at=COALESCE(posted_at, ?),
                         screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
                     WHERE job_id=? AND group_id=?
                     """,
