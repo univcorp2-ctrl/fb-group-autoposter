@@ -243,7 +243,13 @@ def main() -> None:
 
         reg = build_registry()
         log.info("group registry refreshed: %s", json.dumps(reg["summary"], ensure_ascii=False))
-    except Exception as exc:  # noqa: BLE001 - registry is best-effort
+        # Publish the registry to the EstateBoard dashboard (estateboard.pages.dev/
+        # groups) so the record of WHERE we post is visible on the web too.
+        from scripts.sync_groups_web import sync_groups_web
+
+        web = sync_groups_web()
+        log.info("group registry web sync: %s", json.dumps(web, ensure_ascii=False))
+    except Exception as exc:  # noqa: BLE001 - registry/web is best-effort
         log.warning("group registry refresh skipped: %s: %s", type(exc).__name__, exc)
 
     # Project posting status into EstateBoard (master store + live dashboard) so
