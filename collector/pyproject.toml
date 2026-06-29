@@ -1,0 +1,22 @@
+[project]
+name = "fb-group-property-collector"
+version = "0.1.0"
+description = "役割3: collect property listings from FB group feeds (read-only) and build a property DB."
+requires-python = ">=3.11"
+dependencies = [
+    "playwright>=1.44",
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+    "PyYAML>=6.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

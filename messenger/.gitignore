@@ -1,0 +1,23 @@
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.db
+*.sqlite
+*.sqlite3
+profiles/
+logs/
+screenshots/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+.coverage
+.DS_Store
+
+# generated artifacts (local state, never committed)
+data/threads_state.json
+data/drafts.json

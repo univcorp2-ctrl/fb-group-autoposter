@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+profiles/
+logs/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.db
+*.sqlite*
+
+# generated artifacts (local state)
+data/collected.json
+sources.yaml

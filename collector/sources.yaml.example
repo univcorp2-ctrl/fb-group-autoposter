@@ -1,0 +1,12 @@
+# 物件情報を収集する Facebook グループの一覧（役割3）。
+# これは READ-ONLY の収集対象です。ここに投稿することはありません。
+# 実運用では collector/sources.yaml にコピーして、所属グループのフィードURLを記載。
+groups:
+  - id: "0000000000000000"
+    name: "不動産投資グループA"
+    feed_url: "https://www.facebook.com/groups/0000000000000000"
+    enabled: true
+  - id: "1111111111111111"
+    name: "収益物件情報グループB"
+    feed_url: "https://www.facebook.com/groups/1111111111111111"
+    enabled: false
