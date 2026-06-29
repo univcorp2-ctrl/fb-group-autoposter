@@ -60,6 +60,7 @@ class Settings:
     profile_backup_keep: int
     browser_backend: str
     browser_user_agent: str
+    estateboard_source: Path
 
     @classmethod
     def load(cls, env_file: str | Path | None = None) -> "Settings":
@@ -100,6 +101,14 @@ class Settings:
                 "BROWSER_USER_AGENT",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            ),
+            # Latest EstateBoard broker-OK export; re-read at post time by the
+            # freshness gate to confirm a property is still live before posting.
+            estateboard_source=Path(
+                os.getenv(
+                    "ESTATEBOARD_SOURCE",
+                    r"G:\マイドライブ\AI_Agents\github\repos\EstateBoard\output\received\properties.json",
+                )
             ),
         )
         settings.ensure_dirs()

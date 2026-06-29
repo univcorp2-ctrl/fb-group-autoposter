@@ -15,6 +15,7 @@ from typing import Any, Iterator
 from config import Settings, load_groups
 from src.approval import TelegramApproval
 from src.estateboard_adapter import select_postable
+from src.freshness import build_checker
 from src.generator import generate_variants
 from src.ingest import scan_inbox
 from src.logging_setup import setup_logging
@@ -128,7 +129,11 @@ async def run_cycle(settings: Settings, *, selftest: bool = False) -> dict[str, 
         if selftest and settings.dry_run:
             for job in db.pending_jobs():
                 db.approve_job(job["job_id"])
-        poster = FacebookPoster(settings, db, groups, notifier)
+        # Freshness gate: re-validate each property against the latest EstateBoard
+        # export at post time so deleted/unpublished listings are never posted.
+        # Selftest uses a synthetic property with no source -> checker is skipped.
+        checker = None if selftest else build_checker(settings.estateboard_source)
+        poster = FacebookPoster(settings, db, groups, notifier, freshness_checker=checker)
         for job in db.approved_jobs():
             status = await poster.post_job(job)
             summary["approved_processed"] = int(summary["approved_processed"]) + 1
@@ -201,7 +206,10 @@ async def run_cycle_grouped(
             notifier.auto_or_send_preview(job_id)
             summary["created"] = int(summary["created"]) + 1
 
-        poster = FacebookPoster(settings, db, groups, notifier)
+        # Freshness gate built from the SAME source these groups selected from, so
+        # a property deleted between selection and posting is skipped, not posted.
+        checker = build_checker(source)
+        poster = FacebookPoster(settings, db, groups, notifier, freshness_checker=checker)
         approved = db.approved_jobs()
         for index, job in enumerate(approved):
             status = await poster.post_job(job)

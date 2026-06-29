@@ -51,12 +51,57 @@ class CheckpointRequired(SessionExpired):
 
 
 class FacebookPoster:
-    def __init__(self, settings: Any, db: QueueDB, groups: list[dict[str, Any]], notifier: Any | None = None):
+    def __init__(
+        self,
+        settings: Any,
+        db: QueueDB,
+        groups: list[dict[str, Any]],
+        notifier: Any | None = None,
+        freshness_checker: Any | None = None,
+    ):
         self.settings = settings
         self.db = db
         self.groups_by_id = {g["id"]: g for g in groups}
         self.notifier = notifier
+        # Optional pre-post freshness gate. When set, every job is re-validated
+        # against the LATEST EstateBoard export right before posting so a listing
+        # that has since been deleted/unpublished is never posted. None keeps the
+        # original behavior (used by tests and dry runs without a source).
+        self.freshness_checker = freshness_checker
         self._user_id: str | None = None  # logged-in bot user id (for verification)
+
+    def _freshness_skip_reason(self, job: dict[str, Any]) -> str | None:
+        """Return a skip reason when the property is no longer live on EstateBoard,
+        else None. UNKNOWN (unverifiable / source missing) fails OPEN so a transient
+        verification outage never halts posting — but a missing source still alerts."""
+        if not self.freshness_checker:
+            return None
+        try:
+            result = self.freshness_checker.check(job["property_id"])
+        except Exception as exc:  # noqa: BLE001 - verification must never crash posting
+            log.warning("freshness check errored for %s, allowing post: %s", job.get("property_id"), exc)
+            return None
+        if result.is_stale:
+            return f"stale_property:{result.reason}"
+        if getattr(result, "source_missing", False) and self.notifier:
+            self.notifier.alert(
+                f"⚠️ 物件の最新性を確認できませんでした（検証ソース未取得）: "
+                f"{job['property_id']}（{result.reason}）。投稿は継続します。"
+            )
+        return None
+
+    def _skip_job_as_stale(self, job: dict[str, Any], reason: str) -> str:
+        """Mark every unposted target skipped (NOT posted) and alert — the listing
+        is gone from EstateBoard, so posting it would send people to a dead link."""
+        for target in self.db.unposted_targets(job["job_id"]):
+            self.db.update_target_status(job["job_id"], target["group_id"], "skipped", error=reason)
+        log.warning("skipping stale property %s: %s", job.get("property_id"), reason)
+        if self.notifier:
+            self.notifier.alert(
+                f"⏭ 物件が最新でないため投稿をスキップしました: {job['property_id']}（{reason}）。"
+                "EstateBoardから掲載が消えている/削除済みの可能性があります。"
+            )
+        return self.db.finalize_job_from_targets(job["job_id"])
 
     def _group_allowed_now(self, group: dict[str, Any]) -> bool:
         hours = group.get("active_hours", [0, 24])
@@ -92,6 +137,11 @@ class FacebookPoster:
 
     async def post_job(self, job: dict[str, Any]) -> str:
         self.db.update_job_status(job["job_id"], "posting")
+        # Freshness gate (before anything else): if the property is no longer live
+        # on EstateBoard, skip all targets and never post a dead listing.
+        stale_reason = self._freshness_skip_reason(job)
+        if stale_reason:
+            return self._skip_job_as_stale(job, stale_reason)
         if self.settings.dry_run:
             for target in self.db.unposted_targets(job["job_id"]):
                 group = self.groups_by_id.get(target["group_id"])
