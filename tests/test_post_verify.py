@@ -1,7 +1,24 @@
 """Tests for permalink-based post verification (src/post_verify.py)."""
 import asyncio
 
-from src.post_verify import find_my_post, match_permalink, needle_of, norm
+from src.post_verify import find_my_post, is_pending_approval, match_permalink, needle_of, norm
+
+
+def test_is_pending_approval_detects_held_post():
+    assert is_pending_approval("サカモト ヒロシ 11時間 · …さらに表示 投稿は承認待ちです あなたの投稿は管理者の承認待ちです")
+    assert is_pending_approval("Your post is pending approval")
+    assert not is_pending_approval("収益物件のご紹介です。LA VISTA 熱海テラス 価格")
+
+
+def test_match_permalink_skips_pending_approval_post():
+    """An approval-gated post matches the needle but is NOT public -> must not be
+    returned as posted (the false-'posted' bug for 承認制 groups)."""
+    body = "収益物件のご紹介です。\n🏢 LA VISTA 熱海テラス\n💰 価格：470億円"
+    posts = [
+        {"permalink": "https://www.facebook.com/groups/1/posts/222",
+         "text": "サカモト ヒロシ 11時間·収益物件のご紹介です。LA VISTA 熱海テラス 投稿は管理者の承認待ちです"},
+    ]
+    assert match_permalink(body, posts) is None
 
 
 def test_norm_strips_emoji_and_whitespace():
@@ -77,6 +94,26 @@ def test_find_my_post_returns_none_when_absent():
     articles = [{"href": "https://www.facebook.com/groups/9/posts/111", "text": "サカモトヒロシ4月20日·#物件紹介 スピード案件"}]
     page = FakePage(articles, body_text="サカモトヒロシ4月20日 別の古い投稿")
     assert asyncio.run(find_my_post(page, "9", "123", body, attempts=1)) is None
+
+
+def test_find_my_post_returns_none_for_pending_approval_post():
+    """When our only matching post is held for moderation, find_my_post returns
+    None so the caller records 'uncertain' (NOT 投稿済) — 承認制グループの修正."""
+    body = "収益物件のご紹介です。\n🏢 LA VISTA 熱海テラス"
+    articles = [
+        {"href": "https://www.facebook.com/groups/9/posts/333",
+         "text": "サカモト ヒロシ 11時間·収益物件のご紹介です。LA VISTA 熱海テラス 投稿は管理者の承認待ちです"},
+    ]
+    page = FakePage(articles, body_text="LA VISTA 熱海テラス 投稿は承認待ちです")
+    assert asyncio.run(find_my_post(page, "9", "123", body, attempts=1)) is None
+
+
+def test_find_my_post_pagetext_fallback_suppressed_when_pending():
+    body = "収益物件のご紹介です。\n🏢 高円寺北二丁目 一棟"
+    articles = [{"href": "", "text": "高円寺北二丁目 一棟 投稿は承認待ちです"}]
+    page = FakePage(articles, body_text="高円寺北二丁目 一棟 投稿は管理者の承認待ちです")
+    out = asyncio.run(find_my_post(page, "9", "123", body, post_url="https://www.facebook.com/groups/9", attempts=1))
+    assert out is None  # held post must not fall back to a "posted" group link
 
 
 def test_find_my_post_pagetext_fallback_returns_group_link():

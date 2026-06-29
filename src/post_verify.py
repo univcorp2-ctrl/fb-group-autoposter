@@ -21,6 +21,25 @@ log = logging.getLogger(__name__)
 
 POST_HREF_RE = re.compile(r"/groups/\d+/(?:posts|permalink)/\d+")
 TITLE_MARK = "🏢"  # the property-title line marker in generated bodies
+
+# An approval-gated group holds our post for a moderator: it has a self-visible
+# permalink but is NOT public. Matching it would record a false "posted". These
+# markers (JA/EN) flag such a held post so we treat it as uncertain, not posted.
+_PENDING_MARKERS = (
+    "承認待ち",
+    "管理者の承認",
+    "管理者チームが承認",
+    "承認するまで",
+    "pending approval",
+    "awaiting approval",
+    "is pending",
+)
+
+
+def is_pending_approval(text: str) -> bool:
+    """True when a post's text shows it is held for moderator approval (not public)."""
+    t = text or ""
+    return any(m in t for m in _PENDING_MARKERS)
 # Short enough to survive Facebook's TRUNCATED post preview in the listing
 # (which often cuts the title mid-word), long enough that two different property
 # titles don't collide. The title is the most distinctive part of the body.
@@ -146,7 +165,9 @@ def match_permalink(body: str, posts: list[dict[str, str]]) -> str | None:
     if len(needle) < 4:  # too short to be distinctive
         return None
     for post in posts:
-        if needle in norm(post["text"]):
+        # A pending-approval post matches the needle but is NOT public — skip it
+        # so a held post never counts as 投稿済 (it stays uncertain).
+        if needle in norm(post["text"]) and not is_pending_approval(post["text"]):
             return post["permalink"] or None
     return None
 
@@ -176,6 +197,7 @@ async def find_my_post(
         return None
     for attempt in range(attempts):
         page_text_hit_url: str | None = None
+        saw_pending = False  # our post exists but is held for moderator approval
         for url in _verify_urls(group_id, user_id, post_url):
             try:
                 posts, page_text = await _scan_url(page, url, scrolls=4)
@@ -183,15 +205,25 @@ async def find_my_post(
                 log.warning("verify scan failed for %s: %s", url, exc)
                 continue
             for post in posts:
-                if needle in norm(post["text"]) and post["permalink"]:
-                    return post["permalink"]
+                if needle in norm(post["text"]):
+                    if is_pending_approval(post["text"]):
+                        # Held for approval — NOT public. Do not return its
+                        # permalink (that was the false-"posted" bug); fall through
+                        # so this records as uncertain (approval-gated).
+                        saw_pending = True
+                        continue
+                    if post["permalink"]:
+                        return post["permalink"]
             if needle in page_text and page_text_hit_url is None:
                 page_text_hit_url = post_url or url
-        if page_text_hit_url:
-            # Confirmed present (page text) but no clean permalink anchor — better
-            # a best-effort group link than a false "not posted".
+        # Only trust the page-text fallback when we did NOT see a pending marker —
+        # otherwise the needle in page text is just our own held (non-public) post.
+        if page_text_hit_url and not saw_pending:
             log.info("post confirmed via page text (no exact permalink) in group %s", group_id)
             return page_text_hit_url
+        if saw_pending:
+            log.info("post is pending moderator approval in group %s -> uncertain", group_id)
+            return None
         if attempt < attempts - 1:
             await page.wait_for_timeout(4000)
     return None
