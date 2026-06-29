@@ -1,302 +1,141 @@
+# =============================================================================
+# 投稿先 Facebook グループ設定
+# =============================================================================
+# 共通設定(署名・連絡先・既定値)は下の &shared にまとめ、各グループは
+#   <<: *shared でそれを取り込み、id / name / post_url / 個別の selection_order /
+#   enabled だけ書く。新規グループの追加はこの groups: リストに1ブロック足すだけ。
+#
+# enabled は「Bot(サカモト ヒロシ)が実際にそのグループのメンバーで、投稿してよい」
+# と確認できたものだけ true。未参加/未確認は false にして投稿させない(=スパム判定や
+# 失敗投稿を避ける)。所属確認は scripts/discover_joined_groups.py の結果が根拠。
+#
+# selection_order: 各グループが「自分の次の未投稿物件」をこの順で独立選択。
+#   グループごとに別の順にすると、同じ物件が同日に複数グループへ出るのを防げる
+#   (FBがスパム扱いする)。値: newest / price_asc / price_desc / yield_desc。
+
+_shared: &shared
+  tone: "プロフェッショナル"
+  max_chars: 1200
+  active_hours: [7, 23]
+  allow_links: false
+  allow_images: true
+  forbidden: ["保証", "絶対", "確実"]
+  # 署名は link-strip の後に付くので、allow_links:false でも LINE公式と
+  # コミュニティ招待リンクは常に残る(物件自体の外部URLだけ抑制される)。
+  signature: |-
+    ━━━━━━━━━━━━━
+    📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
+    　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
+    　 👉 https://lin.ee/8u8OJTSL
+
+    👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
+    　 👉 https://www.facebook.com/groups/2217518449046952/
+    ━━━━━━━━━━━━━
+  contact: |-
+    ━━━━━━━━━━━━━
+    📩 ご質問・資料請求はお気軽に
+    Messenger でメッセージ、または
+    ✉️ bukken511+ag@gmail.com
+    ━━━━━━━━━━━━━
+
 groups:
-  - id: "1281008662437696"
-    name: "不動産投資家コミュニティ"
+  # ── 所属確認済み・不動産/投資コア（本番投稿中） ───────────────────────────
+  - <<: *shared
+    id: "1281008662437696"
+    name: "不動産取引の情報交換"
     post_url: "https://www.facebook.com/groups/1281008662437696"
-    # selection_order: each group independently picks its OWN next unposted
-    # property by this order. Distinct orders across groups keep the same
-    # property from being posted to multiple groups on the same day (which FB
-    # treats as spam). "newest" = most recently created first.
     selection_order: "newest"
-    tone: "プロフェッショナル"
-    max_chars: 1200
-    active_hours: [7, 23]
-    allow_links: false
-    allow_images: true
-    forbidden: ["保証", "絶対", "確実"]
-    # signature is appended AFTER link-stripping, so the LINE 公式アカウント and
-    # community invite links below always survive even though allow_links is
-    # false (only the property's own external URL is suppressed). The LINE link
-    # promotes our own 未公開物件 channel; the FB link invites to our community.
-    signature: |-
-      ━━━━━━━━━━━━━
-      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
-      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
-      　 👉 https://lin.ee/8u8OJTSL
-
-      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
-      　 👉 https://www.facebook.com/groups/2217518449046952/
-      ━━━━━━━━━━━━━
-    contact: |-
-      ━━━━━━━━━━━━━
-      📩 ご質問・資料請求はお気軽に
-      Messenger でメッセージ、または
-      ✉️ bukken511+ag@gmail.com
-      ━━━━━━━━━━━━━
     enabled: true
 
-  # NOTE: "name" is a placeholder — rename this to the real group name later.
-  - id: "1261566862455883"
-    name: "収益物件シェアグループ"
+  - <<: *shared
+    id: "1261566862455883"
+    name: "BOS物件紹介グループ"
     post_url: "https://www.facebook.com/groups/1261566862455883"
-    # This group posts the CHEAPEST unposted property first (price ascending).
     selection_order: "price_asc"
-    tone: "プロフェッショナル"
-    max_chars: 1200
-    active_hours: [7, 23]
-    allow_links: false
-    allow_images: true
-    forbidden: ["保証", "絶対", "確実"]
-    signature: |-
-      ━━━━━━━━━━━━━
-      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
-      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
-      　 👉 https://lin.ee/8u8OJTSL
-
-      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
-      　 👉 https://www.facebook.com/groups/2217518449046952/
-      ━━━━━━━━━━━━━
-    contact: |-
-      ━━━━━━━━━━━━━
-      📩 ご質問・資料請求はお気軽に
-      Messenger でメッセージ、または
-      ✉️ bukken511+ag@gmail.com
-      ━━━━━━━━━━━━━
     enabled: true
 
-  # NOTE: "name" is a placeholder — rename to the real group name later.
-  - id: "630451722001309"
-    name: "収益不動産コミュニティ"
+  - <<: *shared
+    id: "630451722001309"
+    name: "不動産フリー掲示板"
     post_url: "https://www.facebook.com/groups/630451722001309"
-    # Highest-yield unposted property first — a different angle from the other
-    # groups so each group's daily post is a different listing (anti-spam).
     selection_order: "yield_desc"
-    tone: "プロフェッショナル"
-    max_chars: 1200
-    active_hours: [7, 23]
-    allow_links: false
-    allow_images: true
-    forbidden: ["保証", "絶対", "確実"]
-    signature: |-
-      ━━━━━━━━━━━━━
-      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
-      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
-      　 👉 https://lin.ee/8u8OJTSL
-
-      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
-      　 👉 https://www.facebook.com/groups/2217518449046952/
-      ━━━━━━━━━━━━━
-    contact: |-
-      ━━━━━━━━━━━━━
-      📩 ご質問・資料請求はお気軽に
-      Messenger でメッセージ、または
-      ✉️ bukken511+ag@gmail.com
-      ━━━━━━━━━━━━━
     enabled: true
 
-  # NOTE: "name" is a placeholder — rename to the real group name later.
-  - id: "792499964217824"
-    name: "不動産投資 物件情報シェア"
+  - <<: *shared
+    id: "792499964217824"
+    name: "不動産投資（購入・高値売却）最新市況戦略"
     post_url: "https://www.facebook.com/groups/792499964217824"
-    # Most-expensive unposted property first — yet another distinct order so
-    # the four groups post four different listings on a given day.
     selection_order: "price_desc"
-    tone: "プロフェッショナル"
-    max_chars: 1200
-    active_hours: [7, 23]
-    allow_links: false
-    allow_images: true
-    forbidden: ["保証", "絶対", "確実"]
-    signature: |-
-      ━━━━━━━━━━━━━
-      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
-      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
-      　 👉 https://lin.ee/8u8OJTSL
-
-      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
-      　 👉 https://www.facebook.com/groups/2217518449046952/
-      ━━━━━━━━━━━━━
-    contact: |-
-      ━━━━━━━━━━━━━
-      📩 ご質問・資料請求はお気軽に
-      Messenger でメッセージ、または
-      ✉️ bukken511+ag@gmail.com
-      ━━━━━━━━━━━━━
     enabled: true
 
-  # 投資家向け（株・FX・仮想通貨・不動産）9,691人。2026-06-25 追加。
-  # ※ Bot アカウント(サカモト ヒロシ)がこのグループのメンバーである必要あり。
-  #   未参加だと投稿できず verify が未投稿として検知する（その場合は要手動参加）。
-  - id: "628818327463444"
+  - <<: *shared
+    id: "628818327463444"
     name: "投資家になろう（株・FX・仮想通貨・不動産）"
     post_url: "https://www.facebook.com/groups/628818327463444"
-    # High-yield first — fits an investor audience. The orchestrator also excludes
-    # any property already selected for another group THIS run, so no two groups
-    # post the same listing on the same day regardless of order overlap.
     selection_order: "yield_desc"
-    tone: "プロフェッショナル"
-    max_chars: 1200
-    active_hours: [7, 23]
-    allow_links: false
-    allow_images: true
-    forbidden: ["保証", "絶対", "確実"]
-    signature: |-
-      ━━━━━━━━━━━━━
-      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
-      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
-      　 👉 https://lin.ee/8u8OJTSL
-
-      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
-      　 👉 https://www.facebook.com/groups/2217518449046952/
-      ━━━━━━━━━━━━━
-    contact: |-
-      ━━━━━━━━━━━━━
-      📩 ご質問・資料請求はお気軽に
-      Messenger でメッセージ、または
-      ✉️ bukken511+ag@gmail.com
-      ━━━━━━━━━━━━━
     enabled: true
 
-  # 不動産業界系・2.2万人。物件投稿が自然になじむ。
-  # ⚠️ Bot(サカモト ヒロシ)が未参加のため enabled:false。手動参加後に true へ。
-  - id: "462766603810852"
+  - <<: *shared
+    id: "462766603810852"
     name: "不動産業界ニュース"
     post_url: "https://www.facebook.com/groups/462766603810852"
     selection_order: "newest"
-    tone: "プロフェッショナル"
-    max_chars: 1200
-    active_hours: [7, 23]
-    allow_links: false
-    allow_images: true
-    forbidden: ["保証", "絶対", "確実"]
-    signature: |-
-      ━━━━━━━━━━━━━
-      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
-      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
-      　 👉 https://lin.ee/8u8OJTSL
-
-      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
-      　 👉 https://www.facebook.com/groups/2217518449046952/
-      ━━━━━━━━━━━━━
-    contact: |-
-      ━━━━━━━━━━━━━
-      📩 ご質問・資料請求はお気軽に
-      Messenger でメッセージ、または
-      ✉️ bukken511+ag@gmail.com
-      ━━━━━━━━━━━━━
     enabled: true
 
-  # 宣伝/PR/告知が規約で歓迎・2万人。banリスク低くLINE配信に最適。
-  # ⚠️ Bot(サカモト ヒロシ)が未参加のため enabled:false。手動参加後に true へ。
-  - id: "2034960509881950"
-    name: "副業情報フォーラム（宣伝・PR・告知歓迎）"
-    post_url: "https://www.facebook.com/groups/2034960509881950"
-    selection_order: "price_asc"
-    tone: "プロフェッショナル"
-    max_chars: 1200
-    active_hours: [7, 23]
-    allow_links: false
-    allow_images: true
-    forbidden: ["保証", "絶対", "確実"]
-    signature: |-
-      ━━━━━━━━━━━━━
-      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
-      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
-      　 👉 https://lin.ee/8u8OJTSL
-
-      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
-      　 👉 https://www.facebook.com/groups/2217518449046952/
-      ━━━━━━━━━━━━━
-    contact: |-
-      ━━━━━━━━━━━━━
-      📩 ご質問・資料請求はお気軽に
-      Messenger でメッセージ、または
-      ✉️ bukken511+ag@gmail.com
-      ━━━━━━━━━━━━━
-    enabled: true
-
-  # 経営者層・9千人。購買力高く不動産以外の配信もOK。
-  # ⚠️ Bot(サカモト ヒロシ)が未参加のため enabled:false。手動参加後に true へ。
-  - id: "1006724479360528"
+  - <<: *shared
+    id: "1006724479360528"
     name: "経営者交流会＠東京"
     post_url: "https://www.facebook.com/groups/1006724479360528"
     selection_order: "price_desc"
-    tone: "プロフェッショナル"
-    max_chars: 1200
-    active_hours: [7, 23]
-    allow_links: false
-    allow_images: true
-    forbidden: ["保証", "絶対", "確実"]
-    signature: |-
-      ━━━━━━━━━━━━━
-      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
-      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
-      　 👉 https://lin.ee/8u8OJTSL
-
-      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
-      　 👉 https://www.facebook.com/groups/2217518449046952/
-      ━━━━━━━━━━━━━
-    contact: |-
-      ━━━━━━━━━━━━━
-      📩 ご質問・資料請求はお気軽に
-      Messenger でメッセージ、または
-      ✉️ bukken511+ag@gmail.com
-      ━━━━━━━━━━━━━
     enabled: true
 
-  # 空き家/再生・8.5千人。地方戸建・低価格物件と相性◎。
-  # ⚠️ Bot(サカモト ヒロシ)が未参加のため enabled:false。手動参加後に true へ。
-  - id: "176264696258846"
-    name: "空き家相談と空き家マッチング 空き家再生の会"
-    post_url: "https://www.facebook.com/groups/176264696258846"
-    selection_order: "yield_desc"
-    tone: "プロフェッショナル"
-    max_chars: 1200
-    active_hours: [7, 23]
-    allow_links: false
-    allow_images: true
-    forbidden: ["保証", "絶対", "確実"]
-    signature: |-
-      ━━━━━━━━━━━━━
-      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
-      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
-      　 👉 https://lin.ee/8u8OJTSL
+  # ── 新規追加（所属確認済み・物件投稿が自然に歓迎される売買/情報共有系） ──────
+  - <<: *shared
+    id: "2478498062317428"
+    name: "全国の不動産の売ります買います情報"
+    post_url: "https://www.facebook.com/groups/2478498062317428"
+    selection_order: "newest"
+    enabled: true
 
-      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
-      　 👉 https://www.facebook.com/groups/2217518449046952/
-      ━━━━━━━━━━━━━
-    contact: |-
-      ━━━━━━━━━━━━━
-      📩 ご質問・資料請求はお気軽に
-      Messenger でメッセージ、または
-      ✉️ bukken511+ag@gmail.com
-      ━━━━━━━━━━━━━
+  - <<: *shared
+    id: "1911961896257757"
+    name: "不動産売買案件紹介"
+    post_url: "https://www.facebook.com/groups/1911961896257757"
+    selection_order: "price_asc"
+    enabled: true
+
+  - <<: *shared
+    id: "1092188554162022"
+    name: "不動産投資情報交換コミュニティ「不動産投資っていいね！」"
+    post_url: "https://www.facebook.com/groups/1092188554162022"
+    selection_order: "yield_desc"
+    enabled: true
+
+  - <<: *shared
+    id: "674802419312579"
+    name: "最近の不動産投資ってどうよ"
+    post_url: "https://www.facebook.com/groups/674802419312579"
+    selection_order: "price_desc"
+    enabled: true
+
+  # ── 保留（所属が未確認 / 未参加。確認できたら enabled:true に） ──────────────
+  - <<: *shared
+    id: "2034960509881950"
+    name: "副業情報フォーラム（宣伝・PR・告知歓迎）"
+    post_url: "https://www.facebook.com/groups/2034960509881950"
+    selection_order: "price_asc"
     enabled: false
 
-  # 士業ネットワーク・7千人。富裕層・相続/節税文脈で配信向き。
-  # ⚠️ Bot(サカモト ヒロシ)が未参加のため enabled:false。手動参加後に true へ。
-  - id: "275984569236142"
+  - <<: *shared
+    id: "275984569236142"
     name: "全国士業ネットワーク"
     post_url: "https://www.facebook.com/groups/275984569236142"
     selection_order: "newest"
-    tone: "プロフェッショナル"
-    max_chars: 1200
-    active_hours: [7, 23]
-    allow_links: false
-    allow_images: true
-    forbidden: ["保証", "絶対", "確実"]
-    signature: |-
-      ━━━━━━━━━━━━━
-      📲 弊社では独自ルートで仕入れた未公開物件を不定期で配信しています。
-      　 よろしければLINEでも物件情報をお届けしていますので、お気軽にご登録ください。
-      　 👉 https://lin.ee/8u8OJTSL
+    enabled: false
 
-      👥 不動産投資の情報交換コミュニティも運営しています。ご興味があればこちらもどうぞ。
-      　 👉 https://www.facebook.com/groups/2217518449046952/
-      ━━━━━━━━━━━━━
-    contact: |-
-      ━━━━━━━━━━━━━
-      📩 ご質問・資料請求はお気軽に
-      Messenger でメッセージ、または
-      ✉️ bukken511+ag@gmail.com
-      ━━━━━━━━━━━━━
-    enabled: true
+  - <<: *shared
+    id: "176264696258846"
+    name: "空き家相談と空き家マッチング 空き家再生の会"
+    post_url: "https://www.facebook.com/groups/176264696258846"
+    selection_order: "yield_desc"
+    enabled: false

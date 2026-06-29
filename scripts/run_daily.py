@@ -235,6 +235,17 @@ def main() -> None:
     except Exception as exc:  # noqa: BLE001 - status DB is best-effort, never block posting
         log.warning("status DB refresh skipped: %s: %s", type(exc).__name__, exc)
 
+    # Refresh the GROUP posting registry (which groups, membership, post counts) so
+    # the record of WHERE we post stays current every run — including any group
+    # added since the last run. Best-effort: never blocks posting.
+    try:
+        from scripts.build_group_registry import build_registry
+
+        reg = build_registry()
+        log.info("group registry refreshed: %s", json.dumps(reg["summary"], ensure_ascii=False))
+    except Exception as exc:  # noqa: BLE001 - registry is best-effort
+        log.warning("group registry refresh skipped: %s: %s", type(exc).__name__, exc)
+
     # Project posting status into EstateBoard (master store + live dashboard) so
     # 投稿済/未投稿 shows there too. Best-effort: never block or crash the run.
     try:
