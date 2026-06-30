@@ -172,6 +172,18 @@ def match_permalink(body: str, posts: list[dict[str, str]]) -> str | None:
     return None
 
 
+def pending_match(body: str, posts: list[dict[str, str]]) -> bool:
+    """True when our post IS present but held for moderator approval (not public).
+
+    Lets the re-verify sweep DEMOTE a row that was wrongly recorded 'posted' (the
+    approval-gated false-positive) back to 'uncertain' — distinct from a plain
+    miss, where we must never downgrade."""
+    needle = needle_of(body)
+    if len(needle) < 4:
+        return False
+    return any(needle in norm(post["text"]) and is_pending_approval(post["text"]) for post in posts)
+
+
 async def find_my_post(
     page: Any,
     group_id: str,

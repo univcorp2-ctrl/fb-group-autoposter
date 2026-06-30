@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from config import Settings, load_groups  # noqa: E402
 from src.logging_setup import setup_logging  # noqa: E402
-from src.post_verify import collect_my_posts, cookie_user_id, match_permalink, norm  # noqa: E402
+from src.post_verify import collect_my_posts, cookie_user_id, match_permalink, norm, pending_match  # noqa: E402
 from src.queue_db import QueueDB  # noqa: E402
 from src.verifier import save_screenshot  # noqa: E402
 
@@ -98,12 +98,14 @@ async def run(*, headed: bool, probe: bool) -> dict:
 
         # Correct the DB against reality.
         summary["promoted"] = 0
+        summary["demoted"] = 0
         summary["still_pending"] = 0
         newly_confirmed: list[dict] = []
         for rec in claimed:
             summary["checked"] += 1
             gid = rec["group_id"]
-            permalink = match_permalink(rec["body"] or "", group_posts.get(gid, []))
+            posts = group_posts.get(gid, [])
+            permalink = match_permalink(rec["body"] or "", posts)
             if permalink:
                 shot = await save_screenshot(await _open(page, permalink), prefix="verified", job_id=rec["job_id"], group_id=gid)
                 db.update_target_status(rec["job_id"], gid, "posted", permalink=permalink, screenshot=shot)
@@ -114,6 +116,15 @@ async def run(*, headed: bool, probe: bool) -> dict:
                     summary["promoted"] += 1
                     newly_confirmed.append({"group_id": gid, "property_id": rec["property_id"], "permalink": permalink})
                 log.info("CONFIRMED %s in %s -> %s", rec["property_id"], gid, permalink)
+            elif rec["status"] == "posted" and pending_match(rec["body"] or "", posts):
+                # Our post IS present but held for moderator approval (承認制グループ).
+                # It was wrongly recorded 'posted' (the approval-gated false-positive)
+                # -> DEMOTE to 'uncertain' so it stops counting as 投稿済. This is a
+                # POSITIVE pending detection, not a plain miss, so downgrading is
+                # correct here (posted_at is preserved by update_target_status).
+                db.update_target_status(rec["job_id"], gid, "uncertain", error="pending_approval")
+                summary["demoted"] += 1
+                log.info("DEMOTED (承認待ち→uncertain) %s in %s", rec["property_id"], gid)
             else:
                 # NOT found this run. We do NOT downgrade — verification has
                 # transient misses (FB feed virtualization/lazy-load), and the

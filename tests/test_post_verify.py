@@ -1,7 +1,24 @@
 """Tests for permalink-based post verification (src/post_verify.py)."""
 import asyncio
 
-from src.post_verify import find_my_post, is_pending_approval, match_permalink, needle_of, norm
+from src.post_verify import (
+    find_my_post,
+    is_pending_approval,
+    match_permalink,
+    needle_of,
+    norm,
+    pending_match,
+)
+
+
+def test_pending_match_true_only_for_held_post():
+    body = "収益物件のご紹介です。\n🏢 LA VISTA 熱海テラス"
+    held = [{"permalink": "p", "text": "収益物件のご紹介です。LA VISTA 熱海テラス 投稿は管理者の承認待ちです"}]
+    public = [{"permalink": "p", "text": "収益物件のご紹介です。LA VISTA 熱海テラス 価格470億円"}]
+    absent = [{"permalink": "p", "text": "全然違う古い投稿 承認待ちです"}]
+    assert pending_match(body, held) is True
+    assert pending_match(body, public) is False   # public -> not pending
+    assert pending_match(body, absent) is False    # needle absent -> not our held post
 
 
 def test_is_pending_approval_detects_held_post():
