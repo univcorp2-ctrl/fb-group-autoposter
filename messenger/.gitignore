@@ -18,6 +18,7 @@ __pycache__/
 .coverage
 .DS_Store
 
-# generated artifacts (local state, never committed)
+# generated artifacts (local state, never committed — contain private message content)
 data/threads_state.json
 data/drafts.json
+data/drafts_archive.jsonl
