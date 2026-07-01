@@ -59,6 +59,23 @@ def _sync_notion(settings: Settings, row: dict, checked_at: str) -> None:
         log.warning("notion upsert failed for %s: %s: %s", row.get("name"), type(exc).__name__, exc)
 
 
+def _archive_draft(settings: Settings, row: dict, checked_at: str) -> None:
+    """Append every generated draft to a permanent JSONL archive.
+
+    `drafts.json` holds only the latest run and is overwritten each scan, so a
+    later empty run erases past drafts. This append-only log keeps the full
+    history locally (independent of Telegram/Notion) — one JSON object per line.
+    Best-effort: a write failure must never abort a scan."""
+    try:
+        path = settings.data_dir / "drafts_archive.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        record = {"checked_at": checked_at, **row}
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as exc:  # noqa: BLE001 - archiving must not break the run
+        log.warning("draft archive append failed for %s: %s", row.get("name"), exc)
+
+
 def _notify(notifier: TelegramNotifier, row: dict) -> None:
     if not notifier.enabled:
         return
@@ -137,6 +154,7 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                 _sync_notion(settings, row, _now_jst())
                 if use_telegram:
                     _notify(notifier, row)
+                _archive_draft(settings, row, _now_jst())
                 store.mark_drafted(thread["thread_id"], preview, drafted_at=_now_jst())
                 await page.wait_for_timeout(random.randint(2000, 5000))  # gentle pacing
         finally:
