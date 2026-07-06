@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 from src.facebook_metrics import extract_metric_counts, parse_compact_number
 
 
@@ -20,3 +23,15 @@ def test_extract_japanese_value_first_metrics_with_units() -> None:
 def test_extract_english_metrics() -> None:
     result = extract_metric_counts("25 reactions 7 comments 3 shares 1.5K views")
     assert result == {"reactions": 25, "comments": 7, "shares": 3, "views": 1500}
+
+
+def test_metrics_script_runs_from_repo_root_without_import_error() -> None:
+    result = subprocess.run(
+        [sys.executable, "scripts/collect_post_metrics.py"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "ModuleNotFoundError" not in result.stderr
+    assert "ANALYTICS_SYNC_ENABLED=false" in result.stdout

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 
 from src.analytics_export import AnalyticsConfig, build_post_payload, read_posting_history, sync_history
@@ -55,3 +57,15 @@ def test_sync_history_backfills_all_rows(tmp_path: Path) -> None:
     result = sync_history(config, client=client)
     assert result == {"total": 1, "sent": 1, "failed": 0}
     assert len(client.payloads) == 1
+
+
+def test_sync_script_runs_from_repo_root_without_import_error() -> None:
+    result = subprocess.run(
+        [sys.executable, "scripts/sync_analytics.py"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "ModuleNotFoundError" not in result.stderr
+    assert "ANALYTICS_SYNC_ENABLED=false" in result.stdout
