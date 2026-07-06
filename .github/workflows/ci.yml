@@ -20,37 +20,17 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install lint dependencies
+      - name: Install dependencies
         shell: bash
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install ruff
+          pip install pytest pytest-cov ruff
       - name: Ruff check
         run: ruff check .
 
-  discover-tests:
-    runs-on: ubuntu-latest
-    outputs:
-      files: ${{ steps.tests.outputs.files }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: tests
-        shell: bash
-        run: |
-          files=$(find tests -type f -name 'test_*.py' | sort | jq -R -s -c 'split("\n")[:-1]')
-          echo "files=$files" >> "$GITHUB_OUTPUT"
-
-  test-file:
-    needs: discover-tests
-    if: ${{ needs.discover-tests.outputs.files != '[]' }}
-    strategy:
-      fail-fast: false
-      max-parallel: 6
-      matrix:
-        file: ${{ fromJSON(needs.discover-tests.outputs.files) }}
-    name: ${{ matrix.file }}
+  existing-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -60,20 +40,48 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install test dependencies
+      - name: Install dependencies
         shell: bash
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
           pip install pytest pytest-cov
-      - name: Run isolated test file
+      - name: Run existing test suite
         shell: bash
         run: |
-          pytest -q --no-cov "${{ matrix.file }}" || pytest -q --no-cov "${{ matrix.file }}"
+          pytest -q --no-cov \
+            --ignore=tests/test_analytics_export.py \
+            --ignore=tests/test_facebook_metrics.py || \
+          pytest -q --no-cov \
+            --ignore=tests/test_analytics_export.py \
+            --ignore=tests/test_facebook_metrics.py
+
+  analytics-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          pip install pytest pytest-cov
+      - name: Run analytics integration tests
+        shell: bash
+        run: |
+          pytest -q --no-cov tests/test_analytics_export.py tests/test_facebook_metrics.py || \
+          pytest -q --no-cov tests/test_analytics_export.py tests/test_facebook_metrics.py
 
   deep-verify:
-    needs: [lint, test-file]
+    needs: [lint, existing-tests, analytics-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
