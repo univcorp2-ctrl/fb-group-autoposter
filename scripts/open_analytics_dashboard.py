@@ -39,9 +39,17 @@ def load_links() -> DashboardLinks:
         "ESTATEBOARD_URL": estateboard,
         "ANALYTICS_HEALTH_URL": health,
     }.items():
-        if not value.startswith(("https://", "http://localhost", "http://127.0.0.1")):
-            raise ValueError(f"{name} must be an HTTPS URL outside local development")
-    return DashboardLinks(dashboard=dashboard, estateboard=estateboard, health=health)
+        if not value.startswith(
+            ("https://", "http://localhost", "http://127.0.0.1")
+        ):
+            raise ValueError(
+                f"{name} must be an HTTPS URL outside local development"
+            )
+    return DashboardLinks(
+        dashboard=dashboard,
+        estateboard=estateboard,
+        health=health,
+    )
 
 
 def check_url(url: str, timeout: float = 10.0) -> tuple[bool, int | None, str]:
@@ -63,8 +71,14 @@ def check_url(url: str, timeout: float = 10.0) -> tuple[bool, int | None, str]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="EstateBoard Facebook投稿分析を開きます")
-    parser.add_argument("--status", action="store_true", help="URLを開かず接続状態だけ確認")
+    parser = argparse.ArgumentParser(
+        description="EstateBoard Facebook投稿分析を開きます"
+    )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="URLを開かず接続状態だけ確認",
+    )
     parser.add_argument(
         "--target",
         choices=("dashboard", "estateboard", "health"),
@@ -83,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     url = getattr(links, args.target)
-    reachable, status, detail = check_url(url)
+    reachable, status, _detail = check_url(url)
     status_text = str(status) if status is not None else "接続不可"
     print(f"{args.target}: {url}")
     print(f"status: {status_text}")
@@ -92,7 +106,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if reachable else 1
 
     if not webbrowser.open(url, new=2):
-        print(f"ブラウザを自動起動できませんでした。次のURLを開いてください: {url}")
+        print(
+            "ブラウザを自動起動できませんでした。"
+            f"次のURLを開いてください: {url}"
+        )
         return 1
     return 0
 
