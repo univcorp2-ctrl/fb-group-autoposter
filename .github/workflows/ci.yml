@@ -1,17 +1,94 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  lint-and-test:
+  lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: echo "Primary CI temporarily paused while test-file diagnostics run."
+          cache: pip
+      - name: Install lint dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          pip install ruff
+      - name: Ruff check
+        run: ruff check .
+
+  discover-tests:
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.tests.outputs.files }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tests
+        shell: bash
+        run: |
+          files=$(find tests -type f -name 'test_*.py' | sort | jq -R -s -c 'split("\n")[:-1]')
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+
+  test-file:
+    needs: discover-tests
+    if: ${{ needs.discover-tests.outputs.files != '[]' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        file: ${{ fromJSON(needs.discover-tests.outputs.files) }}
+    name: ${{ matrix.file }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          pip install pytest pytest-cov
+      - name: Run isolated test file
+        shell: bash
+        run: |
+          pytest -q --no-cov "${{ matrix.file }}" || pytest -q --no-cov "${{ matrix.file }}"
+
+  deep-verify:
+    needs: [lint, test-file]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile Python sources
+        run: python -m compileall -q src scripts tests
+      - name: Validate required analytics files
+        shell: bash
+        run: |
+          test -f src/analytics_export.py
+          test -f src/facebook_metrics.py
+          test -f scripts/sync_analytics.py
+          test -f scripts/collect_post_metrics.py
+          test -f docs/facebook_analytics.md
