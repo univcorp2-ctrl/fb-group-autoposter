@@ -15,27 +15,37 @@ from dotenv import load_dotenv
 from src.analytics_export import AnalyticsClient, AnalyticsConfig, load_config, validate_config
 
 
-_NUMBER = r"([0-9][0-9,.]*(?:万|千|[kKmM])?)"
-_PATTERNS = {
+_NUMBER = r"(?P<number>[0-9][0-9,.]*(?:万|千|[kKmM])?)"
+_VALUE_FIRST_PATTERNS = {
     "reactions": [
-        rf"(?:リアクション|いいね[！!]?|reactions?|likes?)\s*[:：]?\s*{_NUMBER}",
-        rf"{_NUMBER}\s*(?:件の|件)\s*(?:リアクション|いいね[！!]?)",
+        rf"{_NUMBER}\s*件の\s*(?:リアクション|いいね[！!]?)",
         rf"{_NUMBER}\s*(?:reactions?|likes?)",
     ],
     "comments": [
-        rf"(?:コメント|comments?)\s*[:：]?\s*{_NUMBER}",
-        rf"{_NUMBER}\s*(?:件の|件)\s*コメント",
+        rf"{_NUMBER}\s*件の\s*コメント",
         rf"{_NUMBER}\s*comments?",
     ],
     "shares": [
-        rf"(?:シェア|shares?)\s*[:：]?\s*{_NUMBER}",
-        rf"{_NUMBER}\s*(?:件の|件)\s*シェア",
+        rf"{_NUMBER}\s*件の\s*シェア",
         rf"{_NUMBER}\s*shares?",
     ],
     "views": [
-        rf"(?:表示|再生|views?)\s*[:：]?\s*{_NUMBER}",
-        rf"{_NUMBER}\s*(?:回の|回)\s*(?:表示|再生)",
+        rf"{_NUMBER}\s*回の\s*(?:表示|再生)",
         rf"{_NUMBER}\s*views?",
+    ],
+}
+_LABEL_FIRST_PATTERNS = {
+    "reactions": [
+        rf"(?:リアクション|いいね[！!]?|reactions?|likes?)\s*[:：]?\s*{_NUMBER}",
+    ],
+    "comments": [
+        rf"(?:コメント|comments?)\s*[:：]?\s*{_NUMBER}",
+    ],
+    "shares": [
+        rf"(?:シェア|shares?)\s*[:：]?\s*{_NUMBER}",
+    ],
+    "views": [
+        rf"(?:表示|再生|views?)\s*[:：]?\s*{_NUMBER}",
     ],
 }
 
@@ -57,18 +67,33 @@ def parse_compact_number(value: str) -> int:
         return 0
 
 
+def _extract_matches(
+    text: str,
+    patterns: dict[str, list[str]],
+) -> tuple[dict[str, list[int]], list[tuple[int, int]]]:
+    values = {metric: [] for metric in patterns}
+    spans: list[tuple[int, int]] = []
+    for metric, metric_patterns in patterns.items():
+        for pattern in metric_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                values[metric].append(parse_compact_number(match.group("number")))
+                spans.append(match.span())
+    return values, spans
+
+
 def extract_metric_counts(text: str) -> dict[str, int]:
     normalized = " ".join((text or "").split())
-    result: dict[str, int] = {}
-    for metric, patterns in _PATTERNS.items():
-        values: list[int] = []
-        for pattern in patterns:
-            values.extend(
-                parse_compact_number(match)
-                for match in re.findall(pattern, normalized, re.IGNORECASE)
-            )
-        result[metric] = max(values, default=0)
-    return result
+
+    value_first, spans = _extract_matches(normalized, _VALUE_FIRST_PATTERNS)
+    masked = list(normalized)
+    for start, end in spans:
+        masked[start:end] = " " * (end - start)
+
+    label_first, _ = _extract_matches("".join(masked), _LABEL_FIRST_PATTERNS)
+    return {
+        metric: max(value_first[metric] + label_first[metric], default=0)
+        for metric in _VALUE_FIRST_PATTERNS
+    }
 
 
 def metric_targets(db_path: Path, max_age_days: int, limit: int) -> list[dict[str, Any]]:
