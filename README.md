@@ -9,6 +9,35 @@ Facebook非公開グループ向けの物件配信パイプラインです。物
 - Facebookパスワードは保存しない
 - `.env`, `profiles/`, `logs/`, `screenshots/`, `jobs.db` はgit管理しない
 
+## Facebook投稿分析
+
+投稿履歴と反応数はEstateBoard側の共通分析ダッシュボードへ同期します。このリポジトリには投稿PCで動く同期・反応収集・ランチャーだけを置き、ダッシュボード画面は重複実装しません。
+
+- 分析ダッシュボード: https://estateboard.pages.dev/facebook-analytics/
+- 既存EstateBoard: https://estateboard.pages.dev/
+- EstateBoardリポジトリ: https://github.com/univcorp2-ctrl/EstateBoard
+- fb-group-autoposterリポジトリ: https://github.com/univcorp2-ctrl/fb-group-autoposter
+
+投稿PCで分析画面を開くには、リポジトリ直下の `open-facebook-analytics.cmd` をダブルクリックします。接続状態だけ確認する場合は次を実行します。
+
+```powershell
+.venv\Scripts\python.exe scripts\open_analytics_dashboard.py --status
+```
+
+投稿履歴同期と反応収集に使う主な環境変数は次の通りです。実Secret値は `.env` またはタスク実行環境にだけ設定し、READMEやGitHubへ書かないでください。
+
+```dotenv
+ANALYTICS_SYNC_ENABLED=true
+ANALYTICS_BASE_URL=https://estateboard.pages.dev
+ANALYTICS_DASHBOARD_URL=https://estateboard.pages.dev/facebook-analytics/
+ANALYTICS_INGEST_TOKEN=<Cloudflare側と同じ値>
+ANALYTICS_METRICS_HEADLESS=false
+DB_PATH=data/jobs.db
+PROFILE_DIR=profiles/main
+```
+
+関連ドキュメント: [`FACEBOOK_ANALYTICS_DASHBOARD.md`](FACEBOOK_ANALYTICS_DASHBOARD.md), [`docs/facebook_analytics.md`](docs/facebook_analytics.md)
+
 ## Architecture
 
 毎日のトリガー → 完遂ループ → 文面生成 → キュー → 投稿 → 検証、という流れ。
