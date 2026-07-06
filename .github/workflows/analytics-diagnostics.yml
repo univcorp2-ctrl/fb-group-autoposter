@@ -20,5 +20,6 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-      - name: Import analytics modules
-        run: python -c "from src.analytics_export import sync_history; from src.facebook_metrics import extract_metric_counts"
+          pip install pytest pytest-cov ruff
+      - name: Run analytics tests
+        run: pytest -q --no-cov tests/test_analytics_export.py tests/test_facebook_metrics.py
