@@ -1,8 +1,6 @@
 name: Analytics diagnostics
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -23,14 +21,5 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
           pip install pytest pytest-cov ruff
-      - name: Compact number parsing
-        continue-on-error: true
-        run: pytest -q --no-cov tests/test_facebook_metrics.py::test_parse_compact_number
-      - name: Japanese metric parsing
-        continue-on-error: true
-        run: pytest -q --no-cov tests/test_facebook_metrics.py::test_extract_japanese_metrics
-      - name: English metric parsing
-        continue-on-error: true
-        run: pytest -q --no-cov tests/test_facebook_metrics.py::test_extract_english_metrics
-      - name: Finish diagnostics
-        run: exit 1
+      - name: Run analytics integration tests
+        run: pytest -q --no-cov tests/test_analytics_export.py tests/test_facebook_metrics.py
