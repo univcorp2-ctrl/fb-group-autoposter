@@ -38,3 +38,32 @@ def test_rejects_insecure_remote_url(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     with pytest.raises(ValueError):
         load_links()
+
+
+def test_allows_localhost_for_development(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "ANALYTICS_DASHBOARD_URL",
+        "http://localhost:8788/facebook-analytics/",
+    )
+    links = load_links()
+    assert links.dashboard == "http://localhost:8788/facebook-analytics/"
+
+
+def test_readme_links_shared_analytics_surfaces() -> None:
+    readme = (
+        __import__("pathlib")
+        .Path(__file__)
+        .resolve()
+        .parents[1]
+        .joinpath("README.md")
+        .read_text(encoding="utf-8")
+    )
+    for required in (
+        "Facebook投稿分析",
+        "https://estateboard.pages.dev/facebook-analytics/",
+        "https://github.com/univcorp2-ctrl/EstateBoard",
+        "https://github.com/univcorp2-ctrl/fb-group-autoposter",
+        "ANALYTICS_SYNC_ENABLED=true",
+        "open-facebook-analytics.cmd",
+    ):
+        assert required in readme
