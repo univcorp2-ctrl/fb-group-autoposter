@@ -57,7 +57,7 @@ jobs:
             --ignore=tests/test_analytics_export.py \
             --ignore=tests/test_facebook_metrics.py
 
-  analytics-tests:
+  analytics-export-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -74,14 +74,37 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
           pip install pytest pytest-cov
-      - name: Run analytics integration tests
+      - name: Run analytics export tests
         shell: bash
         run: |
-          pytest -q --no-cov tests/test_analytics_export.py tests/test_facebook_metrics.py || \
-          pytest -q --no-cov tests/test_analytics_export.py tests/test_facebook_metrics.py
+          pytest -q --no-cov tests/test_analytics_export.py || \
+          pytest -q --no-cov tests/test_analytics_export.py
+
+  facebook-metrics-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          pip install pytest pytest-cov
+      - name: Run Facebook metric parser tests
+        shell: bash
+        run: |
+          pytest -q --no-cov tests/test_facebook_metrics.py || \
+          pytest -q --no-cov tests/test_facebook_metrics.py
 
   deep-verify:
-    needs: [lint, existing-tests, analytics-tests]
+    needs: [lint, existing-tests, analytics-export-tests, facebook-metrics-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
