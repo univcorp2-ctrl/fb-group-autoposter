@@ -19,19 +19,23 @@ _NUMBER = r"([0-9][0-9,.]*(?:万|千|[kKmM])?)"
 _PATTERNS = {
     "reactions": [
         rf"(?:リアクション|いいね[！!]?|reactions?|likes?)\s*[:：]?\s*{_NUMBER}",
-        rf"{_NUMBER}\s*(?:件の)?(?:リアクション|reactions?|likes?)",
+        rf"{_NUMBER}\s*(?:件の|件)\s*(?:リアクション|いいね[！!]?)",
+        rf"{_NUMBER}\s*(?:reactions?|likes?)",
     ],
     "comments": [
         rf"(?:コメント|comments?)\s*[:：]?\s*{_NUMBER}",
-        rf"{_NUMBER}\s*(?:件の)?(?:コメント|comments?)",
+        rf"{_NUMBER}\s*(?:件の|件)\s*コメント",
+        rf"{_NUMBER}\s*comments?",
     ],
     "shares": [
         rf"(?:シェア|shares?)\s*[:：]?\s*{_NUMBER}",
-        rf"{_NUMBER}\s*(?:件の)?(?:シェア|shares?)",
+        rf"{_NUMBER}\s*(?:件の|件)\s*シェア",
+        rf"{_NUMBER}\s*shares?",
     ],
     "views": [
         rf"(?:表示|再生|views?)\s*[:：]?\s*{_NUMBER}",
-        rf"{_NUMBER}\s*(?:回の)?(?:表示|再生|views?)",
+        rf"{_NUMBER}\s*(?:回の|回)\s*(?:表示|再生)",
+        rf"{_NUMBER}\s*views?",
     ],
 }
 
@@ -59,7 +63,10 @@ def extract_metric_counts(text: str) -> dict[str, int]:
     for metric, patterns in _PATTERNS.items():
         values: list[int] = []
         for pattern in patterns:
-            values.extend(parse_compact_number(match) for match in re.findall(pattern, normalized, re.IGNORECASE))
+            values.extend(
+                parse_compact_number(match)
+                for match in re.findall(pattern, normalized, re.IGNORECASE)
+            )
         result[metric] = max(values, default=0)
     return result
 
@@ -86,7 +93,11 @@ async def read_visible_metrics(page: Any, url: str) -> tuple[dict[str, int], str
     if "login" in page.url.lower() or "checkpoint" in page.url.lower():
         raise RuntimeError("Facebook login/checkpoint required")
     article = page.locator('div[role="article"]').first
-    text = await article.inner_text(timeout=15_000) if await article.count() else await page.inner_text("body")
+    text = (
+        await article.inner_text(timeout=15_000)
+        if await article.count()
+        else await page.inner_text("body")
+    )
     labels = await page.locator("[aria-label]").evaluate_all(
         "els => els.slice(0, 500).map(el => el.getAttribute('aria-label') || '').filter(Boolean)"
     )
@@ -125,7 +136,9 @@ async def collect_and_send_metrics(
                     counts, raw = await read_visible_metrics(page, target["permalink"])
                     observed_at = datetime.now(UTC).isoformat()
                     payload = {
-                        "idempotency_key": f"metrics:{target['job_id']}:{target['group_id']}:{observed_at[:13]}",
+                        "idempotency_key": (
+                            f"metrics:{target['job_id']}:{target['group_id']}:{observed_at[:13]}"
+                        ),
                         "post_key": f"{target['job_id']}:{target['group_id']}",
                         "post_url": target["permalink"],
                         "observed_at": observed_at,
@@ -147,7 +160,12 @@ def metrics_runtime_options() -> tuple[Path, int, int, bool]:
     profile = Path(os.getenv("PROFILE_DIR", "profiles/main"))
     max_posts = max(1, int(os.getenv("ANALYTICS_METRICS_MAX_POSTS", "30")))
     max_age = max(1, int(os.getenv("ANALYTICS_METRICS_MAX_AGE_DAYS", "180")))
-    headless = os.getenv("ANALYTICS_METRICS_HEADLESS", "false").lower() in {"1", "true", "yes", "on"}
+    headless = os.getenv("ANALYTICS_METRICS_HEADLESS", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     return profile, max_posts, max_age, headless
 
 
