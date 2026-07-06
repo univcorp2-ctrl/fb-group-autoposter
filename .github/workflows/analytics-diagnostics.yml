@@ -25,21 +25,35 @@ jobs:
           pip install pytest pytest-cov ruff
       - name: Import metric module
         continue-on-error: true
-        run: python -c "from src.facebook_metrics import extract_metric_counts, parse_compact_number"
+        run: |
+          python -c "from src.facebook_metrics import extract_metric_counts, parse_compact_number"
       - name: Parse Japanese ten-thousand suffix
         continue-on-error: true
-        run: python -c "from src.facebook_metrics import parse_compact_number; assert parse_compact_number('1.2万') == 12000"
+        run: |
+          python -c "from src.facebook_metrics import parse_compact_number; assert parse_compact_number('1.2万') == 12000"
       - name: Parse K suffix
         continue-on-error: true
-        run: python -c "from src.facebook_metrics import parse_compact_number; assert parse_compact_number('2.5K') == 2500"
+        run: |
+          python -c "from src.facebook_metrics import parse_compact_number; assert parse_compact_number('2.5K') == 2500"
       - name: Parse comma number
         continue-on-error: true
-        run: python -c "from src.facebook_metrics import parse_compact_number; assert parse_compact_number('1,234') == 1234"
+        run: |
+          python -c "from src.facebook_metrics import parse_compact_number; assert parse_compact_number('1,234') == 1234"
       - name: Parse Japanese metrics
         continue-on-error: true
-        run: python -c "from src.facebook_metrics import extract_metric_counts; assert extract_metric_counts('リアクション: 18 コメント 4件 シェア 2件 表示 1.2万回') == {'reactions':18,'comments':4,'shares':2,'views':12000}"
+        run: |
+          python - <<'PY'
+          from src.facebook_metrics import extract_metric_counts
+          expected = {"reactions": 18, "comments": 4, "shares": 2, "views": 12000}
+          assert extract_metric_counts("リアクション: 18 コメント 4件 シェア 2件 表示 1.2万回") == expected
+          PY
       - name: Parse English metrics
         continue-on-error: true
-        run: python -c "from src.facebook_metrics import extract_metric_counts; assert extract_metric_counts('25 reactions 7 comments 3 shares 1.5K views') == {'reactions':25,'comments':7,'shares':3,'views':1500}"
+        run: |
+          python - <<'PY'
+          from src.facebook_metrics import extract_metric_counts
+          expected = {"reactions": 25, "comments": 7, "shares": 3, "views": 1500}
+          assert extract_metric_counts("25 reactions 7 comments 3 shares 1.5K views") == expected
+          PY
       - name: Finish diagnostics
         run: exit 1
