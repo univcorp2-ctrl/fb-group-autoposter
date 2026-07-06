@@ -1,8 +1,6 @@
 name: Analytics diagnostics
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -16,51 +14,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install project and test dependencies
+      - name: Install dependencies
         shell: bash
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
           pip install pytest pytest-cov ruff
-      - name: New analytics tests pass
-        continue-on-error: true
-        run: pytest -q tests/test_analytics_export.py tests/test_facebook_metrics.py --no-cov
-      - name: Full suite passes without coverage
-        continue-on-error: true
-        run: pytest -q --no-cov
-      - name: Workflow contains explicit cov-fail-under
-        continue-on-error: true
-        run: grep -R -q -- '--cov-fail-under' .github/workflows
-      - name: Coverage gate is 70
-        continue-on-error: true
-        run: grep -R -Eq -- '--cov-fail-under[= ]70' .github/workflows
-      - name: Coverage gate is 75
-        continue-on-error: true
-        run: grep -R -Eq -- '--cov-fail-under[= ]75' .github/workflows
-      - name: Coverage gate is 80
-        continue-on-error: true
-        run: grep -R -Eq -- '--cov-fail-under[= ]80' .github/workflows
-      - name: Coverage gate is 85
-        continue-on-error: true
-        run: grep -R -Eq -- '--cov-fail-under[= ]85' .github/workflows
-      - name: Coverage gate is 90
-        continue-on-error: true
-        run: grep -R -Eq -- '--cov-fail-under[= ]90' .github/workflows
-      - name: Coverage gate is 95
-        continue-on-error: true
-        run: grep -R -Eq -- '--cov-fail-under[= ]95' .github/workflows
-      - name: CI covers src package
-        continue-on-error: true
-        run: grep -R -Eq -- '--cov(=| )src' .github/workflows
-      - name: Simulate coverage gate 80
-        continue-on-error: true
-        run: pytest -q --cov=src --cov-report=term-missing --cov-fail-under=80
-      - name: Simulate coverage gate 85
-        continue-on-error: true
-        run: pytest -q --cov=src --cov-report=term-missing --cov-fail-under=85
-      - name: Simulate coverage gate 90
-        continue-on-error: true
-        run: pytest -q --cov=src --cov-report=term-missing --cov-fail-under=90
-      - name: Finish diagnostics
-        run: exit 1
+      - name: Run analytics tests
+        run: pytest -q tests/test_analytics_export.py tests/test_facebook_metrics.py
