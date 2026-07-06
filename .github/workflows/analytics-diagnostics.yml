@@ -1,0 +1,39 @@
+name: Analytics diagnostics
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project and test dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          pip install pytest pytest-cov ruff
+      - name: Run analytics export tests only
+        continue-on-error: true
+        run: pytest -q tests/test_analytics_export.py
+      - name: Run Facebook metrics tests only
+        continue-on-error: true
+        run: pytest -q tests/test_facebook_metrics.py
+      - name: Run full suite without coverage
+        continue-on-error: true
+        run: pytest -q --no-cov
+      - name: Run full suite with configured coverage
+        continue-on-error: true
+        run: pytest -q
+      - name: Finish diagnostics
+        run: exit 1
