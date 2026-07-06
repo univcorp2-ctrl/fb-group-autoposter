@@ -1,19 +1,41 @@
 name: Analytics diagnostics
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  diagnose:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.tests.outputs.files }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tests
+        shell: bash
+        run: |
+          files=$(find tests -type f -name 'test_*.py' | sort | jq -R -s -c 'split("\n")[:-1]')
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+
+  test-file:
+    needs: discover
+    if: ${{ needs.discover.outputs.files != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJSON(needs.discover.outputs.files) }}
+    name: ${{ matrix.file }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - name: Install dependencies
         shell: bash
         run: |
@@ -21,5 +43,5 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
           pip install pytest pytest-cov ruff
-      - name: Run analytics tests
-        run: pytest -q tests/test_analytics_export.py tests/test_facebook_metrics.py
+      - name: Run test file
+        run: pytest -q --no-cov "${{ matrix.file }}"
