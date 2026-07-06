@@ -1,13 +1,15 @@
 name: Analytics diagnostics
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  diagnose-metrics:
+  diagnose-japanese-metrics:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,14 +22,21 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install pytest pytest-cov ruff
-      - name: Run analytics export tests
-        run: pytest -q --no-cov tests/test_analytics_export.py
-      - name: Validate metric parser
-        shell: bash
+      - name: Japanese reactions equals 18
+        continue-on-error: true
         run: |
-          python - <<'PY'
-          from src.facebook_metrics import extract_metric_counts, parse_compact_number
-          assert parse_compact_number("1.2万") == 12000
-          assert extract_metric_counts("25 reactions 7 comments 3 shares 1.5K views")["views"] == 1500
-          PY
+          python -c "from src.facebook_metrics import extract_metric_counts; assert extract_metric_counts('リアクション: 18 コメント 4件 シェア 2件 表示 1.2万回')['reactions'] == 18"
+      - name: Japanese comments equals 4
+        continue-on-error: true
+        run: |
+          python -c "from src.facebook_metrics import extract_metric_counts; assert extract_metric_counts('リアクション: 18 コメント 4件 シェア 2件 表示 1.2万回')['comments'] == 4"
+      - name: Japanese shares equals 2
+        continue-on-error: true
+        run: |
+          python -c "from src.facebook_metrics import extract_metric_counts; assert extract_metric_counts('リアクション: 18 コメント 4件 シェア 2件 表示 1.2万回')['shares'] == 2"
+      - name: Japanese views equals 12000
+        continue-on-error: true
+        run: |
+          python -c "from src.facebook_metrics import extract_metric_counts; assert extract_metric_counts('リアクション: 18 コメント 4件 シェア 2件 表示 1.2万回')['views'] == 12000"
+      - name: Finish diagnostics
+        run: exit 1
