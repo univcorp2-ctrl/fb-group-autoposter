@@ -36,7 +36,7 @@ def renotify(settings: Settings) -> dict[str, int]:
     db = QueueDB(settings.db_path)
     notifier = TelegramApproval(settings, db)
     # Process acknowledgements FIRST so a just-tapped ✅ stops the re-send below.
-    acked = notifier.poll_once()
+    acked = notifier.poll_once() if notifier.has_pending_alerts() else 0
     resent = notifier.renotify_pending()
     return {"acks_processed": acked, "alerts_resent": resent}
 

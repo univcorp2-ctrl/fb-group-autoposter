@@ -83,9 +83,10 @@ class TelegramApproval:
         job = self.db.get_job(job_id)
         degraded = bool(job and job.get("degraded"))
         if self.settings.auto_approve and not (degraded and self.settings.auto_approve_skip_degraded):
-            self.send_preview(job_id)
             self.db.approve_job(job_id)
-            self.send_message(f"✅ AUTO_APPROVEにより承認済み: {job_id}")
+            if getattr(self.settings, "telegram_notify_auto_approval", False):
+                self.send_preview(job_id)
+                self.send_message(f"✅ AUTO_APPROVEにより承認済み: {job_id}")
         else:
             self.send_preview(job_id)
 
@@ -199,3 +200,6 @@ class TelegramApproval:
             self.send_persistent_alert(alert["kind"], alert.get("message", ""))
             sent += 1
         return sent
+
+    def has_pending_alerts(self) -> bool:
+        return bool(self.alert_store.pending_unacknowledged())

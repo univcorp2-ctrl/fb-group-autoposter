@@ -114,3 +114,32 @@ def test_clear_persistent_alert_removes_and_announces_recovery(tmp_path):
     sent.clear()
     approval.clear_persistent_alert("session_dead")
     assert sent == []
+
+
+def test_renotify_script_skips_poll_when_no_pending_alerts(tmp_path, monkeypatch):
+    from scripts import renotify_alerts
+
+    calls: list[str] = []
+
+    class _Approval:
+        def __init__(self, settings, db):
+            pass
+
+        def has_pending_alerts(self):
+            return False
+
+        def poll_once(self):
+            calls.append("poll")
+            raise AssertionError("poll_once should stay quiet with no pending alerts")
+
+        def renotify_pending(self):
+            calls.append("renotify")
+            return 0
+
+    monkeypatch.setattr(renotify_alerts, "TelegramApproval", _Approval)
+    settings = _settings()
+    settings.db_path = tmp_path / "jobs.db"
+    summary = renotify_alerts.renotify(settings)
+
+    assert summary == {"acks_processed": 0, "alerts_resent": 0}
+    assert calls == ["renotify"]

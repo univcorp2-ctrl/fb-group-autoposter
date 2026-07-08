@@ -42,6 +42,8 @@ class Settings:
     dry_run: bool
     auto_approve: bool
     auto_approve_skip_degraded: bool
+    telegram_notify_auto_approval: bool
+    telegram_notify_pipeline_summary: bool
     humanize: bool
     min_interval_min: int
     max_interval_min: int
@@ -78,6 +80,8 @@ class Settings:
             dry_run=_bool("DRY_RUN", True),
             auto_approve=_bool("AUTO_APPROVE", False),
             auto_approve_skip_degraded=_bool("AUTO_APPROVE_SKIP_DEGRADED", True),
+            telegram_notify_auto_approval=_bool("TELEGRAM_NOTIFY_AUTO_APPROVAL", False),
+            telegram_notify_pipeline_summary=_bool("TELEGRAM_NOTIFY_PIPELINE_SUMMARY", False),
             humanize=_bool("HUMANIZE", True),
             min_interval_min=_int("MIN_INTERVAL_MIN", 15),
             max_interval_min=_int("MAX_INTERVAL_MIN", 35),

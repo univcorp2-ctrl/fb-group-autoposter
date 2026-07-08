@@ -139,7 +139,7 @@ async def run_cycle(settings: Settings, *, selftest: bool = False) -> dict[str, 
             summary["approved_processed"] = int(summary["approved_processed"]) + 1
             summary["statuses"].append({"job_id": job["job_id"], "status": status})
         db.mark_heartbeat("orchestrator")
-    if notifier.enabled:
+    if notifier.enabled and getattr(settings, "telegram_notify_pipeline_summary", False):
         notifier.send_message(f"📊 pipeline summary\n{json.dumps(summary, ensure_ascii=False, indent=2)}")
     return summary
 
@@ -221,7 +221,7 @@ async def run_cycle_grouped(
                 await sleeper(random.randint(settings.min_interval_min * 60, settings.max_interval_min * 60))
         db.mark_heartbeat("orchestrator")
 
-    if notifier.enabled:
+    if notifier.enabled and getattr(settings, "telegram_notify_pipeline_summary", False):
         notifier.send_message(f"📊 pipeline summary\n{json.dumps(summary, ensure_ascii=False, indent=2)}")
     return summary
 
