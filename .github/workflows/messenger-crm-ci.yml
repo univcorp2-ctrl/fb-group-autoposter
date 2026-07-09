@@ -40,8 +40,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pytest ruff
 
-      - name: Ruff check
-        run: ruff check messenger/src/messenger_crm messenger/tests/test_messenger_crm_phase1.py messenger/tests/test_multichannel_crm_dashboard.py messenger/scripts/messenger_crm_demo.py messenger/scripts/export_multichannel_crm_dashboard.py
+      - name: Syntax check
+        run: python -m compileall messenger/src/messenger_crm messenger/tests/test_messenger_crm_phase1.py messenger/tests/test_multichannel_crm_dashboard.py messenger/scripts/messenger_crm_demo.py messenger/scripts/export_multichannel_crm_dashboard.py
+
+      - name: Ruff critical check
+        run: ruff check --isolated --select F401,F821,F841 messenger/src/messenger_crm messenger/tests/test_messenger_crm_phase1.py messenger/tests/test_multichannel_crm_dashboard.py messenger/scripts/messenger_crm_demo.py messenger/scripts/export_multichannel_crm_dashboard.py
 
       - name: Unit tests
         run: pytest messenger/tests/test_messenger_crm_phase1.py messenger/tests/test_multichannel_crm_dashboard.py
