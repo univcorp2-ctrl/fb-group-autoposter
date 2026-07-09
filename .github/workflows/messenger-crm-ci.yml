@@ -1,0 +1,50 @@
+name: messenger-crm-ci
+
+on:
+  push:
+    paths:
+      - "messenger/src/messenger_crm/**"
+      - "messenger/tests/test_messenger_crm_phase1.py"
+      - "messenger/scripts/messenger_crm_demo.py"
+      - "docs/messenger_crm_phase1.md"
+      - ".github/workflows/messenger-crm-ci.yml"
+  pull_request:
+    paths:
+      - "messenger/src/messenger_crm/**"
+      - "messenger/tests/test_messenger_crm_phase1.py"
+      - "messenger/scripts/messenger_crm_demo.py"
+      - "docs/messenger_crm_phase1.md"
+      - ".github/workflows/messenger-crm-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest ruff
+
+      - name: Ruff check
+        run: ruff check messenger/src/messenger_crm messenger/tests/test_messenger_crm_phase1.py messenger/scripts/messenger_crm_demo.py
+
+      - name: Unit tests
+        run: pytest messenger/tests/test_messenger_crm_phase1.py
+
+      - name: Demo export
+        run: python messenger/scripts/messenger_crm_demo.py
+
+      - name: Upload EstateBoard sample payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: messenger-crm-estateboard-payload
+          path: output/messenger_crm_snapshot.json
