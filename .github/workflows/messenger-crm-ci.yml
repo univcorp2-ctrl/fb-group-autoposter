@@ -5,15 +5,21 @@ on:
     paths:
       - "messenger/src/messenger_crm/**"
       - "messenger/tests/test_messenger_crm_phase1.py"
+      - "messenger/tests/test_multichannel_crm_dashboard.py"
       - "messenger/scripts/messenger_crm_demo.py"
+      - "messenger/scripts/export_multichannel_crm_dashboard.py"
       - "docs/messenger_crm_phase1.md"
+      - "docs/multichannel_crm_dashboard.md"
       - ".github/workflows/messenger-crm-ci.yml"
   pull_request:
     paths:
       - "messenger/src/messenger_crm/**"
       - "messenger/tests/test_messenger_crm_phase1.py"
+      - "messenger/tests/test_multichannel_crm_dashboard.py"
       - "messenger/scripts/messenger_crm_demo.py"
+      - "messenger/scripts/export_multichannel_crm_dashboard.py"
       - "docs/messenger_crm_phase1.md"
+      - "docs/multichannel_crm_dashboard.md"
       - ".github/workflows/messenger-crm-ci.yml"
   workflow_dispatch:
 
@@ -35,16 +41,20 @@ jobs:
           python -m pip install pytest ruff
 
       - name: Ruff check
-        run: ruff check messenger/src/messenger_crm messenger/tests/test_messenger_crm_phase1.py messenger/scripts/messenger_crm_demo.py
+        run: ruff check messenger/src/messenger_crm messenger/tests/test_messenger_crm_phase1.py messenger/tests/test_multichannel_crm_dashboard.py messenger/scripts/messenger_crm_demo.py messenger/scripts/export_multichannel_crm_dashboard.py
 
       - name: Unit tests
-        run: pytest messenger/tests/test_messenger_crm_phase1.py
+        run: pytest messenger/tests/test_messenger_crm_phase1.py messenger/tests/test_multichannel_crm_dashboard.py
 
       - name: Demo export
-        run: python messenger/scripts/messenger_crm_demo.py
+        run: |
+          python messenger/scripts/messenger_crm_demo.py
+          python messenger/scripts/export_multichannel_crm_dashboard.py
 
-      - name: Upload EstateBoard sample payload
+      - name: Upload EstateBoard sample payloads
         uses: actions/upload-artifact@v4
         with:
-          name: messenger-crm-estateboard-payload
-          path: output/messenger_crm_snapshot.json
+          name: messenger-crm-estateboard-payloads
+          path: |
+            output/messenger_crm_snapshot.json
+            output/estateboard_crm_dashboard.json
