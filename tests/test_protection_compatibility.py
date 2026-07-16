@@ -94,6 +94,16 @@ def test_poster_retry_excludes_session_block_and_ambiguity():
         assert retry(retry_state) is False
 
 
+def test_posting_block_records_failure_without_screenshot_evidence():
+    source = inspect.getsource(FacebookPoster._post_job_real)
+    blocked_branch = source.split("except PostingBlocked as exc:", 1)[1].split(
+        "except Exception as exc:", 1
+    )[0]
+
+    assert 'update_target_status(job["job_id"], target["group_id"], "failed"' in blocked_branch
+    assert "save_screenshot" not in blocked_branch
+
+
 def test_scheduler_keeps_randomized_posting_windows():
     source = (ROOT / "scripts" / "install_windows_tasks.ps1").read_text(encoding="utf-8")
 
