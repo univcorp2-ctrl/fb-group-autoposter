@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from config import Settings
 from src.browser_runtime import BrowserContract
-from src.poster import FacebookPoster, PostNotVerified, PostingBlocked, SessionExpired
+from src.ensure import ensure_posted_today
+from src.poster import (
+    CheckpointRequired,
+    FacebookPoster,
+    PostNotVerified,
+    PostingBlocked,
+    SessionExpired,
+)
+from src.queue_db import QueueDB
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +43,13 @@ def test_browser_contract_preserves_existing_identity():
     assert contract.user_data_dir == Path("profiles/main")
     assert contract.user_agent == settings.browser_user_agent
     assert contract.viewport == {"width": 1366, "height": 900}
+
+
+def test_browser_contract_viewport_cannot_be_mutated():
+    contract = BrowserContract.from_settings(_settings())
+
+    with pytest.raises(TypeError):
+        contract.viewport["width"] = 1920
 
 
 def test_settings_defaults_preserve_conservative_runtime_controls(monkeypatch, tmp_path):
@@ -94,6 +112,43 @@ def test_poster_retry_excludes_session_block_and_ambiguity():
         assert retry(retry_state) is False
 
 
+def test_current_checkpoint_flow_restores_once_then_retries_before_stopping():
+    calls = {"run": 0, "restore": 0}
+
+    class FakeDB:
+        @staticmethod
+        def posted_same_group_today(_group_id):
+            return False
+
+    async def run_once():
+        calls["run"] += 1
+        raise CheckpointRequired("checkpoint", kind="checkpoint")
+
+    def restore_session():
+        calls["restore"] += 1
+        return True
+
+    async def no_sleep(_seconds):
+        return None
+
+    result = asyncio.run(
+        ensure_posted_today(
+            None,
+            [{"id": "g", "active_hours": [0, 24]}],
+            FakeDB(),
+            run_once=run_once,
+            restore_session=restore_session,
+            sleeper=no_sleep,
+            now_hour_fn=lambda: 12,
+            time_fn=lambda: 0.0,
+        )
+    )
+
+    assert calls == {"run": 2, "restore": 1}
+    assert result["reason"] == "session_unrecoverable"
+    assert result["challenge"] == "checkpoint"
+
+
 def test_posting_block_records_failure_without_screenshot_evidence():
     source = inspect.getsource(FacebookPoster._post_job_real)
     blocked_branch = source.split("except PostingBlocked as exc:", 1)[1].split(
@@ -120,9 +175,67 @@ def test_membership_check_is_report_only_without_explicit_enable_flag():
     assert "if do_enable and joined_disabled:" in source
 
 
-def test_uncertain_verifier_has_explicit_read_only_probe_mode():
-    source = (ROOT / "scripts" / "verify_posts.py").read_text(encoding="utf-8")
+def test_uncertain_verifier_probe_preserves_targets_but_may_initialize_schema(
+    tmp_path, monkeypatch
+):
+    from playwright import async_api
+    from scripts import verify_posts
 
-    assert 'ap.add_argument("--probe", action="store_true"' in source
-    assert "if probe:" in source
-    assert "await ctx.close()\n            return summary\n\n        # Correct the DB against reality." in source
+    db_path = tmp_path / "jobs.db"
+    db = QueueDB(db_path)
+    job_id = db.create_job({"property_id": "p"}, [{"group_id": "g", "body": "body"}])
+    db.update_target_status(job_id, "g", "uncertain", error="pending_approval")
+    before = db.get_targets(job_id)
+    with db.connect() as conn:
+        conn.execute("DROP TABLE heartbeat")
+        conn.execute("DROP TABLE group_circuit")
+
+    settings = SimpleNamespace(
+        db_path=db_path,
+        profile_dir=tmp_path / "profile",
+        browser_user_agent="configured-stable-user-agent",
+    )
+    monkeypatch.setattr(verify_posts.Settings, "load", lambda: settings)
+    monkeypatch.setattr(
+        verify_posts,
+        "load_groups",
+        lambda: [{"id": "g", "name": "Group", "post_url": "https://example.invalid/g"}],
+    )
+
+    class FakeContext:
+        pages = [object()]
+
+        async def close(self):
+            return None
+
+    class FakeChromium:
+        async def launch_persistent_context(self, **_kwargs):
+            return FakeContext()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+    class FakePlaywrightContextManager:
+        async def __aenter__(self):
+            return FakePlaywright()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    async def fake_cookie_user_id(_context):
+        return "user-id"
+
+    async def fake_collect_my_posts(*_args, **_kwargs):
+        return [{"permalink": "https://example.invalid/post", "text": "body"}]
+
+    monkeypatch.setattr(async_api, "async_playwright", FakePlaywrightContextManager)
+    monkeypatch.setattr(verify_posts, "cookie_user_id", fake_cookie_user_id)
+    monkeypatch.setattr(verify_posts, "collect_my_posts", fake_collect_my_posts)
+
+    asyncio.run(verify_posts.run(headed=False, probe=True))
+
+    after = QueueDB(db_path).get_targets(job_id)
+    with db.connect() as conn:
+        tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master")}
+    assert after == before
+    assert {"heartbeat", "group_circuit"} <= tables

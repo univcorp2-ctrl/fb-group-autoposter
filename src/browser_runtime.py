@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 
@@ -14,7 +16,7 @@ class BrowserContract:
     headless: bool
     user_data_dir: Path
     user_agent: str
-    viewport: dict[str, int]
+    viewport: Mapping[str, int]
 
     @classmethod
     def from_settings(cls, settings: Any) -> "BrowserContract":
@@ -22,5 +24,5 @@ class BrowserContract:
             headless=False,
             user_data_dir=Path(settings.profile_dir),
             user_agent=settings.browser_user_agent,
-            viewport={"width": 1366, "height": 900},
+            viewport=MappingProxyType({"width": 1366, "height": 900}),
         )
