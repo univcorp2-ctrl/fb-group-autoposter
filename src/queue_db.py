@@ -8,6 +8,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator
 
+from src.run_result import (
+    sanitize_terminal_result,
+    validate_command,
+    validate_run_id,
+    validate_timestamp,
+)
+
 JOB_STATUSES = {"pending", "approved", "rejected", "posting", "done", "partial_failed", "failed"}
 TARGET_STATUSES = {"pending", "posted", "failed", "skipped", "uncertain"}
 
@@ -122,10 +129,14 @@ class QueueDB:
         run_id: str,
         started_at: str | None = None,
     ) -> dict[str, Any]:
+        validate_run_id(run_id)
+        validate_command(command)
+        timestamp = started_at or now_iso()
+        validate_timestamp(timestamp, "started_at")
         with self.connect() as conn:
             conn.execute(
                 "INSERT INTO runs(run_id, command, started_at) VALUES(?,?,?)",
-                (run_id, command, started_at or now_iso()),
+                (run_id, command, timestamp),
             )
         run = self.get_run(run_id)
         assert run is not None
@@ -135,13 +146,21 @@ class QueueDB:
         self,
         run_id: str,
         *,
-        outcome: str,
-        reason: str,
-        exit_code: int,
-        finished_at: str | None = None,
-        result: dict[str, Any] | None = None,
+        result: dict[str, Any],
     ) -> dict[str, Any]:
+        validate_run_id(run_id)
+        canonical = sanitize_terminal_result(result)
+        if canonical["run_id"] != run_id:
+            raise ValueError("terminal result run_id does not match SQLite run")
+        serialized = json.dumps(canonical, ensure_ascii=False, sort_keys=True)
         with self.connect() as conn:
+            existing = conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+            if existing is None:
+                raise RuntimeError(f"run missing or already terminal: {run_id}")
+            if existing["command"] != canonical["command"]:
+                raise ValueError("terminal result command does not match SQLite run")
+            if existing["started_at"] != canonical["started_at"]:
+                raise ValueError("terminal result started_at does not match SQLite run")
             cursor = conn.execute(
                 """
                 UPDATE runs
@@ -149,11 +168,11 @@ class QueueDB:
                 WHERE run_id=? AND finished_at IS NULL
                 """,
                 (
-                    finished_at or now_iso(),
-                    outcome,
-                    reason,
-                    exit_code,
-                    json.dumps(result, ensure_ascii=False) if result is not None else None,
+                    canonical["finished_at"],
+                    canonical["outcome"],
+                    canonical["reason"],
+                    canonical["exit_code"],
+                    serialized,
                     run_id,
                 ),
             )
