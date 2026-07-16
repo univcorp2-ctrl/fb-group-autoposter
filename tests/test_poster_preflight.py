@@ -35,6 +35,16 @@ def test_preflight_blocks_daily_limit(tmp_path):
     assert reason == "daily_limit"
 
 
+def test_preflight_blocks_outside_group_active_hours(tmp_path, monkeypatch):
+    db = QueueDB(tmp_path / "jobs.db")
+    poster = FacebookPoster(settings(), db, [group()])
+    monkeypatch.setattr(poster, "_group_allowed_now", lambda _group: False)
+
+    reason = poster._preflight_target({"property_id": "p"}, {"group_id": "g1"}, group())
+
+    assert reason == "outside_active_hours"
+
+
 def test_preflight_blocks_duplicate_recent_property(tmp_path):
     db = QueueDB(tmp_path / "jobs.db")
     job_id = db.create_job({"property_id": "p"}, [{"group_id": "g1", "body": "body"}])
