@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from collections.abc import Callable, Iterable, Mapping
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -18,6 +20,22 @@ OUTCOME_EXIT_CODES = {
     "posted_delivery_pending": 50,
     "internal_error": 60,
 }
+RESERVED_RESULT_FIELDS = frozenset(
+    {
+        "command",
+        "exit_code",
+        "finalized_by",
+        "finished_at",
+        "outcome",
+        "pre_sqlite_failure",
+        "reason",
+        "result_at",
+        "run_id",
+        "schema",
+        "started_at",
+        "terminal",
+    }
+)
 _SENSITIVE_KEY_PARTS = (
     "api_key",
     "authorization",
@@ -74,27 +92,28 @@ class RunResultStore:
         return self.root / "latest.json"
 
     def start(self, command: str, *, run_id: str) -> dict[str, Any]:
-        current = self.read_latest()
-        if current is not None and current.get("run_id") == run_id:
-            if current.get("terminal"):
-                raise RuntimeError(f"run is already terminal: {run_id}")
-            return current
+        with self._exclusive_lock():
+            current = self.read_latest()
+            if current is not None and current.get("run_id") == run_id:
+                if current.get("terminal"):
+                    raise RuntimeError(f"run is already terminal: {run_id}")
+                return current
 
-        timestamp = _iso(self.clock())
-        result = {
-            "schema": SCHEMA,
-            "run_id": run_id,
-            "command": command,
-            "started_at": timestamp,
-            "finished_at": None,
-            "outcome": "running",
-            "reason": "started",
-            "exit_code": None,
-            "terminal": False,
-            "result_at": timestamp,
-        }
-        self._write_atomic(self.latest_path, result)
-        return result
+            timestamp = _iso(self.clock())
+            result = {
+                "schema": SCHEMA,
+                "run_id": run_id,
+                "command": command,
+                "started_at": timestamp,
+                "finished_at": None,
+                "outcome": "running",
+                "reason": "started",
+                "exit_code": None,
+                "terminal": False,
+                "result_at": timestamp,
+            }
+            self._write_atomic(self.latest_path, result)
+            return result
 
     def finish(
         self,
@@ -102,11 +121,37 @@ class RunResultStore:
         *,
         outcome: str,
         reason: str,
+        extra_fields: Mapping[str, Any] | None = None,
         **fields: Any,
     ) -> dict[str, Any]:
         if outcome not in OUTCOME_EXIT_CODES:
             raise ValueError(f"unknown outcome: {outcome}")
+        supplied_fields = {**(extra_fields or {}), **fields}
+        reserved = RESERVED_RESULT_FIELDS.intersection(supplied_fields)
+        if reserved:
+            names = ", ".join(sorted(reserved))
+            raise ValueError(f"reserved result fields cannot be supplied: {names}")
 
+        with self._exclusive_lock():
+            return self._finish_locked(
+                run,
+                outcome=outcome,
+                reason=reason,
+                finalized_by="python",
+                pre_sqlite_failure=False,
+                fields=supplied_fields,
+            )
+
+    def _finish_locked(
+        self,
+        run: Mapping[str, Any],
+        *,
+        outcome: str,
+        reason: str,
+        finalized_by: str,
+        pre_sqlite_failure: bool,
+        fields: Mapping[str, Any],
+    ) -> dict[str, Any]:
         current = self.read_latest()
         run_id = str(run["run_id"])
         if current is None or current.get("run_id") != run_id:
@@ -123,6 +168,8 @@ class RunResultStore:
             "exit_code": OUTCOME_EXIT_CODES[outcome],
             "terminal": True,
             "result_at": timestamp,
+            "finalized_by": finalized_by,
+            "pre_sqlite_failure": pre_sqlite_failure,
             **fields,
         }
         result = _redact(result, self.secrets)
@@ -138,24 +185,76 @@ class RunResultStore:
         reason: str,
         pre_sqlite_failure: bool = False,
     ) -> dict[str, Any] | None:
-        current = self.read_latest()
-        if current is None or current.get("run_id") != run_id:
-            return None
-        if current.get("terminal"):
-            return current
-        return self.finish(
-            current,
-            outcome="internal_error",
-            reason=reason,
-            finalized_by="launcher",
-            pre_sqlite_failure=pre_sqlite_failure,
-        )
+        with self._exclusive_lock():
+            current = self.read_latest()
+            if current is None or current.get("run_id") != run_id:
+                return None
+            if current.get("terminal"):
+                return current
+            return self._finish_locked(
+                current,
+                outcome="internal_error",
+                reason=reason,
+                finalized_by="launcher",
+                pre_sqlite_failure=pre_sqlite_failure,
+                fields={},
+            )
 
     def read_latest(self) -> dict[str, Any] | None:
         try:
             return json.loads(self.latest_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return None
+
+    @contextmanager
+    def _exclusive_lock(self, *, timeout_seconds: float = 15) -> Any:
+        """Serialize result transitions across processes.
+
+        The sidecar is intentionally persistent. Removing a lock file can let one process
+        lock an old file object while another locks a newly created path. The operating
+        system releases the advisory byte-range lock when the handle closes or its owner
+        exits, so an abrupt launcher/Python exit cannot leave a stale lock behind.
+        """
+        self.root.mkdir(parents=True, exist_ok=True)
+        lock_path = self.root / ".run-result.lock"
+        lock_file = lock_path.open("a+b", buffering=0)
+        acquired = False
+        deadline = time.monotonic() + timeout_seconds
+        try:
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")
+                os.fsync(lock_file.fileno())
+            while True:
+                try:
+                    lock_file.seek(0)
+                    if os.name == "nt":
+                        import msvcrt
+
+                        msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired = True
+                    break
+                except OSError as exc:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(f"timed out waiting for result lock: {lock_path}") from exc
+                    time.sleep(0.02)
+            yield
+        finally:
+            if acquired:
+                lock_file.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            lock_file.close()
 
     @staticmethod
     def _write_atomic(path: Path, result: Mapping[str, Any]) -> None:

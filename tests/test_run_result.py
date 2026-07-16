@@ -1,12 +1,75 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
+import os
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
 from src.queue_db import QueueDB
-from src.run_result import OUTCOME_EXIT_CODES, RunResultStore, is_fresh_terminal_result
+from src.run_result import (
+    OUTCOME_EXIT_CODES,
+    RunResultStore,
+    is_fresh_terminal_result,
+)
+
+RESERVED_RESULT_FIELDS = {
+    "command",
+    "exit_code",
+    "finalized_by",
+    "finished_at",
+    "outcome",
+    "pre_sqlite_failure",
+    "reason",
+    "result_at",
+    "run_id",
+    "schema",
+    "started_at",
+    "terminal",
+}
+
+
+class _PausingHistoryStore(RunResultStore):
+    def __init__(self, root, entered, release):
+        super().__init__(root)
+        self.entered = entered
+        self.release = release
+
+    def _write_atomic(self, path, result):
+        if "history" in Path(path).parts:
+            self.entered.set()
+            if not self.release.wait(10):
+                raise TimeoutError("test did not release terminal writer")
+        super()._write_atomic(path, result)
+
+
+def _finish_success_while_paused(root, entered, release, errors):
+    try:
+        store = _PausingHistoryStore(root, entered, release)
+        run = store.read_latest()
+        store.finish(run, outcome="success", reason="success")
+    except BaseException as exc:
+        errors.put(repr(exc))
+
+
+def _finalize_from_launcher(root, attempted, results, errors):
+    try:
+        attempted.set()
+        result = RunResultStore(root).finalize_from_launcher(
+            "run-1", reason="child_exited_without_result"
+        )
+        results.put(result)
+    except BaseException as exc:
+        errors.put(repr(exc))
+
+
+def _exit_while_holding_result_lock(root, acquired):
+    store = RunResultStore(root)
+    with store._exclusive_lock():
+        acquired.set()
+        os._exit(0)
 
 
 def _read_json(path):
@@ -101,6 +164,91 @@ def test_launcher_does_not_overwrite_python_terminal_result(tmp_path):
 
     assert store.finalize_from_launcher("run-1", reason="child_exit") == terminal
     assert _read_json(tmp_path / "latest.json") == terminal
+
+
+def test_concurrent_launcher_cannot_replace_python_terminal_result(tmp_path):
+    store = RunResultStore(tmp_path)
+    store.start("daily-post", run_id="run-1")
+    context = multiprocessing.get_context("spawn")
+    writer_entered = context.Event()
+    release_writer = context.Event()
+    launcher_attempted = context.Event()
+    results = context.Queue()
+    errors = context.Queue()
+    python_writer = context.Process(
+        target=_finish_success_while_paused,
+        args=(tmp_path, writer_entered, release_writer, errors),
+    )
+    launcher = context.Process(
+        target=_finalize_from_launcher,
+        args=(tmp_path, launcher_attempted, results, errors),
+    )
+
+    python_writer.start()
+    assert writer_entered.wait(10)
+    launcher.start()
+    assert launcher_attempted.wait(10)
+    launcher.join(0.5)
+    assert launcher.is_alive(), "launcher did not wait for the active terminal writer"
+    release_writer.set()
+    python_writer.join(10)
+    launcher.join(10)
+
+    assert python_writer.exitcode == 0
+    assert launcher.exitcode == 0
+    assert errors.empty()
+    assert results.get(timeout=2)["outcome"] == "success"
+    assert _read_json(tmp_path / "latest.json")["outcome"] == "success"
+
+
+def test_result_lock_is_released_when_owner_process_exits(tmp_path):
+    store = RunResultStore(tmp_path)
+    run = store.start("daily-post", run_id="run-1")
+    context = multiprocessing.get_context("spawn")
+    acquired = context.Event()
+    owner = context.Process(target=_exit_while_holding_result_lock, args=(tmp_path, acquired))
+
+    owner.start()
+    assert acquired.wait(10)
+    owner.join(10)
+    assert owner.exitcode == 0
+
+    result = store.finish(run, outcome="success", reason="success")
+    assert result["outcome"] == "success"
+
+
+@pytest.mark.parametrize("reserved_key", sorted(RESERVED_RESULT_FIELDS))
+def test_finish_rejects_reserved_result_fields(tmp_path, reserved_key):
+    store = RunResultStore(tmp_path)
+    run = store.start("daily-post", run_id="run-1")
+
+    with pytest.raises(ValueError, match="reserved result fields"):
+        store.finish(
+            run,
+            outcome="preflight_blocked",
+            reason="browser_missing",
+            extra_fields={reserved_key: "attacker-controlled"},
+        )
+
+    latest = _read_json(tmp_path / "latest.json")
+    assert latest["schema"] == "fb-autoposter-run/v1"
+    assert latest["run_id"] == "run-1"
+    assert latest["terminal"] is False
+
+
+def test_direct_reserved_field_cannot_override_exact_exit_mapping(tmp_path):
+    store = RunResultStore(tmp_path)
+    run = store.start("daily-post", run_id="run-1")
+
+    with pytest.raises(ValueError, match="exit_code"):
+        store.finish(
+            run,
+            outcome="preflight_blocked",
+            reason="browser_missing",
+            exit_code=0,
+        )
+
+    assert _read_json(tmp_path / "latest.json")["terminal"] is False
 
 
 def test_result_redacts_sensitive_fields_and_values(tmp_path):
