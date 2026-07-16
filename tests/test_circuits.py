@@ -1,0 +1,180 @@
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from src.circuits import CircuitManager, FailureKind
+from src.queue_db import QueueDB
+
+
+NOW = datetime(2026, 7, 16, 0, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "kind,scope,reason,clearance",
+    [
+        (FailureKind.CHECKPOINT, "global", "checkpoint", "operator"),
+        (FailureKind.CAPTCHA, "global", "captcha", "operator"),
+        (FailureKind.TWO_FACTOR, "global", "two_factor", "operator"),
+        (FailureKind.ACCOUNT_WARNING, "global", "account_warning", "operator"),
+        (FailureKind.RESTRICTION, "global", "restriction", "operator"),
+        (FailureKind.POSTING_BLOCK, "global", "posting_block", "operator"),
+        (FailureKind.UNCLASSIFIED_LOGIN, "global", "unclassified_login", "operator"),
+        (FailureKind.SESSION_EXPIRED, "environment", "session_expired", "preflight"),
+        (FailureKind.PROFILE_LOCKED, "environment", "profile_locked", "preflight"),
+        (FailureKind.PROFILE_CORRUPT, "environment", "profile_corrupt", "operator_preflight"),
+        (FailureKind.CONCURRENT_RUNNER, "environment", "concurrent_runner", "preflight"),
+        (FailureKind.SOURCE_MISSING, "environment", "source_missing", "preflight"),
+        (FailureKind.SOURCE_STALE, "environment", "source_stale", "preflight"),
+        (FailureKind.SOURCE_HASH_MISMATCH, "environment", "source_hash_mismatch", "preflight"),
+        (FailureKind.SOURCE_IDENTITY_MISMATCH, "environment", "source_identity_mismatch", "preflight"),
+        (FailureKind.BROKER_UNKNOWN, "environment", "broker_unknown", "preflight"),
+        (FailureKind.BROWSER_MISSING, "environment", "browser_missing", "preflight"),
+        (FailureKind.RUNTIME_MISMATCH, "environment", "runtime_mismatch", "preflight"),
+    ],
+)
+def test_first_occurrence_policies(tmp_path, kind, scope, reason, clearance):
+    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    circuit = manager.record_failure(kind, environment="prod", occurred_at=NOW)
+    assert circuit is not None
+    assert (circuit["scope"], circuit["reason"], circuit["clearance_mode"]) == (
+        scope,
+        reason,
+        clearance,
+    )
+    assert circuit["expires_at"] is None
+
+
+def test_group_ambiguity_is_24h_and_marks_attempt_reconcile_only(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    manager = CircuitManager(db)
+    attempt_id = _clicked_attempt(db)
+    circuit = manager.record_failure(
+        FailureKind.POST_SUBMIT_AMBIGUITY,
+        group_id="g1",
+        attempt_id=attempt_id,
+        occurred_at=NOW,
+    )
+    assert circuit["scope"] == "group"
+    assert datetime.fromisoformat(circuit["expires_at"]) == NOW + timedelta(hours=24)
+    assert db.get_submission_attempt(attempt_id)["state"] == "reconcile_only"
+    assert db.get_targets("j1")[0]["status"] == "uncertain"
+
+
+def test_selector_threshold_and_rolling_window(tmp_path):
+    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    assert manager.record_failure(FailureKind.SELECTOR_FAILURE, group_id="g1", occurred_at=NOW) is None
+    assert manager.record_failure(
+        FailureKind.COMPOSER_FAILURE, group_id="g1", occurred_at=NOW + timedelta(hours=23)
+    )["scope"] == "group"
+
+    later = NOW + timedelta(hours=49)
+    assert manager.record_failure(FailureKind.SELECTOR_FAILURE, group_id="g2", occurred_at=later) is None
+    assert manager.record_failure(
+        FailureKind.SELECTOR_FAILURE, group_id="g2", occurred_at=later + timedelta(hours=24, seconds=1)
+    ) is None
+
+
+def test_three_distinct_groups_open_global_24h(tmp_path):
+    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    for offset, group in enumerate(("g1", "g2")):
+        assert manager.record_failure(
+            FailureKind.SELECTOR_FAILURE,
+            group_id=group,
+            occurred_at=NOW + timedelta(hours=offset),
+        ) is None
+    circuit = manager.record_failure(
+        FailureKind.COMPOSER_FAILURE, group_id="g3", occurred_at=NOW + timedelta(hours=2)
+    )
+    assert circuit["scope"] == "global"
+    assert circuit["clearance_mode"] == "operator_preflight"
+    assert datetime.fromisoformat(circuit["expires_at"]) == NOW + timedelta(hours=26)
+
+
+def test_other_runtime_threshold_is_three_in_six_hours(tmp_path):
+    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    for hour in (0, 2):
+        assert manager.record_failure(
+            FailureKind.OTHER_PRESUBMIT_RUNTIME, environment="prod", occurred_at=NOW + timedelta(hours=hour)
+        ) is None
+    assert manager.record_failure(
+        FailureKind.OTHER_PRESUBMIT_RUNTIME, environment="prod", occurred_at=NOW + timedelta(hours=5)
+    )["scope"] == "environment"
+    assert manager.record_failure(
+        FailureKind.OTHER_PRESUBMIT_RUNTIME, environment="other", occurred_at=NOW + timedelta(hours=7)
+    ) is None
+
+
+def test_global_precedence_persistence_expiry_and_clearance_authority(tmp_path):
+    path = tmp_path / "q.db"
+    manager = CircuitManager(QueueDB(path))
+    manager.record_failure(FailureKind.PUBLIC_VERIFICATION_FAILURE, group_id="g1", occurred_at=NOW)
+    manager.record_failure(FailureKind.CHECKPOINT, occurred_at=NOW + timedelta(minutes=1))
+
+    restarted = CircuitManager(QueueDB(path))
+    assert restarted.blocking_circuit(group_id="g1", environment="prod", at=NOW + timedelta(hours=1))["scope"] == "global"
+    assert restarted.clear(scope="global", subject="*", actor="scheduler", at=NOW) is False
+    assert restarted.clear(scope="global", subject="*", actor="operator", at=NOW) is True
+    assert restarted.blocking_circuit(group_id="g1", environment="prod", at=NOW + timedelta(hours=25)) is None
+
+
+def test_new_failure_reopens_an_expired_group_circuit(tmp_path):
+    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    first = manager.record_failure(
+        FailureKind.PUBLIC_VERIFICATION_FAILURE, group_id="g1", occurred_at=NOW
+    )
+    second = manager.record_failure(
+        FailureKind.PUBLIC_VERIFICATION_FAILURE,
+        group_id="g1",
+        occurred_at=NOW + timedelta(hours=25),
+    )
+    assert second["circuit_id"] != first["circuit_id"]
+    assert manager.blocking_circuit(group_id="g1", at=NOW + timedelta(hours=25))["circuit_id"] == second["circuit_id"]
+
+
+def test_preflight_and_operator_preflight_clearance(tmp_path):
+    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    manager.record_failure(FailureKind.PROFILE_CORRUPT, environment="prod", occurred_at=NOW)
+    assert manager.record_successful_preflight("prod", actor="scheduler", at=NOW) == 0
+    assert manager.operator_review(scope="environment", subject="prod", actor="operator", at=NOW) is True
+    assert manager.record_successful_preflight("prod", actor="operator", at=NOW) == 1
+
+
+def test_operator_preflight_circuit_does_not_expire_without_both_clearances(tmp_path):
+    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    for group in ("g1", "g2", "g3"):
+        manager.record_failure(FailureKind.SELECTOR_FAILURE, group_id=group, occurred_at=NOW)
+    assert manager.blocking_circuit(at=NOW + timedelta(hours=25))["scope"] == "global"
+    assert manager.record_successful_preflight("prod", actor="operator", at=NOW + timedelta(hours=25)) == 0
+    assert manager.operator_review(scope="global", subject="*", actor="operator", at=NOW) is True
+    assert manager.record_successful_preflight("prod", actor="operator", at=NOW) == 1
+
+
+def test_additive_migration_from_legacy_database(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy.db"
+    with sqlite3.connect(path) as conn:
+        conn.executescript(
+            "CREATE TABLE jobs(job_id TEXT PRIMARY KEY, property_id TEXT, status TEXT, created_at TEXT, updated_at TEXT, degraded INTEGER, payload_json TEXT);"
+            "CREATE TABLE job_targets(id INTEGER PRIMARY KEY, job_id TEXT, group_id TEXT, body TEXT, status TEXT, attempts INTEGER, last_error TEXT, posted_at TEXT, screenshot TEXT, permalink TEXT);"
+        )
+    db = QueueDB(path)
+    with db.connect() as conn:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(job_targets)")}
+    assert {"safety_circuits", "circuit_events", "approvals", "submission_attempts"} <= tables
+    assert {"source_hash", "normalized_body_hash", "generation_fingerprint", "approval_id", "reconcile_only"} <= columns
+
+
+def _clicked_attempt(db: QueueDB) -> str:
+    db.create_job(
+        {"job_id": "j1", "property_id": "p1"},
+        [{"group_id": "g1", "body": "body", "source_hash": "s", "generation_fingerprint": "f"}],
+    )
+    approval = db.approve_target("j1", "g1", source="operator")
+    attempt = db.begin_submission(
+        "j1", "g1", approval_id=approval["approval_id"], source_hash="s",
+        body_hash=approval["body_hash"], generation_fingerprint="f"
+    )
+    db.mark_click_started(attempt["attempt_id"], at=NOW)
+    return attempt["attempt_id"]

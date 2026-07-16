@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
+import unicodedata
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -16,7 +18,17 @@ from src.run_result import (
 )
 
 JOB_STATUSES = {"pending", "approved", "rejected", "posting", "done", "partial_failed", "failed"}
-TARGET_STATUSES = {"pending", "posted", "failed", "skipped", "uncertain"}
+TARGET_STATUSES = {
+    "pending", "pending_approval", "approved", "submitting", "posted",
+    "failed", "skipped", "uncertain",
+}
+
+
+def normalized_body_hash(body: str) -> str:
+    """Stable SHA-256 over the body representation shown to an approver."""
+    normalized = unicodedata.normalize("NFC", body).replace("\r\n", "\n").replace("\r", "\n")
+    normalized = "\n".join(line.rstrip() for line in normalized.strip().split("\n"))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def now_iso() -> str:
@@ -119,6 +131,91 @@ class QueueDB:
                   exit_code    INTEGER,
                   result_json  TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS safety_circuits (
+                  circuit_id TEXT PRIMARY KEY,
+                  scope TEXT NOT NULL,
+                  subject TEXT NOT NULL,
+                  reason TEXT NOT NULL,
+                  opened_at TEXT NOT NULL,
+                  expires_at TEXT,
+                  clearance_mode TEXT NOT NULL,
+                  operator_reviewed_at TEXT,
+                  operator_reviewed_by TEXT,
+                  cleared_at TEXT,
+                  cleared_by TEXT,
+                  clearance_reason TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS circuit_events (
+                  event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  kind TEXT NOT NULL,
+                  group_id TEXT,
+                  environment TEXT,
+                  occurred_at TEXT NOT NULL,
+                  metadata_json TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE TABLE IF NOT EXISTS approvals (
+                  approval_id TEXT PRIMARY KEY,
+                  job_id TEXT NOT NULL,
+                  property_id TEXT NOT NULL,
+                  group_id TEXT NOT NULL,
+                  source_hash TEXT NOT NULL,
+                  body_hash TEXT NOT NULL,
+                  generation_fingerprint TEXT NOT NULL,
+                  source TEXT NOT NULL,
+                  approved_at TEXT NOT NULL,
+                  FOREIGN KEY(job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS submission_attempts (
+                  attempt_id TEXT PRIMARY KEY,
+                  job_id TEXT NOT NULL,
+                  property_id TEXT NOT NULL,
+                  group_id TEXT NOT NULL,
+                  approval_id TEXT NOT NULL,
+                  state TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  click_started_at TEXT,
+                  response_received_at TEXT,
+                  verification_started_at TEXT,
+                  completed_at TEXT,
+                  last_error TEXT,
+                  permalink TEXT,
+                  UNIQUE(property_id, group_id, approval_id),
+                  FOREIGN KEY(job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
+                  FOREIGN KEY(approval_id) REFERENCES approvals(approval_id)
+                );
+                """
+            )
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(job_targets)")}
+            additions = {
+                "source_hash": "TEXT",
+                "normalized_body_hash": "TEXT",
+                "generation_fingerprint": "TEXT",
+                "approval_id": "TEXT",
+                "reconcile_only": "INTEGER NOT NULL DEFAULT 0",
+            }
+            for name, declaration in additions.items():
+                if name not in columns:
+                    conn.execute(f"ALTER TABLE job_targets ADD COLUMN {name} {declaration}")
+            conn.executescript(
+                """
+                CREATE INDEX IF NOT EXISTS idx_circuits_active
+                  ON safety_circuits(scope, subject, cleared_at, opened_at);
+                CREATE INDEX IF NOT EXISTS idx_circuit_events_window
+                  ON circuit_events(kind, occurred_at, group_id, environment);
+                CREATE INDEX IF NOT EXISTS idx_attempts_target
+                  ON submission_attempts(property_id, group_id, click_started_at);
+                CREATE TRIGGER IF NOT EXISTS approvals_immutable_update
+                  BEFORE UPDATE ON approvals BEGIN
+                    SELECT RAISE(ABORT, 'approvals are immutable');
+                  END;
+                CREATE TRIGGER IF NOT EXISTS approvals_immutable_delete
+                  BEFORE DELETE ON approvals BEGIN
+                    SELECT RAISE(ABORT, 'approvals are immutable');
+                  END;
                 """
             )
 
@@ -204,9 +301,18 @@ class QueueDB:
                 (job_id, property_id, "pending", ts, ts, int(degraded), json.dumps(property_data, ensure_ascii=False)),
             )
             for variant in variants:
+                source_hash = variant.get("source_hash")
+                fingerprint = variant.get("generation_fingerprint")
+                target_status = "pending_approval" if source_hash is not None or fingerprint is not None else "pending"
                 conn.execute(
-                    "INSERT OR IGNORE INTO job_targets(job_id, group_id, body, status) VALUES(?,?,?,?)",
-                    (job_id, variant["group_id"], variant["body"], "pending"),
+                    """INSERT OR IGNORE INTO job_targets(
+                       job_id, group_id, body, status, source_hash,
+                       normalized_body_hash, generation_fingerprint
+                       ) VALUES(?,?,?,?,?,?,?)""",
+                    (
+                        job_id, variant["group_id"], variant["body"], target_status,
+                        source_hash, normalized_body_hash(variant["body"]), fingerprint,
+                    ),
                 )
         return job_id
 
@@ -239,6 +345,18 @@ class QueueDB:
         # inflated count_posts_today() and blocked all new posting via daily_limit.
         posted_at = now_iso() if status in ("posted", "uncertain") else None
         with self.connect() as conn:
+            if status in {"pending", "pending_approval", "approved", "submitting"}:
+                target = conn.execute(
+                    """SELECT j.property_id FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
+                       WHERE t.job_id=? AND t.group_id=?""",
+                    (job_id, group_id),
+                ).fetchone()
+                if target and conn.execute(
+                    """SELECT 1 FROM submission_attempts
+                       WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1""",
+                    (target["property_id"], group_id),
+                ).fetchone():
+                    raise ValueError("click boundary permanently prevents an eligible target state")
             if increment_attempts:
                 conn.execute(
                     """
@@ -262,6 +380,296 @@ class QueueDB:
 
     def approve_job(self, job_id: str) -> None:
         self.update_job_status(job_id, "approved")
+
+    def approve_target(
+        self,
+        job_id: str,
+        group_id: str,
+        *,
+        source: str,
+        approval_id: str | None = None,
+        approved_at: str | None = None,
+    ) -> dict[str, Any]:
+        if source not in {"telegram", "operator", "auto_policy"}:
+            raise ValueError("invalid approval source")
+        with self.connect() as conn:
+            target = conn.execute(
+                """SELECT t.*, j.property_id FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
+                   WHERE t.job_id=? AND t.group_id=?""",
+                (job_id, group_id),
+            ).fetchone()
+            if target is None:
+                raise ValueError("target not found")
+            clicked = conn.execute(
+                "SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1",
+                (target["property_id"], group_id),
+            ).fetchone()
+            if clicked:
+                raise ValueError("click boundary permanently prevents approval")
+            source_hash = target["source_hash"] or ""
+            body_hash = target["normalized_body_hash"] or normalized_body_hash(target["body"])
+            fingerprint = target["generation_fingerprint"] or ""
+            if approval_id is not None:
+                old = conn.execute("SELECT * FROM approvals WHERE approval_id=?", (approval_id,)).fetchone()
+                if old is None or any(
+                    old[name] != value
+                    for name, value in (
+                        ("job_id", job_id), ("group_id", group_id),
+                        ("source_hash", source_hash), ("body_hash", body_hash),
+                        ("generation_fingerprint", fingerprint),
+                    )
+                ):
+                    raise ValueError("stale approval callback")
+                row = old
+            else:
+                approval_id = str(uuid.uuid4())
+                conn.execute(
+                    """INSERT INTO approvals(
+                       approval_id, job_id, property_id, group_id, source_hash, body_hash,
+                       generation_fingerprint, source, approved_at
+                       ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (
+                        approval_id, job_id, target["property_id"], group_id, source_hash,
+                        body_hash, fingerprint, source, approved_at or now_iso(),
+                    ),
+                )
+                row = conn.execute("SELECT * FROM approvals WHERE approval_id=?", (approval_id,)).fetchone()
+            conn.execute(
+                """UPDATE job_targets SET status='approved', approval_id=?, source_hash=?,
+                   normalized_body_hash=?, generation_fingerprint=?, reconcile_only=0
+                   WHERE job_id=? AND group_id=?""",
+                (approval_id, source_hash, body_hash, fingerprint, job_id, group_id),
+            )
+        return dict(row)
+
+    def auto_approve_target(self, job_id: str, group_id: str, *, gates: dict[str, bool]) -> dict[str, Any]:
+        if not gates or not all(value is True for value in gates.values()):
+            raise ValueError("all auto-approval gates must pass")
+        return self.approve_target(job_id, group_id, source="auto_policy")
+
+    def set_target_content(
+        self,
+        job_id: str,
+        group_id: str,
+        *,
+        body: str,
+        source_hash: str,
+        generation_fingerprint: str,
+    ) -> None:
+        body_hash = normalized_body_hash(body)
+        with self.connect() as conn:
+            target = conn.execute(
+                """SELECT t.*, j.property_id FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
+                   WHERE t.job_id=? AND t.group_id=?""",
+                (job_id, group_id),
+            ).fetchone()
+            if target is None:
+                raise ValueError("target not found")
+            clicked = conn.execute(
+                "SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1",
+                (target["property_id"], group_id),
+            ).fetchone()
+            status = target["status"] if clicked else "pending_approval"
+            approval_id = target["approval_id"] if clicked else None
+            conn.execute(
+                """UPDATE job_targets SET body=?, source_hash=?, normalized_body_hash=?,
+                   generation_fingerprint=?, status=?, approval_id=? WHERE job_id=? AND group_id=?""",
+                (body, source_hash, body_hash, generation_fingerprint, status, approval_id, job_id, group_id),
+            )
+
+    def begin_submission(
+        self,
+        job_id: str,
+        group_id: str,
+        *,
+        approval_id: str,
+        source_hash: str,
+        body_hash: str,
+        generation_fingerprint: str,
+        created_at: str | None = None,
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            target = conn.execute(
+                """SELECT t.*, j.property_id FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
+                   WHERE t.job_id=? AND t.group_id=?""",
+                (job_id, group_id),
+            ).fetchone()
+            approval = conn.execute("SELECT * FROM approvals WHERE approval_id=?", (approval_id,)).fetchone()
+            values = (source_hash, body_hash, generation_fingerprint, approval_id)
+            target_values = (
+                target["source_hash"] if target else None,
+                target["normalized_body_hash"] if target else None,
+                target["generation_fingerprint"] if target else None,
+                target["approval_id"] if target else None,
+            )
+            approval_values = (
+                approval["source_hash"] if approval else None,
+                approval["body_hash"] if approval else None,
+                approval["generation_fingerprint"] if approval else None,
+                approval["approval_id"] if approval else None,
+            )
+            if target is None or target["status"] != "approved" or values != target_values or values != approval_values:
+                raise ValueError("approval mismatch")
+            if approval["job_id"] != job_id or approval["group_id"] != group_id:
+                raise ValueError("approval mismatch")
+            if conn.execute(
+                "SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1",
+                (target["property_id"], group_id),
+            ).fetchone():
+                raise ValueError("click boundary permanently prevents a new attempt")
+            attempt_id = str(uuid.uuid4())
+            conn.execute(
+                """INSERT INTO submission_attempts(
+                   attempt_id, job_id, property_id, group_id, approval_id, state, created_at
+                   ) VALUES(?,?,?,?,?,'submitting',?)""",
+                (attempt_id, job_id, target["property_id"], group_id, approval_id, created_at or now_iso()),
+            )
+            conn.execute(
+                "UPDATE job_targets SET status='submitting' WHERE job_id=? AND group_id=? AND status='approved'",
+                (job_id, group_id),
+            )
+            row = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+        return dict(row)
+
+    def get_submission_attempt(self, attempt_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_submission_attempts(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM submission_attempts ORDER BY created_at, rowid").fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_click_started(self, attempt_id: str, *, at: datetime | str | None = None) -> dict[str, Any]:
+        timestamp = at.isoformat() if isinstance(at, datetime) else (at or now_iso())
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """UPDATE submission_attempts SET click_started_at=?
+                   WHERE attempt_id=? AND state='submitting' AND click_started_at IS NULL""",
+                (timestamp, attempt_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("attempt is not awaiting click")
+        return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
+
+    def mark_submission_response(self, attempt_id: str, *, at: str | None = None) -> dict[str, Any]:
+        return self._stamp_attempt(attempt_id, "response_received_at", at or now_iso())
+
+    def mark_verification_started(self, attempt_id: str, *, at: str | None = None) -> dict[str, Any]:
+        return self._stamp_attempt(attempt_id, "verification_started_at", at or now_iso())
+
+    def _stamp_attempt(self, attempt_id: str, column: str, timestamp: str) -> dict[str, Any]:
+        if column not in {"response_received_at", "verification_started_at"}:
+            raise ValueError("invalid attempt timestamp")
+        with self.connect() as conn:
+            cursor = conn.execute(
+                f"UPDATE submission_attempts SET {column}=? WHERE attempt_id=? AND click_started_at IS NOT NULL",
+                (timestamp, attempt_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("click boundary not recorded")
+        return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
+
+    def abort_submission_preclick(self, attempt_id: str, *, reason: str = "") -> dict[str, Any]:
+        with self.connect() as conn:
+            attempt = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+            if attempt is None or attempt["state"] != "submitting" or attempt["click_started_at"] is not None:
+                raise ValueError("pre-click abort is not allowed")
+            conn.execute(
+                "UPDATE submission_attempts SET state='aborted_preclick', completed_at=?, last_error=? WHERE attempt_id=?",
+                (now_iso(), reason, attempt_id),
+            )
+            conn.execute(
+                "UPDATE job_targets SET status='approved' WHERE job_id=? AND group_id=? AND status='submitting'",
+                (attempt["job_id"], attempt["group_id"]),
+            )
+        return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
+
+    def mark_attempt_reconcile_only(self, attempt_id: str, *, reason: str = "ambiguous") -> dict[str, Any]:
+        with self.connect() as conn:
+            attempt = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+            if attempt is None or attempt["click_started_at"] is None:
+                raise ValueError("reconcile-only requires a click boundary")
+            conn.execute(
+                "UPDATE submission_attempts SET state='reconcile_only', last_error=? WHERE attempt_id=?",
+                (reason, attempt_id),
+            )
+            conn.execute(
+                """UPDATE job_targets SET status='uncertain', reconcile_only=1,
+                   posted_at=COALESCE(posted_at, ?) WHERE job_id=? AND group_id=?""",
+                (attempt["click_started_at"], attempt["job_id"], attempt["group_id"]),
+            )
+        return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
+
+    def recover_incomplete_attempts(self) -> int:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM submission_attempts WHERE state='submitting'").fetchall()
+        for row in rows:
+            if row["click_started_at"] is None:
+                self.abort_submission_preclick(row["attempt_id"], reason="process_recovery_before_click")
+            else:
+                self.mark_attempt_reconcile_only(row["attempt_id"], reason="process_exit_after_click")
+        return len(rows)
+
+    def resolve_submission(
+        self, attempt_id: str, *, outcome: str, permalink: str | None = None
+    ) -> dict[str, Any]:
+        if outcome == "confirmed":
+            return self._confirm_submission(attempt_id, permalink=permalink)
+        if outcome in {"ambiguous", "inconclusive"}:
+            return self.mark_attempt_reconcile_only(attempt_id, reason=outcome)
+        raise ValueError("invalid submission outcome")
+
+    def verify_submission(
+        self, attempt_id: str, *, outcome: str, permalink: str | None = None
+    ) -> dict[str, Any]:
+        attempt = self.get_submission_attempt(attempt_id)
+        if attempt is None:
+            raise ValueError("attempt not found")
+        if attempt["click_started_at"] is None:
+            raise ValueError("verification requires a click boundary")
+        if outcome == "confirmed":
+            return self._confirm_submission(attempt_id, permalink=permalink)
+        if outcome == "invalid":
+            return self.mark_attempt_reconcile_only(attempt_id, reason="verification_invalid")
+        if outcome == "inconclusive":
+            return attempt
+        raise ValueError("invalid verification outcome")
+
+    def _confirm_submission(self, attempt_id: str, *, permalink: str | None) -> dict[str, Any]:
+        with self.connect() as conn:
+            attempt = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+            if attempt is None or attempt["click_started_at"] is None:
+                raise ValueError("confirmation requires a click boundary")
+            conn.execute(
+                """UPDATE submission_attempts SET state='posted', completed_at=?, permalink=COALESCE(?, permalink)
+                   WHERE attempt_id=?""",
+                (now_iso(), permalink, attempt_id),
+            )
+            conn.execute(
+                """UPDATE job_targets SET status='posted', reconcile_only=1,
+                   posted_at=COALESCE(posted_at, ?), permalink=COALESCE(?, permalink)
+                   WHERE job_id=? AND group_id=?""",
+                (attempt["click_started_at"], permalink, attempt["job_id"], attempt["group_id"]),
+            )
+        return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
+
+    def submission_eligible(self, job_id: str, group_id: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute(
+                """SELECT t.status, t.reconcile_only, j.property_id FROM job_targets t
+                   JOIN jobs j ON j.job_id=t.job_id WHERE t.job_id=? AND t.group_id=?""",
+                (job_id, group_id),
+            ).fetchone()
+            if row is None or row["status"] != "approved" or row["reconcile_only"]:
+                return False
+            clicked = conn.execute(
+                "SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1",
+                (row["property_id"], group_id),
+            ).fetchone()
+        return clicked is None
 
     def reject_job(self, job_id: str, reason: str = "") -> None:
         self.update_job_status(job_id, "rejected")

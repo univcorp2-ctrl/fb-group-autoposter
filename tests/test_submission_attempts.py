@@ -1,0 +1,150 @@
+import sqlite3
+
+import pytest
+
+from src.queue_db import QueueDB, normalized_body_hash
+
+
+def prepared(db: QueueDB, *, job_id="j", property_id="p", body=" Hello\r\nworld ", fingerprint="f1"):
+    db.create_job(
+        {"job_id": job_id, "property_id": property_id},
+        [{"group_id": "g", "body": body, "source_hash": "s1", "generation_fingerprint": fingerprint}],
+    )
+    return db.approve_target(job_id, "g", source="operator")
+
+
+def begin(db, approval, *, job_id="j", fingerprint="f1"):
+    return db.begin_submission(
+        job_id,
+        "g",
+        approval_id=approval["approval_id"],
+        source_hash="s1",
+        body_hash=approval["body_hash"],
+        generation_fingerprint=fingerprint,
+    )
+
+
+def test_approval_is_immutable_bound_and_matching_approval_begins_transaction(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    approval = prepared(db)
+    assert approval["body_hash"] == normalized_body_hash("Hello\nworld")
+    assert db.get_targets("j")[0]["status"] == "approved"
+
+    attempt = begin(db, approval)
+    assert attempt["state"] == "submitting"
+    assert db.get_targets("j")[0]["status"] == "submitting"
+    with pytest.raises(sqlite3.IntegrityError):
+        with db.connect() as conn:
+            conn.execute("UPDATE approvals SET source_hash='changed' WHERE approval_id=?", (approval["approval_id"],))
+
+
+@pytest.mark.parametrize("field,value", [("source_hash", "s2"), ("body_hash", "bad"), ("generation_fingerprint", "f2"), ("approval_id", "bad")])
+def test_attempt_refuses_any_approval_mismatch(tmp_path, field, value):
+    db = QueueDB(tmp_path / "q.db")
+    approval = prepared(db)
+    kwargs = dict(
+        approval_id=approval["approval_id"], source_hash="s1",
+        body_hash=approval["body_hash"], generation_fingerprint="f1"
+    )
+    kwargs[field] = value
+    with pytest.raises(ValueError, match="approval mismatch"):
+        db.begin_submission("j", "g", **kwargs)
+
+
+def test_explicit_auto_policy_requires_all_gates(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    db.create_job(
+        {"job_id": "j", "property_id": "p"},
+        [{"group_id": "g", "body": "b", "source_hash": "s", "generation_fingerprint": "f"}],
+    )
+    with pytest.raises(ValueError, match="all auto-approval gates"):
+        db.auto_approve_target("j", "g", gates={"fresh": True, "identity": False})
+    assert db.get_targets("j")[0]["status"] == "pending_approval"
+    assert db.auto_approve_target("j", "g", gates={"fresh": True, "identity": True})["source"] == "auto_policy"
+
+
+def test_content_change_invalidates_approval_and_stale_callback_is_rejected(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    approval = prepared(db)
+    db.set_target_content("j", "g", body="different", source_hash="s1", generation_fingerprint="f1")
+    assert db.get_targets("j")[0]["status"] == "pending_approval"
+    with pytest.raises(ValueError, match="stale approval"):
+        db.approve_target("j", "g", source="telegram", approval_id=approval["approval_id"])
+
+
+@pytest.mark.parametrize(
+    "body,source_hash,fingerprint",
+    [("changed", "s1", "f1"), (" Hello\r\nworld ", "s2", "f1"), (" Hello\r\nworld ", "s1", "f2")],
+)
+def test_each_bound_field_change_requires_new_approval(tmp_path, body, source_hash, fingerprint):
+    db = QueueDB(tmp_path / "q.db")
+    prepared(db)
+    db.set_target_content(
+        "j", "g", body=body, source_hash=source_hash, generation_fingerprint=fingerprint
+    )
+    assert db.get_targets("j")[0]["status"] == "pending_approval"
+
+
+def test_preclick_abort_and_recovery_return_to_approved(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    approval = prepared(db)
+    attempt = begin(db, approval)
+    db.abort_submission_preclick(attempt["attempt_id"], reason="planned")
+    assert db.get_submission_attempt(attempt["attempt_id"])["state"] == "aborted_preclick"
+    assert db.get_targets("j")[0]["status"] == "approved"
+
+    second_approval = db.approve_target("j", "g", source="operator")
+    second = begin(db, second_approval)
+    assert db.recover_incomplete_attempts() == 1
+    assert db.get_submission_attempt(second["attempt_id"])["state"] == "aborted_preclick"
+    assert db.get_targets("j")[0]["status"] == "approved"
+
+
+@pytest.mark.parametrize("stage", ["after_click", "after_response", "during_verification"])
+def test_crash_after_click_boundary_is_permanently_reconcile_only(tmp_path, stage):
+    db = QueueDB(tmp_path / "q.db")
+    approval = prepared(db)
+    attempt = begin(db, approval)
+    db.mark_click_started(attempt["attempt_id"])
+    if stage in {"after_response", "during_verification"}:
+        db.mark_submission_response(attempt["attempt_id"])
+    if stage == "during_verification":
+        db.mark_verification_started(attempt["attempt_id"])
+
+    assert db.recover_incomplete_attempts() == 1
+    assert db.get_targets("j")[0]["status"] == "uncertain"
+    assert db.get_submission_attempt(attempt["attempt_id"])["state"] == "reconcile_only"
+    assert db.submission_eligible("j", "g") is False
+    db.set_target_content("j", "g", body="new", source_hash="s2", generation_fingerprint="f2")
+    assert db.get_targets("j")[0]["status"] == "uncertain"
+    with pytest.raises(ValueError, match="click boundary"):
+        db.approve_target("j", "g", source="operator")
+    with pytest.raises(ValueError, match="click boundary"):
+        db.update_target_status("j", "g", "approved")
+
+
+def test_verification_transitions_and_posted_at_semantics(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    approval = prepared(db)
+    attempt = begin(db, approval)
+    db.mark_click_started(attempt["attempt_id"])
+    db.resolve_submission(attempt["attempt_id"], outcome="confirmed", permalink="https://fb/p/1")
+    target = db.get_targets("j")[0]
+    first_posted_at = target["posted_at"]
+    assert (target["status"], target["permalink"]) == ("posted", "https://fb/p/1")
+
+    db.verify_submission(attempt["attempt_id"], outcome="invalid")
+    assert db.get_targets("j")[0]["status"] == "uncertain"
+    assert db.get_targets("j")[0]["posted_at"] == first_posted_at
+    assert db.verify_submission(attempt["attempt_id"], outcome="inconclusive")["state"] == "reconcile_only"
+    assert db.verify_submission(attempt["attempt_id"], outcome="confirmed", permalink="https://fb/p/1")["state"] == "posted"
+    assert db.get_targets("j")[0]["posted_at"] == first_posted_at
+
+
+def test_verify_only_api_never_creates_attempt_or_submits(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    prepared(db)
+    with pytest.raises(ValueError, match="attempt not found"):
+        db.verify_submission("missing", outcome="confirmed")
+    assert db.list_submission_attempts() == []
+    assert db.get_targets("j")[0]["status"] == "approved"
