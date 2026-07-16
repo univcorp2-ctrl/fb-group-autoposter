@@ -74,6 +74,47 @@ def test_group_ambiguity_requires_matching_clicked_attempt_atomically(tmp_path, 
     assert db.get_submission_attempt(attempt_id)["state"] == "submitting"
 
 
+def test_public_verification_failure_atomically_demotes_posted_attempt(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    manager = CircuitManager(db)
+    attempt_id = _clicked_attempt(db)
+    permalink = "https://www.facebook.com/groups/g1/posts/123"
+    db.resolve_submission(attempt_id, outcome="confirmed", permalink=permalink)
+
+    circuit = manager.record_failure(
+        FailureKind.PUBLIC_VERIFICATION_FAILURE,
+        group_id="g1",
+        attempt_id=attempt_id,
+        occurred_at=NOW,
+    )
+
+    assert circuit["reason"] == "public_verification_failure"
+    assert db.get_submission_attempt(attempt_id)["state"] == "reconcile_only"
+    target = db.get_targets("j1")[0]
+    assert target["status"] == "uncertain"
+    assert target["posted_at"] is not None
+
+
+def test_public_verification_failure_accepts_reconcile_but_ambiguity_rejects_it(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    manager = CircuitManager(db)
+    attempt_id = _clicked_attempt(db)
+    db.mark_attempt_reconcile_only(attempt_id)
+    assert manager.record_failure(
+        FailureKind.PUBLIC_VERIFICATION_FAILURE,
+        group_id="g1",
+        attempt_id=attempt_id,
+        occurred_at=NOW,
+    )["scope"] == "group"
+    with pytest.raises(ValueError, match="submitting"):
+        manager.record_failure(
+            FailureKind.POST_SUBMIT_AMBIGUITY,
+            group_id="g1",
+            attempt_id=attempt_id,
+            occurred_at=NOW,
+        )
+
+
 def test_selector_threshold_and_rolling_window(tmp_path):
     manager = CircuitManager(QueueDB(tmp_path / "q.db"))
     assert manager.record_failure(FailureKind.SELECTOR_FAILURE, group_id="g1", occurred_at=NOW) is None
@@ -132,6 +173,11 @@ def test_global_precedence_persistence_expiry_and_clearance_authority(tmp_path):
     db = QueueDB(path)
     manager = CircuitManager(db)
     attempt_id = _clicked_attempt(db)
+    db.resolve_submission(
+        attempt_id,
+        outcome="confirmed",
+        permalink="https://www.facebook.com/groups/g1/posts/1",
+    )
     manager.record_failure(
         FailureKind.PUBLIC_VERIFICATION_FAILURE,
         group_id="g1",
@@ -151,6 +197,11 @@ def test_new_failure_reopens_an_expired_group_circuit(tmp_path):
     db = QueueDB(tmp_path / "q.db")
     manager = CircuitManager(db)
     first_attempt = _clicked_attempt(db)
+    db.resolve_submission(
+        first_attempt,
+        outcome="confirmed",
+        permalink="https://www.facebook.com/groups/g1/posts/1",
+    )
     first = manager.record_failure(
         FailureKind.PUBLIC_VERIFICATION_FAILURE,
         group_id="g1",
@@ -158,6 +209,11 @@ def test_new_failure_reopens_an_expired_group_circuit(tmp_path):
         occurred_at=NOW,
     )
     second_attempt = _clicked_attempt(db, job_id="j2", property_id="p2")
+    db.resolve_submission(
+        second_attempt,
+        outcome="confirmed",
+        permalink="https://www.facebook.com/groups/g1/posts/2",
+    )
     second = manager.record_failure(
         FailureKind.PUBLIC_VERIFICATION_FAILURE,
         group_id="g1",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import sqlite3
+import re
 import unicodedata
 import uuid
 from contextlib import contextmanager
@@ -522,6 +523,12 @@ class QueueDB:
             ).fetchone()
             if target is None:
                 raise ValueError("target not found")
+            if (
+                target["normalized_body_hash"] == body_hash
+                and target["source_hash"] == source_hash
+                and target["generation_fingerprint"] == generation_fingerprint
+            ):
+                return
             clicked = conn.execute(
                 "SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1",
                 (target["property_id"], group_id),
@@ -712,6 +719,9 @@ class QueueDB:
     def resolve_submission(
         self, attempt_id: str, *, outcome: str, permalink: str | None = None
     ) -> dict[str, Any]:
+        attempt = self.get_submission_attempt(attempt_id)
+        if attempt is None or attempt["state"] != "submitting":
+            raise ValueError("resolve_submission requires a currently submitting attempt")
         if outcome == "confirmed":
             return self._confirm_submission(attempt_id, permalink=permalink)
         if outcome in {"ambiguous", "inconclusive"}:
@@ -763,20 +773,39 @@ class QueueDB:
             return False
         parsed = urlparse(permalink)
         host = (parsed.hostname or "").lower()
-        path = parsed.path.rstrip("/")
+        segments = [segment for segment in parsed.path.split("/") if segment]
         query = parse_qs(parsed.query)
-        post_path = any(
-            marker in f"{path}/"
-            for marker in ("/posts/", "/permalink/", "/share/p/")
+        identifier = re.compile(r"^[A-Za-z0-9_-]+$")
+        group_post = any(
+            segments[index] == "groups"
+            and index + 3 < len(segments)
+            and bool(identifier.fullmatch(segments[index + 1]))
+            and segments[index + 2] == "posts"
+            and bool(identifier.fullmatch(segments[index + 3]))
+            for index in range(len(segments))
         )
+        permalink_path = any(
+            segment == "permalink"
+            and index + 1 < len(segments)
+            and bool(identifier.fullmatch(segments[index + 1]))
+            for index, segment in enumerate(segments)
+        )
+        share_path = any(
+            segments[index:index + 2] == ["share", "p"]
+            and index + 2 < len(segments)
+            and bool(identifier.fullmatch(segments[index + 2]))
+            for index in range(len(segments))
+        )
+        story_id = (query.get("story_fbid") or query.get("fbid") or [""])[0]
         query_permalink = (
-            path.endswith(("/story.php", "/photo.php"))
-            and bool(query.get("story_fbid") or query.get("fbid"))
+            bool(segments)
+            and segments[-1] in {"story.php", "photo.php"}
+            and bool(identifier.fullmatch(story_id))
         )
         return (
             parsed.scheme == "https"
             and (host == "facebook.com" or host.endswith(".facebook.com"))
-            and (post_path or query_permalink)
+            and (group_post or permalink_path or share_path or query_permalink)
         )
 
     def submission_eligible(self, job_id: str, group_id: str) -> bool:

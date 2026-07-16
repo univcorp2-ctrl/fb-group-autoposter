@@ -173,13 +173,27 @@ class CircuitManager:
             attempt = conn.execute(
                 "SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)
             ).fetchone()
-            if (
-                attempt is None
-                or attempt["group_id"] != group_id
-                or attempt["state"] != "submitting"
-                or attempt["click_started_at"] is None
-            ):
+            if attempt is None or attempt["group_id"] != group_id or attempt["click_started_at"] is None:
                 raise ValueError("attempt does not match affected group and clicked/submitting state")
+            allowed_attempt_states = (
+                {"submitting"}
+                if kind == FailureKind.POST_SUBMIT_AMBIGUITY
+                else {"posted", "reconcile_only"}
+            )
+            if attempt["state"] not in allowed_attempt_states:
+                expected = "submitting" if kind == FailureKind.POST_SUBMIT_AMBIGUITY else "posted/reconcile_only"
+                raise ValueError(f"{kind.value} requires a {expected} attempt")
+            target = conn.execute(
+                "SELECT status FROM job_targets WHERE job_id=? AND group_id=?",
+                (attempt["job_id"], group_id),
+            ).fetchone()
+            allowed_target_states = (
+                {"submitting"}
+                if kind == FailureKind.POST_SUBMIT_AMBIGUITY
+                else {"posted", "uncertain"}
+            )
+            if target is None or target["status"] not in allowed_target_states:
+                raise ValueError("attempt and affected target state do not match")
             conn.execute(
                 """INSERT INTO circuit_events(kind, group_id, environment, occurred_at, metadata_json)
                    VALUES(?,?,?,?,?)""",
@@ -190,13 +204,13 @@ class CircuitManager:
             )
             conn.execute(
                 """UPDATE submission_attempts SET state='reconcile_only', last_error=?
-                   WHERE attempt_id=? AND state='submitting' AND click_started_at IS NOT NULL""",
+                   WHERE attempt_id=? AND click_started_at IS NOT NULL""",
                 (kind.value, attempt_id),
             )
             conn.execute(
                 """UPDATE job_targets SET status='uncertain', reconcile_only=1,
                    posted_at=COALESCE(posted_at, ?)
-                   WHERE job_id=? AND group_id=? AND status='submitting'""",
+                   WHERE job_id=? AND group_id=?""",
                 (attempt["click_started_at"], attempt["job_id"], group_id),
             )
             return self._open_in_connection(
