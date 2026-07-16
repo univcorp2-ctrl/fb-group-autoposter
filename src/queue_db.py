@@ -100,6 +100,7 @@ class QueueDB:
 
     def init_db(self) -> None:
         with sqlite3.connect(self.path) as conn:
+            conn.row_factory = sqlite3.Row
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS jobs (
@@ -155,6 +156,7 @@ class QueueDB:
                   scope TEXT NOT NULL,
                   subject TEXT NOT NULL,
                   reason TEXT NOT NULL,
+                  reasons_json TEXT NOT NULL DEFAULT '[]',
                   opened_at TEXT NOT NULL,
                   expires_at TEXT,
                   clearance_mode TEXT NOT NULL,
@@ -231,6 +233,21 @@ class QueueDB:
                 if name not in attempt_columns:
                     conn.execute(
                         f"ALTER TABLE submission_attempts ADD COLUMN {name} {declaration}"
+                    )
+            circuit_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(safety_circuits)")
+            }
+            if "reasons_json" not in circuit_columns:
+                conn.execute(
+                    "ALTER TABLE safety_circuits ADD COLUMN reasons_json TEXT NOT NULL DEFAULT '[]'"
+                )
+            for row in conn.execute(
+                "SELECT circuit_id, reason, reasons_json FROM safety_circuits"
+            ).fetchall():
+                if not json.loads(row["reasons_json"] or "[]"):
+                    conn.execute(
+                        "UPDATE safety_circuits SET reasons_json=? WHERE circuit_id=?",
+                        (json.dumps([row["reason"]]), row["circuit_id"]),
                     )
             conn.executescript(
                 """

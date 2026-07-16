@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -168,6 +169,79 @@ def test_other_runtime_threshold_is_three_in_six_hours(tmp_path):
     ) is None
 
 
+@pytest.mark.parametrize(
+    "order",
+    [
+        (FailureKind.SESSION_EXPIRED, FailureKind.PROFILE_CORRUPT),
+        (FailureKind.PROFILE_CORRUPT, FailureKind.SESSION_EXPIRED),
+    ],
+)
+def test_environment_circuit_merge_is_order_independent_and_requires_operator(tmp_path, order):
+    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    for offset, kind in enumerate(order):
+        circuit = manager.record_failure(
+            kind, environment="prod", occurred_at=NOW + timedelta(minutes=offset)
+        )
+    assert circuit["clearance_mode"] == "operator_preflight"
+    assert set(json.loads(circuit["reasons_json"])) == {"session_expired", "profile_corrupt"}
+    assert manager.record_successful_preflight("prod", actor="operator", at=NOW) == 0
+    assert manager.operator_review(
+        scope="environment", subject="prod", actor="operator", at=NOW
+    ) is True
+    assert manager.record_successful_preflight("prod", actor="operator", at=NOW) == 1
+
+
+def test_ambiguity_then_selector_merges_to_minimum_preflight_with_latest_expiry(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    manager = CircuitManager(db)
+    attempt_id = _clicked_attempt(db)
+    ambiguity = manager.record_failure(
+        FailureKind.POST_SUBMIT_AMBIGUITY,
+        group_id="g1",
+        attempt_id=attempt_id,
+        occurred_at=NOW,
+    )
+    manager.record_failure(FailureKind.SELECTOR_FAILURE, group_id="g1", occurred_at=NOW)
+    merged = manager.record_failure(
+        FailureKind.COMPOSER_FAILURE, group_id="g1", occurred_at=NOW + timedelta(hours=2)
+    )
+    assert merged["circuit_id"] == ambiguity["circuit_id"]
+    assert merged["clearance_mode"] == "minimum_preflight"
+    assert datetime.fromisoformat(merged["expires_at"]) == NOW + timedelta(hours=26)
+    assert set(json.loads(merged["reasons_json"])) == {
+        "post_submit_ambiguity", "selector_composer_threshold"
+    }
+    assert manager.record_successful_preflight(
+        "prod", group_id="g1", actor="operator", at=NOW + timedelta(hours=25)
+    ) == 0
+    assert manager.record_successful_preflight(
+        "prod", group_id="g1", actor="operator", at=NOW + timedelta(hours=27)
+    ) == 1
+
+
+def test_nearly_expired_selector_then_ambiguity_gets_fresh_24h_without_weakening(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    manager = CircuitManager(db)
+    manager.record_failure(FailureKind.SELECTOR_FAILURE, group_id="g1", occurred_at=NOW)
+    selector = manager.record_failure(
+        FailureKind.COMPOSER_FAILURE, group_id="g1", occurred_at=NOW + timedelta(hours=1)
+    )
+    attempt_id = _clicked_attempt(db)
+    merged = manager.record_failure(
+        FailureKind.POST_SUBMIT_AMBIGUITY,
+        group_id="g1",
+        attempt_id=attempt_id,
+        occurred_at=NOW + timedelta(hours=24),
+    )
+    assert merged["circuit_id"] == selector["circuit_id"]
+    assert merged["clearance_mode"] == "minimum_preflight"
+    assert datetime.fromisoformat(merged["expires_at"]) == NOW + timedelta(hours=48)
+    assert set(json.loads(merged["reasons_json"])) == {
+        "selector_composer_threshold", "post_submit_ambiguity"
+    }
+    assert manager.clear(scope="group", subject="g1", actor="operator", at=NOW + timedelta(hours=49)) is False
+
+
 def test_global_precedence_persistence_expiry_and_clearance_authority(tmp_path):
     path = tmp_path / "q.db"
     db = QueueDB(path)
@@ -266,6 +340,9 @@ def test_additive_migration_from_legacy_database(tmp_path):
     with db.connect() as conn:
         attempt_columns = {r[1] for r in conn.execute("PRAGMA table_info(submission_attempts)")}
     assert {"reopen_count", "last_reopened_at"} <= attempt_columns
+    with db.connect() as conn:
+        circuit_columns = {r[1] for r in conn.execute("PRAGMA table_info(safety_circuits)")}
+    assert "reasons_json" in circuit_columns
 
 
 def _clicked_attempt(

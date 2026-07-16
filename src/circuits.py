@@ -257,14 +257,66 @@ class CircuitManager:
                 (scope, subject, opened_at.isoformat()),
             ).fetchone()
         if current:
-            return dict(current)
+            existing_mode = current["clearance_mode"]
+            merged_mode = CircuitManager._merge_clearance_modes(
+                existing_mode,
+                clearance_mode,
+                existing_has_expiry=current["expires_at"] is not None,
+                incoming_has_expiry=expires_at is not None,
+            )
+            expiry_values = [
+                value
+                for value in (
+                    current["expires_at"],
+                    expires_at.isoformat() if expires_at else None,
+                )
+                if value is not None
+            ]
+            merged_expiry = (
+                max(expiry_values, key=datetime.fromisoformat) if expiry_values else None
+            )
+            reasons = list(json.loads(current["reasons_json"] or "[]"))
+            if current["reason"] not in reasons:
+                reasons.append(current["reason"])
+            if reason not in reasons:
+                reasons.append(reason)
+            ranks = {
+                "expiry": 1,
+                "preflight": 2,
+                "operator": 3,
+                "minimum_preflight": 4,
+                "operator_preflight": 5,
+            }
+            primary_reason = (
+                reason
+                if ranks.get(clearance_mode, 0) > ranks.get(existing_mode, 0)
+                else current["reason"]
+            )
+            conn.execute(
+                """UPDATE safety_circuits
+                   SET reason=?, reasons_json=?, expires_at=?, clearance_mode=?
+                   WHERE circuit_id=?""",
+                (
+                    primary_reason,
+                    json.dumps(reasons, sort_keys=True),
+                    merged_expiry,
+                    merged_mode,
+                    current["circuit_id"],
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM safety_circuits WHERE circuit_id=?",
+                (current["circuit_id"],),
+            ).fetchone()
+            return dict(row)
         circuit_id = str(uuid.uuid4())
         conn.execute(
             """INSERT INTO safety_circuits(
-               circuit_id, scope, subject, reason, opened_at, expires_at, clearance_mode
-               ) VALUES(?,?,?,?,?,?,?)""",
+               circuit_id, scope, subject, reason, reasons_json,
+               opened_at, expires_at, clearance_mode
+               ) VALUES(?,?,?,?,?,?,?,?)""",
             (
-                circuit_id, scope, subject, reason, opened_at.isoformat(),
+                circuit_id, scope, subject, reason, json.dumps([reason]), opened_at.isoformat(),
                 expires_at.isoformat() if expires_at else None, clearance_mode,
             ),
         )
@@ -272,6 +324,32 @@ class CircuitManager:
             "SELECT * FROM safety_circuits WHERE circuit_id=?", (circuit_id,)
         ).fetchone()
         return dict(row)
+
+    @staticmethod
+    def _merge_clearance_modes(
+        existing: str,
+        incoming: str,
+        *,
+        existing_has_expiry: bool,
+        incoming_has_expiry: bool,
+    ) -> str:
+        modes = {existing, incoming}
+        requires_operator = bool(modes & {"operator", "operator_preflight"})
+        requires_preflight = bool(
+            modes & {"preflight", "minimum_preflight", "operator_preflight"}
+        )
+        requires_minimum = (
+            existing_has_expiry or incoming_has_expiry
+        ) and bool(modes & {"expiry", "minimum_preflight", "operator_preflight"})
+        if requires_operator and (requires_preflight or requires_minimum):
+            return "operator_preflight"
+        if requires_operator:
+            return "operator"
+        if requires_preflight and requires_minimum:
+            return "minimum_preflight"
+        if requires_preflight:
+            return "preflight"
+        return "expiry"
 
     def blocking_circuit(
         self,
