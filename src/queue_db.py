@@ -101,8 +101,79 @@ class QueueDB:
                   disabled_suggested INTEGER NOT NULL DEFAULT 0,
                   updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS runs (
+                  run_id       TEXT PRIMARY KEY,
+                  command      TEXT NOT NULL,
+                  started_at   TEXT NOT NULL,
+                  finished_at  TEXT,
+                  outcome      TEXT,
+                  reason       TEXT,
+                  exit_code    INTEGER,
+                  result_json  TEXT
+                );
                 """
             )
+
+    def start_run(
+        self,
+        command: str,
+        *,
+        run_id: str,
+        started_at: str | None = None,
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO runs(run_id, command, started_at) VALUES(?,?,?)",
+                (run_id, command, started_at or now_iso()),
+            )
+        run = self.get_run(run_id)
+        assert run is not None
+        return run
+
+    def finish_run(
+        self,
+        run_id: str,
+        *,
+        outcome: str,
+        reason: str,
+        exit_code: int,
+        finished_at: str | None = None,
+        result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE runs
+                SET finished_at=?, outcome=?, reason=?, exit_code=?, result_json=?
+                WHERE run_id=? AND finished_at IS NULL
+                """,
+                (
+                    finished_at or now_iso(),
+                    outcome,
+                    reason,
+                    exit_code,
+                    json.dumps(result, ensure_ascii=False) if result is not None else None,
+                    run_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError(f"run missing or already terminal: {run_id}")
+        run = self.get_run(run_id)
+        assert run is not None
+        return run
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+        return dict(row) if row else None
+
+    def latest_run(self) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM runs ORDER BY started_at DESC, rowid DESC LIMIT 1"
+            ).fetchone()
+        return dict(row) if row else None
 
     def create_job(self, property_data: dict[str, Any], variants: list[dict[str, Any]], *, degraded: bool = False) -> str:
         job_id = property_data.get("job_id") or str(uuid.uuid4())
