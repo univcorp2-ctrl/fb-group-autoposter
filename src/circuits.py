@@ -89,6 +89,15 @@ class CircuitManager:
     ) -> dict[str, Any] | None:
         kind = FailureKind(kind)
         at = _timestamp(occurred_at)
+        if kind in GROUP_AMBIGUITY_FAILURES:
+            return self._record_group_ambiguity(
+                kind,
+                group_id=group_id,
+                attempt_id=attempt_id,
+                occurred_at=at,
+                environment=environment,
+                metadata=metadata,
+            )
         with self.db.connect() as conn:
             conn.execute(
                 """INSERT INTO circuit_events(kind, group_id, environment, occurred_at, metadata_json)
@@ -98,15 +107,6 @@ class CircuitManager:
 
         if kind in GLOBAL_OPERATOR_FAILURES:
             return self._open("global", "*", kind.value, at, clearance_mode="operator")
-        if kind in GROUP_AMBIGUITY_FAILURES:
-            if not group_id:
-                raise ValueError("group_id is required for group failure")
-            if attempt_id:
-                self.db.mark_attempt_reconcile_only(attempt_id, reason=kind.value)
-            return self._open(
-                "group", group_id, kind.value, at,
-                expires_at=at + timedelta(hours=24), clearance_mode="expiry",
-            )
         if kind in SELECTOR_FAILURES:
             if not group_id:
                 raise ValueError("group_id is required for selector/composer failure")
@@ -133,7 +133,7 @@ class CircuitManager:
             if same_group >= 2:
                 return self._open(
                     "group", group_id, "selector_composer_threshold", at,
-                    expires_at=at + timedelta(hours=24), clearance_mode="expiry",
+                    expires_at=at + timedelta(hours=24), clearance_mode="minimum_preflight",
                 )
             return None
         if kind == FailureKind.PROFILE_CORRUPT:
@@ -154,6 +154,61 @@ class CircuitManager:
                 return self._open("environment", environment, kind.value, at, clearance_mode="preflight")
         return None
 
+    def _record_group_ambiguity(
+        self,
+        kind: FailureKind,
+        *,
+        group_id: str | None,
+        attempt_id: str | None,
+        occurred_at: datetime,
+        environment: str,
+        metadata: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if not group_id:
+            raise ValueError("group_id is required for group failure")
+        if not attempt_id:
+            raise ValueError("attempt_id is required for ambiguity or verification failure")
+        with self.db.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            attempt = conn.execute(
+                "SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)
+            ).fetchone()
+            if (
+                attempt is None
+                or attempt["group_id"] != group_id
+                or attempt["state"] != "submitting"
+                or attempt["click_started_at"] is None
+            ):
+                raise ValueError("attempt does not match affected group and clicked/submitting state")
+            conn.execute(
+                """INSERT INTO circuit_events(kind, group_id, environment, occurred_at, metadata_json)
+                   VALUES(?,?,?,?,?)""",
+                (
+                    kind.value, group_id, environment, occurred_at.isoformat(),
+                    json.dumps(metadata or {}, sort_keys=True),
+                ),
+            )
+            conn.execute(
+                """UPDATE submission_attempts SET state='reconcile_only', last_error=?
+                   WHERE attempt_id=? AND state='submitting' AND click_started_at IS NOT NULL""",
+                (kind.value, attempt_id),
+            )
+            conn.execute(
+                """UPDATE job_targets SET status='uncertain', reconcile_only=1,
+                   posted_at=COALESCE(posted_at, ?)
+                   WHERE job_id=? AND group_id=? AND status='submitting'""",
+                (attempt["click_started_at"], attempt["job_id"], group_id),
+            )
+            return self._open_in_connection(
+                conn,
+                "group",
+                group_id,
+                kind.value,
+                occurred_at,
+                expires_at=occurred_at + timedelta(hours=24),
+                clearance_mode="expiry",
+            )
+
     def _open(
         self,
         scope: str,
@@ -165,25 +220,43 @@ class CircuitManager:
         clearance_mode: str,
     ) -> dict[str, Any]:
         with self.db.connect() as conn:
-            current = conn.execute(
+            return self._open_in_connection(
+                conn, scope, subject, reason, opened_at,
+                expires_at=expires_at, clearance_mode=clearance_mode,
+            )
+
+    @staticmethod
+    def _open_in_connection(
+        conn: Any,
+        scope: str,
+        subject: str,
+        reason: str,
+        opened_at: datetime,
+        *,
+        expires_at: datetime | None,
+        clearance_mode: str,
+    ) -> dict[str, Any]:
+        current = conn.execute(
                 """SELECT * FROM safety_circuits WHERE scope=? AND subject=? AND cleared_at IS NULL
                    AND (expires_at IS NULL OR expires_at>? OR clearance_mode!='expiry')
                    ORDER BY opened_at DESC LIMIT 1""",
                 (scope, subject, opened_at.isoformat()),
             ).fetchone()
-            if current:
-                return dict(current)
-            circuit_id = str(uuid.uuid4())
-            conn.execute(
-                """INSERT INTO safety_circuits(
-                   circuit_id, scope, subject, reason, opened_at, expires_at, clearance_mode
-                   ) VALUES(?,?,?,?,?,?,?)""",
-                (
-                    circuit_id, scope, subject, reason, opened_at.isoformat(),
-                    expires_at.isoformat() if expires_at else None, clearance_mode,
-                ),
-            )
-            row = conn.execute("SELECT * FROM safety_circuits WHERE circuit_id=?", (circuit_id,)).fetchone()
+        if current:
+            return dict(current)
+        circuit_id = str(uuid.uuid4())
+        conn.execute(
+            """INSERT INTO safety_circuits(
+               circuit_id, scope, subject, reason, opened_at, expires_at, clearance_mode
+               ) VALUES(?,?,?,?,?,?,?)""",
+            (
+                circuit_id, scope, subject, reason, opened_at.isoformat(),
+                expires_at.isoformat() if expires_at else None, clearance_mode,
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM safety_circuits WHERE circuit_id=?", (circuit_id,)
+        ).fetchone()
         return dict(row)
 
     def blocking_circuit(
@@ -241,7 +314,7 @@ class CircuitManager:
                    ORDER BY opened_at DESC LIMIT 1""",
                 (scope, subject),
             ).fetchone()
-            if row is None or row["clearance_mode"] not in {"operator", "expiry"}:
+            if row is None or row["clearance_mode"] != "operator":
                 return False
             conn.execute(
                 """UPDATE safety_circuits SET cleared_at=?, cleared_by=?, clearance_reason=?
@@ -265,21 +338,34 @@ class CircuitManager:
         return cursor.rowcount > 0
 
     def record_successful_preflight(
-        self, environment: str, *, actor: str, at: datetime | str | None = None
+        self,
+        environment: str,
+        *,
+        actor: str,
+        group_id: str | None = None,
+        at: datetime | str | None = None,
     ) -> int:
-        if actor == "scheduler":
+        if actor not in {"operator", "preflight"}:
             return 0
-        timestamp = _timestamp(at).isoformat()
+        instant = _timestamp(at)
+        timestamp = instant.isoformat()
         with self.db.connect() as conn:
             rows = conn.execute(
                 """SELECT * FROM safety_circuits WHERE cleared_at IS NULL
-                   AND ((scope='environment' AND subject=?) OR scope='global')
-                   AND clearance_mode IN ('preflight', 'operator_preflight')""",
-                (environment,),
+                   AND ((scope='environment' AND subject=?) OR scope='global'
+                     OR (scope='group' AND subject=?))
+                   AND clearance_mode IN (
+                     'preflight', 'minimum_preflight', 'operator_preflight'
+                   )""",
+                (environment, group_id),
             ).fetchall()
             eligible = [
                 row for row in rows
-                if row["clearance_mode"] == "preflight" or row["operator_reviewed_at"] is not None
+                if (row["expires_at"] is None or instant >= datetime.fromisoformat(row["expires_at"]))
+                and (
+                    row["clearance_mode"] in {"preflight", "minimum_preflight"}
+                    or row["operator_reviewed_at"] is not None
+                )
             ]
             for row in eligible:
                 conn.execute(

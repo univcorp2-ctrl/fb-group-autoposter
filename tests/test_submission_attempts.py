@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from src.queue_db import QueueDB, normalized_body_hash
+from src.queue_db import AUTO_APPROVAL_GATE_KEYS, QueueDB, normalized_body_hash
 
 
 def prepared(db: QueueDB, *, job_id="j", property_id="p", body=" Hello\r\nworld ", fingerprint="f1"):
@@ -57,10 +57,43 @@ def test_explicit_auto_policy_requires_all_gates(tmp_path):
         {"job_id": "j", "property_id": "p"},
         [{"group_id": "g", "body": "b", "source_hash": "s", "generation_fingerprint": "f"}],
     )
+    complete = {key: True for key in AUTO_APPROVAL_GATE_KEYS}
+    with pytest.raises(ValueError, match="disabled"):
+        db.auto_approve_target("j", "g", gates=complete)
+    with pytest.raises(ValueError, match="canonical"):
+        db.auto_approve_target(
+            "j", "g", auto_approve_enabled=True, gates={"fresh": True, "identity": True}
+        )
+    failing = complete | {next(iter(AUTO_APPROVAL_GATE_KEYS)): False}
     with pytest.raises(ValueError, match="all auto-approval gates"):
-        db.auto_approve_target("j", "g", gates={"fresh": True, "identity": False})
+        db.auto_approve_target("j", "g", auto_approve_enabled=True, gates=failing)
     assert db.get_targets("j")[0]["status"] == "pending_approval"
-    assert db.auto_approve_target("j", "g", gates={"fresh": True, "identity": True})["source"] == "auto_policy"
+    assert db.auto_approve_target(
+        "j", "g", auto_approve_enabled=True, gates=complete
+    )["source"] == "auto_policy"
+
+
+@pytest.mark.parametrize(
+    "property_id,group_id,body,source_hash,fingerprint",
+    [
+        ("", "g", "body", "source", "fp"),
+        ("p", "", "body", "source", "fp"),
+        ("p", "g", "body", "", "fp"),
+        ("p", "g", "body", "source", ""),
+        ("p", "g", "", "source", "fp"),
+    ],
+)
+def test_approval_rejects_missing_binding_fields(
+    tmp_path, property_id, group_id, body, source_hash, fingerprint
+):
+    db = QueueDB(tmp_path / "q.db")
+    db.create_job(
+        {"job_id": "j", "property_id": property_id},
+        [{"group_id": group_id, "body": body, "source_hash": source_hash,
+          "generation_fingerprint": fingerprint}],
+    )
+    with pytest.raises(ValueError, match="approval binding"):
+        db.approve_target("j", group_id, source="operator")
 
 
 def test_content_change_invalidates_approval_and_stale_callback_is_rejected(tmp_path):
@@ -93,11 +126,39 @@ def test_preclick_abort_and_recovery_return_to_approved(tmp_path):
     assert db.get_submission_attempt(attempt["attempt_id"])["state"] == "aborted_preclick"
     assert db.get_targets("j")[0]["status"] == "approved"
 
-    second_approval = db.approve_target("j", "g", source="operator")
-    second = begin(db, second_approval)
+    reopened = begin(db, approval)
+    assert reopened["attempt_id"] == attempt["attempt_id"]
+    assert reopened["reopen_count"] == 1
     assert db.recover_incomplete_attempts() == 1
-    assert db.get_submission_attempt(second["attempt_id"])["state"] == "aborted_preclick"
+    assert db.get_submission_attempt(reopened["attempt_id"])["state"] == "aborted_preclick"
     assert db.get_targets("j")[0]["status"] == "approved"
+
+
+def test_content_invalidation_atomically_aborts_active_preclick_attempt(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    approval = prepared(db)
+    attempt = begin(db, approval)
+
+    db.set_target_content("j", "g", body="changed", source_hash="s2", generation_fingerprint="f2")
+
+    assert db.get_targets("j")[0]["status"] == "pending_approval"
+    stale = db.get_submission_attempt(attempt["attempt_id"])
+    assert stale["state"] == "aborted_preclick"
+    assert stale["last_error"] == "content_invalidated"
+    with pytest.raises(ValueError, match="awaiting click"):
+        db.mark_click_started(attempt["attempt_id"])
+
+
+def test_duplicate_approval_callback_cannot_reset_active_attempt(tmp_path):
+    db = QueueDB(tmp_path / "q.db")
+    approval = prepared(db)
+    attempt = begin(db, approval)
+    with pytest.raises(ValueError, match="active submission"):
+        db.approve_target(
+            "j", "g", source="telegram", approval_id=approval["approval_id"]
+        )
+    assert db.get_submission_attempt(attempt["attempt_id"])["state"] == "submitting"
+    assert db.get_targets("j")[0]["status"] == "submitting"
 
 
 @pytest.mark.parametrize("stage", ["after_click", "after_response", "during_verification"])
@@ -128,17 +189,42 @@ def test_verification_transitions_and_posted_at_semantics(tmp_path):
     approval = prepared(db)
     attempt = begin(db, approval)
     db.mark_click_started(attempt["attempt_id"])
-    db.resolve_submission(attempt["attempt_id"], outcome="confirmed", permalink="https://fb/p/1")
+    permalink = "https://www.facebook.com/groups/g/posts/1"
+    db.resolve_submission(attempt["attempt_id"], outcome="confirmed", permalink=permalink)
     target = db.get_targets("j")[0]
     first_posted_at = target["posted_at"]
-    assert (target["status"], target["permalink"]) == ("posted", "https://fb/p/1")
+    assert (target["status"], target["permalink"]) == ("posted", permalink)
 
     db.verify_submission(attempt["attempt_id"], outcome="invalid")
     assert db.get_targets("j")[0]["status"] == "uncertain"
     assert db.get_targets("j")[0]["posted_at"] == first_posted_at
     assert db.verify_submission(attempt["attempt_id"], outcome="inconclusive")["state"] == "reconcile_only"
-    assert db.verify_submission(attempt["attempt_id"], outcome="confirmed", permalink="https://fb/p/1")["state"] == "posted"
+    assert db.verify_submission(
+        attempt["attempt_id"], outcome="confirmed", permalink=permalink
+    )["state"] == "posted"
     assert db.get_targets("j")[0]["posted_at"] == first_posted_at
+
+
+@pytest.mark.parametrize(
+    "permalink",
+    [
+        None,
+        "",
+        "http://facebook.com/groups/g/posts/1",
+        "https://example.com/posts/1",
+        "https://facebook.com/",
+        "https://www.facebook.com/help",
+    ],
+)
+def test_confirmation_requires_captured_https_facebook_permalink(tmp_path, permalink):
+    db = QueueDB(tmp_path / "q.db")
+    approval = prepared(db)
+    attempt = begin(db, approval)
+    db.mark_click_started(attempt["attempt_id"])
+    with pytest.raises(ValueError, match="Facebook permalink"):
+        db.resolve_submission(attempt["attempt_id"], outcome="confirmed", permalink=permalink)
+    assert db.get_submission_attempt(attempt["attempt_id"])["state"] == "reconcile_only"
+    assert db.get_targets("j")[0]["status"] == "uncertain"
 
 
 def test_verify_only_api_never_creates_attempt_or_submits(tmp_path):

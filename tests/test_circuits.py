@@ -56,8 +56,22 @@ def test_group_ambiguity_is_24h_and_marks_attempt_reconcile_only(tmp_path):
     )
     assert circuit["scope"] == "group"
     assert datetime.fromisoformat(circuit["expires_at"]) == NOW + timedelta(hours=24)
+    assert manager.clear(scope="group", subject="g1", actor="operator", at=NOW) is False
     assert db.get_submission_attempt(attempt_id)["state"] == "reconcile_only"
     assert db.get_targets("j1")[0]["status"] == "uncertain"
+
+
+@pytest.mark.parametrize("kind", [FailureKind.POST_SUBMIT_AMBIGUITY, FailureKind.PUBLIC_VERIFICATION_FAILURE])
+def test_group_ambiguity_requires_matching_clicked_attempt_atomically(tmp_path, kind):
+    db = QueueDB(tmp_path / "q.db")
+    manager = CircuitManager(db)
+    with pytest.raises(ValueError, match="attempt_id"):
+        manager.record_failure(kind, group_id="g1", occurred_at=NOW)
+    attempt_id = _clicked_attempt(db)
+    with pytest.raises(ValueError, match="affected group"):
+        manager.record_failure(kind, group_id="other", attempt_id=attempt_id, occurred_at=NOW)
+    assert manager.active_circuits(at=NOW) == []
+    assert db.get_submission_attempt(attempt_id)["state"] == "submitting"
 
 
 def test_selector_threshold_and_rolling_window(tmp_path):
@@ -66,6 +80,15 @@ def test_selector_threshold_and_rolling_window(tmp_path):
     assert manager.record_failure(
         FailureKind.COMPOSER_FAILURE, group_id="g1", occurred_at=NOW + timedelta(hours=23)
     )["scope"] == "group"
+    assert manager.clear(scope="group", subject="g1", actor="operator", at=NOW + timedelta(hours=23)) is False
+    assert manager.record_successful_preflight(
+        "prod", group_id="g1", actor="operator", at=NOW + timedelta(hours=23)
+    ) == 0
+    assert manager.blocking_circuit(group_id="g1", at=NOW + timedelta(hours=48))["scope"] == "group"
+    assert manager.record_successful_preflight(
+        "prod", group_id="g1", actor="operator", at=NOW + timedelta(hours=48)
+    ) == 1
+    assert manager.blocking_circuit(group_id="g1", at=NOW + timedelta(hours=48)) is None
 
     later = NOW + timedelta(hours=49)
     assert manager.record_failure(FailureKind.SELECTOR_FAILURE, group_id="g2", occurred_at=later) is None
@@ -106,8 +129,15 @@ def test_other_runtime_threshold_is_three_in_six_hours(tmp_path):
 
 def test_global_precedence_persistence_expiry_and_clearance_authority(tmp_path):
     path = tmp_path / "q.db"
-    manager = CircuitManager(QueueDB(path))
-    manager.record_failure(FailureKind.PUBLIC_VERIFICATION_FAILURE, group_id="g1", occurred_at=NOW)
+    db = QueueDB(path)
+    manager = CircuitManager(db)
+    attempt_id = _clicked_attempt(db)
+    manager.record_failure(
+        FailureKind.PUBLIC_VERIFICATION_FAILURE,
+        group_id="g1",
+        attempt_id=attempt_id,
+        occurred_at=NOW,
+    )
     manager.record_failure(FailureKind.CHECKPOINT, occurred_at=NOW + timedelta(minutes=1))
 
     restarted = CircuitManager(QueueDB(path))
@@ -118,13 +148,20 @@ def test_global_precedence_persistence_expiry_and_clearance_authority(tmp_path):
 
 
 def test_new_failure_reopens_an_expired_group_circuit(tmp_path):
-    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    db = QueueDB(tmp_path / "q.db")
+    manager = CircuitManager(db)
+    first_attempt = _clicked_attempt(db)
     first = manager.record_failure(
-        FailureKind.PUBLIC_VERIFICATION_FAILURE, group_id="g1", occurred_at=NOW
+        FailureKind.PUBLIC_VERIFICATION_FAILURE,
+        group_id="g1",
+        attempt_id=first_attempt,
+        occurred_at=NOW,
     )
+    second_attempt = _clicked_attempt(db, job_id="j2", property_id="p2")
     second = manager.record_failure(
         FailureKind.PUBLIC_VERIFICATION_FAILURE,
         group_id="g1",
+        attempt_id=second_attempt,
         occurred_at=NOW + timedelta(hours=25),
     )
     assert second["circuit_id"] != first["circuit_id"]
@@ -135,6 +172,9 @@ def test_preflight_and_operator_preflight_clearance(tmp_path):
     manager = CircuitManager(QueueDB(tmp_path / "q.db"))
     manager.record_failure(FailureKind.PROFILE_CORRUPT, environment="prod", occurred_at=NOW)
     assert manager.record_successful_preflight("prod", actor="scheduler", at=NOW) == 0
+    manager.record_failure(FailureKind.SESSION_EXPIRED, environment="scheduled-env", occurred_at=NOW)
+    assert manager.record_successful_preflight("scheduled-env", actor="scheduled", at=NOW) == 0
+    assert manager.blocking_circuit(environment="scheduled-env", at=NOW)["reason"] == "session_expired"
     assert manager.operator_review(scope="environment", subject="prod", actor="operator", at=NOW) is True
     assert manager.record_successful_preflight("prod", actor="operator", at=NOW) == 1
 
@@ -146,7 +186,10 @@ def test_operator_preflight_circuit_does_not_expire_without_both_clearances(tmp_
     assert manager.blocking_circuit(at=NOW + timedelta(hours=25))["scope"] == "global"
     assert manager.record_successful_preflight("prod", actor="operator", at=NOW + timedelta(hours=25)) == 0
     assert manager.operator_review(scope="global", subject="*", actor="operator", at=NOW) is True
-    assert manager.record_successful_preflight("prod", actor="operator", at=NOW) == 1
+    assert manager.record_successful_preflight("prod", actor="operator", at=NOW) == 0
+    assert manager.record_successful_preflight(
+        "prod", actor="operator", at=NOW + timedelta(hours=25)
+    ) == 1
 
 
 def test_additive_migration_from_legacy_database(tmp_path):
@@ -164,16 +207,21 @@ def test_additive_migration_from_legacy_database(tmp_path):
         columns = {r[1] for r in conn.execute("PRAGMA table_info(job_targets)")}
     assert {"safety_circuits", "circuit_events", "approvals", "submission_attempts"} <= tables
     assert {"source_hash", "normalized_body_hash", "generation_fingerprint", "approval_id", "reconcile_only"} <= columns
+    with db.connect() as conn:
+        attempt_columns = {r[1] for r in conn.execute("PRAGMA table_info(submission_attempts)")}
+    assert {"reopen_count", "last_reopened_at"} <= attempt_columns
 
 
-def _clicked_attempt(db: QueueDB) -> str:
+def _clicked_attempt(
+    db: QueueDB, *, job_id: str = "j1", property_id: str = "p1", group_id: str = "g1"
+) -> str:
     db.create_job(
-        {"job_id": "j1", "property_id": "p1"},
-        [{"group_id": "g1", "body": "body", "source_hash": "s", "generation_fingerprint": "f"}],
+        {"job_id": job_id, "property_id": property_id},
+        [{"group_id": group_id, "body": "body", "source_hash": "s", "generation_fingerprint": "f"}],
     )
-    approval = db.approve_target("j1", "g1", source="operator")
+    approval = db.approve_target(job_id, group_id, source="operator")
     attempt = db.begin_submission(
-        "j1", "g1", approval_id=approval["approval_id"], source_hash="s",
+        job_id, group_id, approval_id=approval["approval_id"], source_hash="s",
         body_hash=approval["body_hash"], generation_fingerprint="f"
     )
     db.mark_click_started(attempt["attempt_id"], at=NOW)

@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import parse_qs, urlparse
 
 from src.run_result import (
     sanitize_terminal_result,
@@ -22,6 +23,22 @@ TARGET_STATUSES = {
     "pending", "pending_approval", "approved", "submitting", "posted",
     "failed", "skipped", "uncertain",
 }
+AUTO_APPROVAL_GATE_KEYS = frozenset(
+    {
+        "source_present",
+        "source_fresh",
+        "source_hash_matches",
+        "property_identity_matches",
+        "broker_known",
+        "body_hash_matches",
+        "generation_fingerprint_matches",
+        "circuit_clear",
+        "session_healthy",
+        "runtime_healthy",
+        "group_allowed",
+        "duplicate_clear",
+    }
+)
 
 
 def normalized_body_hash(body: str) -> str:
@@ -183,6 +200,8 @@ class QueueDB:
                   completed_at TEXT,
                   last_error TEXT,
                   permalink TEXT,
+                  reopen_count INTEGER NOT NULL DEFAULT 0,
+                  last_reopened_at TEXT,
                   UNIQUE(property_id, group_id, approval_id),
                   FOREIGN KEY(job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
                   FOREIGN KEY(approval_id) REFERENCES approvals(approval_id)
@@ -200,6 +219,18 @@ class QueueDB:
             for name, declaration in additions.items():
                 if name not in columns:
                     conn.execute(f"ALTER TABLE job_targets ADD COLUMN {name} {declaration}")
+            attempt_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(submission_attempts)")
+            }
+            attempt_additions = {
+                "reopen_count": "INTEGER NOT NULL DEFAULT 0",
+                "last_reopened_at": "TEXT",
+            }
+            for name, declaration in attempt_additions.items():
+                if name not in attempt_columns:
+                    conn.execute(
+                        f"ALTER TABLE submission_attempts ADD COLUMN {name} {declaration}"
+                    )
             conn.executescript(
                 """
                 CREATE INDEX IF NOT EXISTS idx_circuits_active
@@ -394,7 +425,7 @@ class QueueDB:
             raise ValueError("invalid approval source")
         with self.connect() as conn:
             target = conn.execute(
-                """SELECT t.*, j.property_id FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
+                """SELECT t.*, j.property_id, j.payload_json FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
                    WHERE t.job_id=? AND t.group_id=?""",
                 (job_id, group_id),
             ).fetchone()
@@ -406,9 +437,20 @@ class QueueDB:
             ).fetchone()
             if clicked:
                 raise ValueError("click boundary permanently prevents approval")
+            if target["status"] == "submitting":
+                raise ValueError("active submission attempt prevents approval changes")
             source_hash = target["source_hash"] or ""
             body_hash = target["normalized_body_hash"] or normalized_body_hash(target["body"])
             fingerprint = target["generation_fingerprint"] or ""
+            payload_property_id = json.loads(target["payload_json"]).get("property_id")
+            if not all(
+                isinstance(value, str) and value.strip()
+                for value in (
+                    payload_property_id, target["property_id"], group_id, target["body"], source_hash,
+                    body_hash, fingerprint,
+                )
+            ):
+                raise ValueError("approval binding fields must all be non-empty")
             if approval_id is not None:
                 old = conn.execute("SELECT * FROM approvals WHERE approval_id=?", (approval_id,)).fetchone()
                 if old is None or any(
@@ -442,8 +484,19 @@ class QueueDB:
             )
         return dict(row)
 
-    def auto_approve_target(self, job_id: str, group_id: str, *, gates: dict[str, bool]) -> dict[str, Any]:
-        if not gates or not all(value is True for value in gates.values()):
+    def auto_approve_target(
+        self,
+        job_id: str,
+        group_id: str,
+        *,
+        gates: dict[str, bool],
+        auto_approve_enabled: bool = False,
+    ) -> dict[str, Any]:
+        if auto_approve_enabled is not True:
+            raise ValueError("auto approval is disabled")
+        if set(gates) != AUTO_APPROVAL_GATE_KEYS:
+            raise ValueError("canonical auto-approval gate set is required")
+        if not all(value is True for value in gates.values()):
             raise ValueError("all auto-approval gates must pass")
         return self.approve_target(job_id, group_id, source="auto_policy")
 
@@ -458,6 +511,10 @@ class QueueDB:
     ) -> None:
         body_hash = normalized_body_hash(body)
         with self.connect() as conn:
+            # Serialize content invalidation against mark_click_started(). Once
+            # this lock is held, either the pre-click attempt is aborted here or
+            # a previously committed click boundary is observed and preserved.
+            conn.execute("BEGIN IMMEDIATE")
             target = conn.execute(
                 """SELECT t.*, j.property_id FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
                    WHERE t.job_id=? AND t.group_id=?""",
@@ -471,6 +528,15 @@ class QueueDB:
             ).fetchone()
             status = target["status"] if clicked else "pending_approval"
             approval_id = target["approval_id"] if clicked else None
+            if not clicked:
+                timestamp = now_iso()
+                conn.execute(
+                    """UPDATE submission_attempts
+                       SET state='aborted_preclick', completed_at=?, last_error='content_invalidated'
+                       WHERE job_id=? AND group_id=? AND state='submitting'
+                         AND click_started_at IS NULL""",
+                    (timestamp, job_id, group_id),
+                )
             conn.execute(
                 """UPDATE job_targets SET body=?, source_hash=?, normalized_body_hash=?,
                    generation_fingerprint=?, status=?, approval_id=? WHERE job_id=? AND group_id=?""",
@@ -511,20 +577,50 @@ class QueueDB:
             )
             if target is None or target["status"] != "approved" or values != target_values or values != approval_values:
                 raise ValueError("approval mismatch")
-            if approval["job_id"] != job_id or approval["group_id"] != group_id:
+            if (
+                approval["job_id"] != job_id
+                or approval["group_id"] != group_id
+                or approval["property_id"] != target["property_id"]
+                or not all(isinstance(value, str) and value.strip() for value in values)
+                or not target["property_id"].strip()
+                or not group_id.strip()
+            ):
                 raise ValueError("approval mismatch")
             if conn.execute(
                 "SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1",
                 (target["property_id"], group_id),
             ).fetchone():
                 raise ValueError("click boundary permanently prevents a new attempt")
-            attempt_id = str(uuid.uuid4())
-            conn.execute(
-                """INSERT INTO submission_attempts(
-                   attempt_id, job_id, property_id, group_id, approval_id, state, created_at
-                   ) VALUES(?,?,?,?,?,'submitting',?)""",
-                (attempt_id, job_id, target["property_id"], group_id, approval_id, created_at or now_iso()),
-            )
+            existing = conn.execute(
+                """SELECT * FROM submission_attempts
+                   WHERE property_id=? AND group_id=? AND approval_id=?""",
+                (target["property_id"], group_id, approval_id),
+            ).fetchone()
+            if existing:
+                if existing["state"] != "aborted_preclick" or existing["click_started_at"] is not None:
+                    raise ValueError("existing attempt cannot be reopened")
+                attempt_id = existing["attempt_id"]
+                reopened_at = created_at or now_iso()
+                conn.execute(
+                    """UPDATE submission_attempts
+                       SET state='submitting', completed_at=NULL, last_error=NULL,
+                           response_received_at=NULL, verification_started_at=NULL,
+                           reopen_count=reopen_count+1, last_reopened_at=?
+                       WHERE attempt_id=? AND state='aborted_preclick'
+                         AND click_started_at IS NULL""",
+                    (reopened_at, attempt_id),
+                )
+            else:
+                attempt_id = str(uuid.uuid4())
+                conn.execute(
+                    """INSERT INTO submission_attempts(
+                       attempt_id, job_id, property_id, group_id, approval_id, state, created_at
+                       ) VALUES(?,?,?,?,?,'submitting',?)""",
+                    (
+                        attempt_id, job_id, target["property_id"], group_id,
+                        approval_id, created_at or now_iso(),
+                    ),
+                )
             conn.execute(
                 "UPDATE job_targets SET status='submitting' WHERE job_id=? AND group_id=? AND status='approved'",
                 (job_id, group_id),
@@ -639,6 +735,11 @@ class QueueDB:
         raise ValueError("invalid verification outcome")
 
     def _confirm_submission(self, attempt_id: str, *, permalink: str | None) -> dict[str, Any]:
+        if not self._is_valid_facebook_permalink(permalink):
+            self.mark_attempt_reconcile_only(
+                attempt_id, reason="missing_or_invalid_facebook_permalink"
+            )
+            raise ValueError("a captured HTTPS Facebook permalink is required")
         with self.connect() as conn:
             attempt = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
             if attempt is None or attempt["click_started_at"] is None:
@@ -655,6 +756,28 @@ class QueueDB:
                 (attempt["click_started_at"], permalink, attempt["job_id"], attempt["group_id"]),
             )
         return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
+
+    @staticmethod
+    def _is_valid_facebook_permalink(permalink: str | None) -> bool:
+        if not isinstance(permalink, str) or not permalink.strip():
+            return False
+        parsed = urlparse(permalink)
+        host = (parsed.hostname or "").lower()
+        path = parsed.path.rstrip("/")
+        query = parse_qs(parsed.query)
+        post_path = any(
+            marker in f"{path}/"
+            for marker in ("/posts/", "/permalink/", "/share/p/")
+        )
+        query_permalink = (
+            path.endswith(("/story.php", "/photo.php"))
+            and bool(query.get("story_fbid") or query.get("fbid"))
+        )
+        return (
+            parsed.scheme == "https"
+            and (host == "facebook.com" or host.endswith(".facebook.com"))
+            and (post_path or query_permalink)
+        )
 
     def submission_eligible(self, job_id: str, group_id: str) -> bool:
         with self.connect() as conn:
