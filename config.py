@@ -30,6 +30,19 @@ def _int(name: str, default: int) -> int:
         raise ValueError(f"Environment variable {name!r} must be an integer, got: {raw!r}") from None
 
 
+def _path(name: str, default: str | Path) -> Path:
+    raw = os.getenv(name)
+    value = str(default) if raw is None or raw == "" else raw
+    return Path(os.path.expandvars(os.path.expanduser(value)))
+
+
+def _default_profile_dir() -> Path:
+    local_appdata = os.getenv("LOCALAPPDATA")
+    if local_appdata:
+        return Path(local_appdata) / "fb-group-autoposter" / "profile"
+    return ROOT / "profiles" / "main"
+
+
 @dataclass(frozen=True)
 class Settings:
     anthropic_api_key: str
@@ -63,6 +76,7 @@ class Settings:
     browser_backend: str
     browser_user_agent: str
     estateboard_source: Path
+    estateboard_drive_root: Path
 
     @classmethod
     def load(cls, env_file: str | Path | None = None) -> "Settings":
@@ -94,25 +108,23 @@ class Settings:
             heartbeat_timeout_min=_int("HEARTBEAT_TIMEOUT_MIN", 30),
             group_fail_threshold=_int("GROUP_FAIL_THRESHOLD", 3),
             cooldown_hours=_int("COOLDOWN_HOURS", 24),
-            profile_dir=Path(os.getenv("PROFILE_DIR", "profiles/main")),
-            inbox_dir=Path(os.getenv("INBOX_DIR", "data/inbox")),
-            db_path=Path(os.getenv("DB_PATH", "data/jobs.db")),
+            profile_dir=_path("PROFILE_DIR", _default_profile_dir()),
+            inbox_dir=_path("INBOX_DIR", "data/inbox"),
+            db_path=_path("DB_PATH", "data/jobs.db"),
             profile_backup_keep=_int("PROFILE_BACKUP_KEEP", 7),
             browser_backend=os.getenv("BROWSER_BACKEND", "playwright"),
-            # A stable, realistic UA reduces checkpoint triggers. A CHANGING UA is
-            # a top trigger, so this must stay constant across runs (see .env.example).
             browser_user_agent=os.getenv(
                 "BROWSER_USER_AGENT",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             ),
-            # Latest EstateBoard broker-OK export; re-read at post time by the
-            # freshness gate to confirm a property is still live before posting.
-            estateboard_source=Path(
-                os.getenv(
-                    "ESTATEBOARD_SOURCE",
-                    r"G:\マイドライブ\AI_Agents\github\repos\EstateBoard\output\received\properties.json",
-                )
+            estateboard_source=_path(
+                "ESTATEBOARD_SOURCE",
+                r"G:\マイドライブ\AI_Agents\github\repos\EstateBoard\output\received\properties.json",
+            ),
+            estateboard_drive_root=_path(
+                "ESTATEBOARD_DRIVE_ROOT",
+                r"G:\マイドライブ\0.物件資料_お客様紹介用\Estateboard",
             ),
         )
         settings.ensure_dirs()
@@ -124,15 +136,11 @@ class Settings:
 
     def validate_runtime(self, *, require_external: bool = True) -> None:
         missing: list[str] = []
-        if require_external:
-            # ANTHROPIC_API_KEY is optional: the generator falls back to template
-            # (degraded) bodies when it is absent. Telegram is only required when
-            # manual approval is in use (i.e. AUTO_APPROVE is disabled).
-            if not self.auto_approve:
-                if not self.telegram_bot_token:
-                    missing.append("TELEGRAM_BOT_TOKEN")
-                if not self.telegram_chat_id:
-                    missing.append("TELEGRAM_CHAT_ID")
+        if require_external and not self.auto_approve:
+            if not self.telegram_bot_token:
+                missing.append("TELEGRAM_BOT_TOKEN")
+            if not self.telegram_chat_id:
+                missing.append("TELEGRAM_CHAT_ID")
         if self.min_interval_min > self.max_interval_min:
             raise ValueError("MIN_INTERVAL_MIN must be <= MAX_INTERVAL_MIN")
         numeric_positive = {
@@ -153,8 +161,7 @@ class Settings:
         if self.browser_backend not in {"playwright", "adspower"}:
             raise ValueError("BROWSER_BACKEND must be playwright or adspower")
         if missing:
-            joined = ", ".join(missing)
-            raise RuntimeError(f"Missing required environment variables: {joined}")
+            raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
 
 
 def load_groups(path: str | Path = "groups.yaml") -> list[dict[str, Any]]:
