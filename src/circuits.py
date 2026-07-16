@@ -292,15 +292,20 @@ class CircuitManager:
                 if ranks.get(clearance_mode, 0) > ranks.get(existing_mode, 0)
                 else current["reason"]
             )
+            reset_operator_review = merged_mode in {"operator", "operator_preflight"}
             conn.execute(
                 """UPDATE safety_circuits
-                   SET reason=?, reasons_json=?, expires_at=?, clearance_mode=?
+                   SET reason=?, reasons_json=?, expires_at=?, clearance_mode=?,
+                       operator_reviewed_at=CASE WHEN ? THEN NULL ELSE operator_reviewed_at END,
+                       operator_reviewed_by=CASE WHEN ? THEN NULL ELSE operator_reviewed_by END
                    WHERE circuit_id=?""",
                 (
                     primary_reason,
                     json.dumps(reasons, sort_keys=True),
                     merged_expiry,
                     merged_mode,
+                    reset_operator_review,
+                    reset_operator_review,
                     current["circuit_id"],
                 ),
             )

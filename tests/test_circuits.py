@@ -191,6 +191,78 @@ def test_environment_circuit_merge_is_order_independent_and_requires_operator(tm
     assert manager.record_successful_preflight("prod", actor="operator", at=NOW) == 1
 
 
+def test_repeated_operator_incident_invalidates_stale_review(tmp_path):
+    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    first = manager.record_failure(
+        FailureKind.PROFILE_CORRUPT, environment="prod", occurred_at=NOW
+    )
+    assert manager.operator_review(
+        scope="environment", subject="prod", actor="operator", at=NOW + timedelta(minutes=1)
+    ) is True
+    reviewed = manager.blocking_circuit(environment="prod", at=NOW + timedelta(minutes=1))
+    assert reviewed["operator_reviewed_at"] is not None
+
+    repeated = manager.record_failure(
+        FailureKind.PROFILE_CORRUPT,
+        environment="prod",
+        occurred_at=NOW + timedelta(minutes=2),
+    )
+    assert repeated["circuit_id"] == first["circuit_id"]
+    assert repeated["operator_reviewed_at"] is None
+    assert repeated["operator_reviewed_by"] is None
+    assert manager.record_successful_preflight(
+        "prod", actor="operator", at=NOW + timedelta(minutes=3)
+    ) == 0
+    assert manager.operator_review(
+        scope="environment", subject="prod", actor="operator", at=NOW + timedelta(minutes=4)
+    ) is True
+    assert manager.record_successful_preflight(
+        "prod", actor="operator", at=NOW + timedelta(minutes=5)
+    ) == 1
+
+
+def test_weaker_reverse_incident_still_invalidates_operator_review(tmp_path):
+    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    manager.record_failure(FailureKind.PROFILE_CORRUPT, environment="prod", occurred_at=NOW)
+    assert manager.operator_review(
+        scope="environment", subject="prod", actor="operator", at=NOW + timedelta(minutes=1)
+    ) is True
+
+    merged = manager.record_failure(
+        FailureKind.SESSION_EXPIRED,
+        environment="prod",
+        occurred_at=NOW + timedelta(minutes=2),
+    )
+    assert merged["clearance_mode"] == "operator_preflight"
+    assert merged["operator_reviewed_at"] is None
+    assert manager.record_successful_preflight(
+        "prod", actor="operator", at=NOW + timedelta(minutes=3)
+    ) == 0
+
+
+def test_new_global_incident_resets_review_and_extends_minimum(tmp_path):
+    manager = CircuitManager(QueueDB(tmp_path / "q.db"))
+    for group in ("g1", "g2", "g3"):
+        global_circuit = manager.record_failure(
+            FailureKind.SELECTOR_FAILURE, group_id=group, occurred_at=NOW
+        )
+    assert manager.operator_review(
+        scope="global", subject="*", actor="operator", at=NOW + timedelta(hours=1)
+    ) is True
+
+    merged = manager.record_failure(
+        FailureKind.SELECTOR_FAILURE,
+        group_id="g4",
+        occurred_at=NOW + timedelta(hours=2),
+    )
+    assert merged["circuit_id"] == global_circuit["circuit_id"]
+    assert merged["operator_reviewed_at"] is None
+    assert datetime.fromisoformat(merged["expires_at"]) == NOW + timedelta(hours=26)
+    assert manager.record_successful_preflight(
+        "prod", actor="operator", at=NOW + timedelta(hours=27)
+    ) == 0
+
+
 def test_ambiguity_then_selector_merges_to_minimum_preflight_with_latest_expiry(tmp_path):
     db = QueueDB(tmp_path / "q.db")
     manager = CircuitManager(db)
