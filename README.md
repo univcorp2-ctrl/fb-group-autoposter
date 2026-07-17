@@ -1,211 +1,91 @@
-# fb-group-autoposter
+# Facebook Group Property Autoposter
 
-Facebook非公開グループ向けの物件配信パイプラインです。物件PDF/URL/dict入力、Claude APIによるグループ別文面生成、SQLiteキュー、Telegram承認ゲート、Playwright投稿エンジン、検証・通知・ヘルスチェックを含みます。
+EstateBoardの最新物件を選び、グループごとの重複・日次上限・投稿時間を守りながら、ログイン済みFacebookブラウザへ画像付きで投稿するWindows向け運用システムです。投稿結果はSQLiteに保存し、Cloudflare Pagesのステータス画面へ公開します。
 
-初期値はフェイルセーフです。
+## 2026-07 復旧内容
 
-- `DRY_RUN=true`: 実投稿しない
-- `AUTO_APPROVE=false`: Telegram承認必須
-- Facebookパスワードは保存しない
-- `.env`, `profiles/`, `logs/`, `screenshots/`, `jobs.db` はgit管理しない
+停止原因は、Google Drive同期フォルダ内の仮想環境が参照していたPlaywright Chromiumの消失と、同じ同期領域に置かれたChrome persistent profile／SQLite／Gitメタデータの破損でした。さらにEstateBoard変換後の `images` が空で、Driveに保存済みの物件画像が投稿処理へ渡っていませんでした。
 
-## Facebook投稿分析
+今回の修復で次を本線へ統合しました。
 
-投稿履歴と反応数はEstateBoard側の共通分析ダッシュボードへ同期します。このリポジトリには投稿PCで動く同期・反応収集・ランチャーだけを置き、ダッシュボード画面は重複実装しません。
+- 実行コード、venv、Facebook profile、SQLiteを `%LOCALAPPDATA%\FBGroupAutoposter` へ分離
+- 使用中venvに合うPlaywright Chromiumを再インストール
+- EstateBoard物件ID・物件名からGoogle Drive画像を解決し、投稿へ添付
+- 朝・昼・夕方・夜の安全なフォールバックタスクを再登録
+- 投稿結果を `site/data/status.json` に書き出し、Cloudflare Pagesへ反映
+- Claude APIなしでもテンプレートで継続。`POST_TEXT_PROVIDER=codex` ならCodex CLIを文面生成に利用
+- preflight、pytest、ruff、GitHub Actions、devcontainerを維持
 
-- 分析ダッシュボード: https://estateboard.pages.dev/facebook-analytics/
-- 既存EstateBoard: https://estateboard.pages.dev/
-- EstateBoardリポジトリ: https://github.com/univcorp2-ctrl/EstateBoard
-- fb-group-autoposterリポジトリ: https://github.com/univcorp2-ctrl/fb-group-autoposter
-
-投稿PCで分析画面を開くには、リポジトリ直下の `open-facebook-analytics.cmd` をダブルクリックします。接続状態だけ確認する場合は次を実行します。
-
-```powershell
-.venv\Scripts\python.exe scripts\open_analytics_dashboard.py --status
-```
-
-投稿履歴同期と反応収集に使う主な環境変数は次の通りです。実Secret値は `.env` またはタスク実行環境にだけ設定し、READMEやGitHubへ書かないでください。
-
-```dotenv
-ANALYTICS_SYNC_ENABLED=true
-ANALYTICS_BASE_URL=https://estateboard.pages.dev
-ANALYTICS_DASHBOARD_URL=https://estateboard.pages.dev/facebook-analytics/
-ANALYTICS_INGEST_TOKEN=<Cloudflare側と同じ値>
-ANALYTICS_METRICS_HEADLESS=false
-DB_PATH=data/jobs.db
-PROFILE_DIR=profiles/main
-```
-
-関連ドキュメント: [`FACEBOOK_ANALYTICS_DASHBOARD.md`](FACEBOOK_ANALYTICS_DASHBOARD.md), [`docs/facebook_analytics.md`](docs/facebook_analytics.md)
-
-## Architecture
-
-毎日のトリガー → 完遂ループ → 文面生成 → キュー → 投稿 → 検証、という流れ。
-**JST暦日1回ガード**で重複なし・毎日1回。`ensure` ループとセッション自動復旧で「止まらず完遂」。
+## アーキテクチャ
 
 ```mermaid
 flowchart LR
-  T["Windowsタスク x8<br/>Morning/Midday/Afternoon/Evening<br/>Keepalive/Monitor/Discover"] --> RD["run_daily.py"]
-  RD --> ENS["ensure.py 完遂ループ"]
-  EB["EstateBoard"] --> RD
-  ENS --> RC["orchestrator.run_cycle"]
-  RC --> GEN["generator Claude API"]
-  GEN --> DB[("SQLite jobs.db")]
-  DB --> POST["poster.py Playwright"]
-  POST --> GUARD{"暦日1回ガード"}
-  GUARD -->|OK| FB(("Facebook グループ"))
-  GUARD -->|"投稿済み/時間外"| SKIP["skip"]
-  KA["keepalive.py"] --> SESS["セッション維持 + backup/restore"]
-  POST --> MON["monitor.py 監視"]
+  EB[EstateBoard JSON] --> SEL[物件選定・重複防止]
+  GD[Google Drive PDF/画像] --> IMG[Drive画像解決]
+  SEL --> GEN[文面生成\nClaude / Codex CLI / deterministic]
+  IMG --> GEN
+  GEN --> DB[(Local SQLite Queue)]
+  DB --> PW[Playwright headed Chromium]
+  PROF[(Local Facebook Profile)] --> PW
+  PW --> FB[Facebook Groups]
+  PW --> DB
+  DB --> JSON[status.json]
+  JSON --> PAGE[Cloudflare Pages Dashboard]
+  GHA[GitHub Actions CI] --> TEST[ruff / pytest / compile]
 ```
 
-詳細図（完遂ループ・セッション復旧・状態遷移・多層フォールバック）は
-[`docs/architecture.md`](docs/architecture.md) を参照。
-深掘り検証は [`docs/deep_verification.md`](docs/deep_verification.md) を参照。
+重要: Facebook投稿は、ログイン済みのheaded browserと対話ユーザーセッションを必要とします。GitHub-hosted runnerやCloudflare上ではなく、Windows Task Schedulerまたは対話モードのself-hosted runnerで実行します。Codex CLIは文章作成の代替であり、Facebookログインやブラウザ操作を置き換えるものではありません。
 
-## 初回セットアップ
+## 最短復旧
+
+管理者PowerShellでリポジトリを開き、次を1回実行します。
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-playwright install chromium
-copy .env.example .env
+powershell -ExecutionPolicy Bypass -File scripts\repair_windows_runtime.ps1
 ```
 
-`.env` に実値を入れます。
+Codex CLIを使う場合:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\repair_windows_runtime.ps1 -PostTextProvider codex
+```
+
+スクリプトはローカルランタイム作成、既存profile／DB履歴の初回移行、依存関係とChromiumの修復、preflight、テスト、Windowsタスク登録まで行います。Facebookがcheckpoint、CAPTCHA、2段階認証を要求した場合だけ、同じWindowsユーザーで `scripts/login_once.py` を開いて認証を完了してください。
+
+## 日次運用
+
+- 08:00 session keepalive
+- 09:30 morning post（ログオン時catch-upあり）
+- 13:00 / 16:30 / 20:30 fallback run
+- 11:30 / 21:30 live permalink verification
+- 12:00 / 23:00 monitoring
+
+同一グループはJSTの同日内に1回だけ、投稿済み／要確認は重複対象として扱うため、フォールバックが複数回動いても過剰投稿しません。
+
+## 設定
+
+秘密値は `.env` に置き、Gitへcommitしません。主な項目:
 
 ```dotenv
-ANTHROPIC_API_KEY=...
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=...
-DRY_RUN=true
-AUTO_APPROVE=false
+DRY_RUN=false
+AUTO_APPROVE=true
+ESTATEBOARD_SOURCE=G:\マイドライブ\AI_Agents\github\repos\EstateBoard\output\received\properties.json
+ESTATEBOARD_DRIVE_ROOT=G:\マイドライブ\0.物件資料_お客様紹介用\Estateboard
+POST_TEXT_PROVIDER=
+ANTHROPIC_API_KEY=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
 ```
 
-`groups.yaml` のダミーIDを実グループ情報に差し替えます。
+`POST_TEXT_PROVIDER` が空なら既存Claude設定を優先し、APIキーがない場合は安全な決定論的テンプレートへフォールバックします。`codex` を指定した場合は、Codex CLIのログイン済みセッションを使います。
+
+## 確認コマンド
 
 ```powershell
-python scripts/login_once.py
-python scripts/run_pipeline.py --selftest
+& "$env:LOCALAPPDATA\FBGroupAutoposter\.venv\Scripts\python.exe" "$env:LOCALAPPDATA\FBGroupAutoposter\app\scripts\preflight_drive.py"
+Get-ScheduledTask -TaskName 'FBAutoposter-*' | Format-Table TaskName,State,LastRunTime,LastTaskResult
 ```
 
-`login_once.py` は `profiles/main` を `user_data_dir` として使います。開いたブラウザで手動ログインし、2FA/checkpointも手動で完了します。以後、本番投稿は同じプロファイルを再利用します。
+手動dry-runは `.env` の `DRY_RUN=true` で `run_daily_drive.py` を実行します。本番投稿では `DRY_RUN=false` とし、投稿後に公開ダッシュボード、Telegram通知、SQLite permalinkを照合します。
 
-## 通常運用
-
-```powershell
-python scripts/run_pipeline.py
-python scripts/approval_listener.py
-python scripts/healthcheck.py
-```
-
-Windowsタスクスケジューラ登録:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install_windows_tasks.ps1
-```
-
-登録されるタスク:
-
-- `FBGroupAutoposter-Pipeline`: 1時間ごとにキュー処理
-- `FBGroupAutoposter-ApprovalPoll`: 5分ごとにTelegram callback取得
-- `FBGroupAutoposter-Healthcheck`: 30分ごとにheartbeat確認
-
-## Hiroが次にやること
-
-1. `.env` に `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` を入れる。
-2. `groups.yaml` に実際のグループID、URL、規約、禁止語、署名を入れる。
-3. `python scripts/login_once.py` でFacebookへ手動ログインする。
-4. `python scripts/run_pipeline.py --selftest` を実行する。
-5. `DRY_RUN=true` のままTelegram承認フローを確認する。
-6. 問題なければ `DRY_RUN=false` に変えて本投稿開始。
-7. 安定後に `AUTO_APPROVE=true` へ変えて完全無人化。
-
-## 入力
-
-- `data/inbox/*.pdf`: PyMuPDFでテキスト抽出。抽出失敗時もraw_textで続行。
-- `data/inbox/*.json`: PropertyData dictとして投入。
-- `ingest_url(url)`: URL本文をraw_textとして取り込み。
-- `ingest_manual(dict)`: 既存スクレイパー出力を直接投入。
-
-## 承認ゲート
-
-手動モード:
-
-- Telegramにプレビュー送信
-- ボタン: `✅承認`, `✏️修正`, `❌却下`, `👁️全文`
-- 承認で `approved`
-- 却下で `rejected`
-- 全文で全グループ分を分割送信
-
-自動モード:
-
-- `AUTO_APPROVE=true` でプレビュー通知後に即 `approved`
-- `degraded=true` の簡易生成ジョブは `AUTO_APPROVE_SKIP_DEGRADED=true` の場合、人間承認待ち
-
-## 投稿エンジン
-
-`poster.py` は以下を実装します。
-
-- Playwright persistent context (`PROFILE_DIR=profiles/main`)
-- 投稿前の `is_logged_in()`
-- 複数セレクタ候補
-- Visionフォールバック (`healer.py`)
-- 操作単位リトライ
-- グループ単位隔離
-- daily limit / same group interval / active hours
-- 投稿後スクショ保存
-- 成否不明時は `uncertain` として再投稿しない
-
-## テスト
-
-通常テスト:
-
-```powershell
-pytest
-ruff check .
-```
-
-10回連続検証:
-
-```powershell
-python scripts/run_tests_10.py
-```
-
-50回連続の深掘り検証:
-
-```powershell
-python scripts/run_tests_50.py
-```
-
-100回など任意回数:
-
-```powershell
-python scripts/run_tests_50.py --rounds 100
-```
-
-CIでは実投稿しないテストのみ実行します。
-
-## 手動E2E
-
-実投稿確認はHiroが自分の検証用グループで1回だけ実施します。
-
-1. 検証用Facebookグループを1つ用意。
-2. `groups.yaml` をそのグループだけ `enabled:true` にする。
-3. `.env` は `DRY_RUN=false`, `AUTO_APPROVE=false`。
-4. `python scripts/login_once.py` でログイン。
-5. `data/inbox/` にテストJSONまたはPDFを置く。
-6. `python scripts/run_pipeline.py`。
-7. Telegramで承認。
-8. 投稿結果・スクショ・DB状態を確認。
-
-## 法務・リスク
-
-Facebookの自動操作は規約上のリスクがあり、アカウント制限やグループ投稿制限の可能性はゼロではありません。リスク低減のため、投稿頻度を抑える、投稿対象グループを絞る、各グループ規約を尊重する、投稿専用アカウントの分離を検討することを推奨します。
-
-本システムは安全側のデフォルト、承認ゲート、投稿頻度制限、セッション切れ停止、checkpoint停止、成否不明時の再投稿抑止を提供します。最終的な運用判断はHiroが行います。
-
-## 未完了項目
-
-初期構築範囲では、AdsPower実接続、既存スクレイパー固有連携、Obsidian週次レポート生成は拡張口のみです。`BROWSER_BACKEND=adspower` は予約値で、初期実装では `NotImplementedError` を返します。
+詳細は [docs/setup.md](docs/setup.md) と [docs/architecture.md](docs/architecture.md) を参照してください。
