@@ -1,22 +1,9 @@
-# CODEX
+# Codex operating notes
 
-## Mission
-
-Build and maintain the Facebook group property distribution pipeline exactly as specified by the construction brief.
-
-## Guardrails
-
-- Never commit `.env`, Facebook passwords, API keys, Telegram tokens, cookies, profiles, logs, screenshots, or SQLite runtime DBs.
-- Keep `DRY_RUN=true` and `AUTO_APPROVE=false` as safe defaults.
-- Do not add automatic tests that publish to Facebook.
-- Preserve idempotency around `job_targets` and never repost uncertain targets automatically.
-
-## Development
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pytest
-ruff check .
-```
+- Production entrypoint: `scripts/run_daily_drive.py`
+- Repair command: `scripts/repair_windows_runtime.ps1`
+- Never store Facebook profiles, SQLite databases, screenshots, `.env`, API keys, or browser cookies in Git.
+- Keep EstateBoard/Drive input read-only.
+- Preserve duplicate guards and `uncertain` semantics; uncertain may already be published.
+- Run `ruff check .`, `pytest -q --no-cov`, and `python -m compileall -q src scripts tests` before pushing.
+- Codex CLI is an optional text provider only. Browser posting remains Playwright in an interactive Windows session.
