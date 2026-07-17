@@ -1,0 +1,42 @@
+name: Windows Runtime Control
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Runtime action
+        required: true
+        default: preflight
+        type: choice
+        options: [preflight, dry-run, live-run]
+permissions:
+  contents: write
+concurrency:
+  group: fb-autoposter-windows-runtime
+  cancel-in-progress: false
+jobs:
+  runtime:
+    runs-on: [self-hosted, Windows, X64, fb-autoposter]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repair runtime
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File scripts\repair_windows_runtime.ps1
+      - name: Preflight
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\FBGroupAutoposter\run-task.ps1" -Script scripts\preflight_drive.py
+      - name: Run selected cycle
+        if: inputs.action != 'preflight'
+        shell: powershell
+        env:
+          DRY_RUN: ${{ inputs.action == 'live-run' && 'false' || 'true' }}
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\FBGroupAutoposter\run-task.ps1" -Script scripts\run_daily_drive.py
+      - name: Upload runtime reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fb-autoposter-runtime
+          path: |
+            ${{ runner.temp }}
+            site/data/status.json
+          if-no-files-found: ignore

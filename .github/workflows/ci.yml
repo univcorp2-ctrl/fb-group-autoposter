@@ -1,102 +1,83 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: '3.12'
           cache: pip
-      - name: Install dependencies
-        shell: bash
-        run: |
+      - run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install pytest pytest-cov ruff
-      - name: Ruff check
-        run: ruff check .
+          pip install -r requirements.txt
+      - run: ruff check . --config pyproject.toml --output-format=github
 
   existing-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: '3.12'
           cache: pip
-      - name: Install dependencies
-        shell: bash
-        run: |
+      - run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install pytest pytest-cov
-      - name: Run existing tests
+          pip install -r requirements.txt
+      - name: Core and recovery tests
         run: pytest -q --no-cov --ignore=tests/test_analytics_export.py --ignore=tests/test_facebook_metrics.py
 
   analytics-export-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: '3.12'
           cache: pip
-      - name: Install dependencies
-        shell: bash
-        run: |
+      - run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install pytest pytest-cov
-      - name: Run analytics export tests
-        run: pytest -q --no-cov tests/test_analytics_export.py
+          pip install -r requirements.txt
+      - run: pytest -q --no-cov tests/test_analytics_export.py
 
   facebook-metrics-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: '3.12'
           cache: pip
-      - name: Install dependencies
-        shell: bash
-        run: |
+      - run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install pytest pytest-cov
-      - name: Run Facebook metric parser tests
-        run: pytest -q --no-cov tests/test_facebook_metrics.py
+          pip install -r requirements.txt
+      - run: pytest -q --no-cov tests/test_facebook_metrics.py
 
   deep-verify:
     needs: [lint, existing-tests, analytics-export-tests, facebook-metrics-tests]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
-      - name: Compile Python sources
-        run: python -m compileall -q src scripts tests
-      - name: Validate required analytics files
-        shell: bash
+          python-version: '3.12'
+      - run: python -m compileall -q src scripts tests
+      - name: Validate recovery and dashboard files
         run: |
-          test -f src/analytics_export.py
-          test -f src/facebook_metrics.py
-          test -f scripts/sync_analytics.py
-          test -f scripts/collect_post_metrics.py
-          test -f docs/facebook_analytics.md
+          test -f src/drive_assets.py
+          test -f src/codex_provider.py
+          test -f src/runtime_status.py
+          test -f scripts/repair_windows_runtime.ps1
+          test -f scripts/run_daily_drive.py
+          test -f site/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fb-autoposter-status-site
+          path: site
