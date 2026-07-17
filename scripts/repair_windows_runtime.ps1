@@ -36,6 +36,9 @@ if ((Test-Path $OldProfile) -and -not (Test-Path (Join-Path $RuntimeProfile 'Def
   & robocopy $OldProfile $RuntimeProfile /E /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
   if ($LASTEXITCODE -ge 8) { throw "profile copy failed: $LASTEXITCODE" }
 }
+Get-ChildItem -Path $RuntimeProfile -Recurse -Force -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -like 'Singleton*' -or $_.Name -in @('DevToolsActivePort','LOCK','lockfile') } |
+  Remove-Item -Force -ErrorAction SilentlyContinue
 $OldDb = Join-Path $RepoRoot 'data\jobs.db'
 $NewDb = Join-Path $RuntimeData 'jobs.db'
 if ((Test-Path $OldDb) -and -not (Test-Path $NewDb)) { Copy-Item $OldDb $NewDb -Force }
@@ -75,6 +78,8 @@ $env:STATUS_REPO_ROOT = '__REPO_ROOT__'
 $env:RUNTIME_STATUS_WEB_PATH = Join-Path '__REPO_ROOT__' 'site\data\status.json'
 $env:PUBLISH_STATUS_GIT = '1'
 $env:POST_TEXT_PROVIDER = '__PROVIDER__'
+if (-not $env:DRY_RUN) { $env:DRY_RUN = 'false' }
+if (-not $env:AUTO_APPROVE) { $env:AUTO_APPROVE = 'true' }
 Set-Location $AppRoot
 & $Python $Script
 exit $LASTEXITCODE
@@ -90,8 +95,11 @@ function Register-FBTask {
   param([string]$Name,[string]$Script,[string]$At,[int]$RandomDelayMin=0,[switch]$AtLogon)
   $args = "-NoProfile -ExecutionPolicy Bypass -File `"$LauncherPath`" -Script `"$Script`""
   $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $args -WorkingDirectory $AppRoot
-  $daily = New-ScheduledTaskTrigger -Daily -At $At
-  if ($RandomDelayMin -gt 0) { $daily.RandomDelay = "PT${RandomDelayMin}M" }
+  if ($RandomDelayMin -gt 0) {
+    $daily = New-ScheduledTaskTrigger -Daily -At $At -RandomDelay (New-TimeSpan -Minutes $RandomDelayMin)
+  } else {
+    $daily = New-ScheduledTaskTrigger -Daily -At $At
+  }
   $triggers = @($daily)
   if ($AtLogon) {
     $logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
@@ -99,7 +107,9 @@ function Register-FBTask {
     $triggers += $logon
   }
   $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 1)
-  Register-ScheduledTask -TaskName $Name -Action $action -Trigger $triggers -Settings $settings -Description 'Drive-safe Facebook property autoposter' -Force | Out-Null
+  $userId = if ($env:USERDOMAIN) { "$env:USERDOMAIN\$env:USERNAME" } else { $env:USERNAME }
+  $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Highest
+  Register-ScheduledTask -TaskName $Name -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Description 'Drive-safe Facebook property autoposter' -Force | Out-Null
 }
 Register-FBTask 'FBAutoposter-Keepalive' 'scripts\keepalive.py' '08:00' 20 -AtLogon
 Register-FBTask 'FBAutoposter-Morning' 'scripts\run_daily_drive.py' '09:30' 45 -AtLogon
@@ -111,8 +121,18 @@ Register-FBTask 'FBAutoposter-Verify-PM' 'scripts\verify_posts.py' '21:30' 20
 Register-FBTask 'FBAutoposter-Monitor-AM' 'scripts\monitor.py' '12:00'
 Register-FBTask 'FBAutoposter-Monitor-PM' 'scripts\monitor.py' '23:00'
 
-& $Python (Join-Path $AppRoot 'scripts\preflight_drive.py')
-& $Python -m pytest -q (Join-Path $AppRoot 'tests\test_drive_assets.py') (Join-Path $AppRoot 'tests\test_runtime_status.py') (Join-Path $AppRoot 'tests\test_codex_provider.py')
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $LauncherPath -Script 'scripts\preflight_drive.py'
+if ($LASTEXITCODE -ne 0) { throw "preflight failed: $LASTEXITCODE" }
+
+Push-Location $AppRoot
+try {
+  & $Python -m pytest -q tests\test_drive_assets.py tests\test_runtime_status.py tests\test_codex_provider.py
+  if ($LASTEXITCODE -ne 0) { throw "recovery tests failed: $LASTEXITCODE" }
+}
+finally {
+  Pop-Location
+}
+
 Write-Host 'Repair completed.' -ForegroundColor Green
 Write-Host "Runtime: $RuntimeRoot"
 Write-Host "Launcher: $LauncherPath"
