@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Facebook Property Autoposter Status</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header><p class="eyebrow">ESTATEBOARD AUTOMATION</p><h1>Facebook投稿ランタイム</h1><p id="updated">読込中...</p></header>
+    <section id="health" class="health"><strong id="health-label">—</strong><span id="message"></span></section>
+    <section id="cards" class="cards"></section>
+    <section><h2>最近の投稿結果</h2><div class="table-wrap"><table><thead><tr><th>日時</th><th>物件</th><th>グループ</th><th>状態</th><th>結果</th></tr></thead><tbody id="recent"></tbody></table></div></section>
+    <footer>SQLite → status.json → Cloudflare Pages。認証情報や投稿本文は公開しません。</footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
