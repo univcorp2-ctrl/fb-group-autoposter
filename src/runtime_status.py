@@ -2,11 +2,16 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+_SECRET_PATTERN = re.compile(
+    r"(?i)(access[_-]?token|api[_-]?key|authorization|cookie|password|secret)\s*[:=]\s*\S+"
+)
 
 
 def _parse(value: str | None) -> datetime | None:
@@ -17,6 +22,13 @@ def _parse(value: str | None) -> datetime | None:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except ValueError:
         return None
+
+
+def _safe_error(value: str | None) -> str | None:
+    if not value:
+        return None
+    redacted = _SECRET_PATTERN.sub(r"\1=[REDACTED]", str(value))
+    return redacted[:500]
 
 
 def build_runtime_status(db_path: str | Path, *, limit: int = 50) -> dict[str, Any]:
@@ -39,7 +51,7 @@ def build_runtime_status(db_path: str | Path, *, limit: int = 50) -> dict[str, A
         rows = conn.execute(
             """
             SELECT j.property_id, t.group_id, t.status, t.attempts, t.last_error,
-                   t.posted_at, t.permalink, t.screenshot, j.updated_at
+                   t.posted_at, t.permalink, j.updated_at
             FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
             ORDER BY COALESCE(t.posted_at, j.updated_at) DESC LIMIT ?
             """,
@@ -51,7 +63,13 @@ def build_runtime_status(db_path: str | Path, *, limit: int = 50) -> dict[str, A
         conn.close()
     except sqlite3.Error as exc:
         return {**base, "health": "error", "message": f"SQLite読込エラー: {exc}"}
-    recent = [dict(row) for row in rows]
+
+    recent: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["last_error"] = _safe_error(item.get("last_error"))
+        recent.append(item)
+
     counts = Counter(str(row["status"]) for row in rows)
     published_times = [
         _parse(row["posted_at"] or row["updated_at"])

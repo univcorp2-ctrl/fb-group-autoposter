@@ -37,9 +37,14 @@ def main() -> None:
         orchestrator.generate_variants = generate_variants_with_codex
     from scripts.run_daily import main as existing_main
 
+    original_argv = sys.argv[:]
+    source = os.getenv("ESTATEBOARD_SOURCE", "").strip()
+    if len(sys.argv) == 1 and source:
+        sys.argv.append(source)
     try:
         existing_main()
     finally:
+        sys.argv[:] = original_argv
         try:
             from scripts.publish_runtime_status import publish_runtime_status
 
