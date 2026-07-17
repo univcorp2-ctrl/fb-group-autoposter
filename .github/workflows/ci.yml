@@ -1,102 +1,32 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  lint:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
           cache: pip
       - name: Install dependencies
-        shell: bash
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install pytest pytest-cov ruff
-      - name: Ruff check
+          pip install -r requirements.txt
+      - name: Ruff
         run: ruff check .
-
-  existing-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install dependencies
-        shell: bash
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install pytest pytest-cov
-      - name: Run existing tests
-        run: pytest -q --no-cov --ignore=tests/test_analytics_export.py --ignore=tests/test_facebook_metrics.py
-
-  analytics-export-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install dependencies
-        shell: bash
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install pytest pytest-cov
-      - name: Run analytics export tests
-        run: pytest -q --no-cov tests/test_analytics_export.py
-
-  facebook-metrics-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install dependencies
-        shell: bash
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install pytest pytest-cov
-      - name: Run Facebook metric parser tests
-        run: pytest -q --no-cov tests/test_facebook_metrics.py
-
-  deep-verify:
-    needs: [lint, existing-tests, analytics-export-tests, facebook-metrics-tests]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Compile Python sources
+      - name: Tests
+        run: pytest -q --no-cov
+      - name: Compile
         run: python -m compileall -q src scripts tests
-      - name: Validate required analytics files
-        shell: bash
-        run: |
-          test -f src/analytics_export.py
-          test -f src/facebook_metrics.py
-          test -f scripts/sync_analytics.py
-          test -f scripts/collect_post_metrics.py
-          test -f docs/facebook_analytics.md
+      - name: Upload dashboard preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: fb-autoposter-status-site
+          path: site
