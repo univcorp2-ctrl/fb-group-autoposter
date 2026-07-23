@@ -41,6 +41,11 @@ On 2026-07-23:
   cross-file deduplication;
 - the configured Telegram token and chat are valid and reachable through `getMe` and
   `getChat`;
+- the operator-owned credential source is
+  `G:\マイドライブ\AI_Agents\Private\API_AWS_DB.xlsx`, sheet `Telegrams`;
+- a 2026-07-23 read-only comparison confirmed that the autoposter `.env` token exactly
+  matches the `General bot` credential on row 8 and the `.env` chat ID exactly matches the
+  labeled Telegram chat ID on row 2; values were not printed or copied;
 - the bot has an active webhook at the existing operator-owned Cloudflare Worker, while
   the autoposter callback code uses `getUpdates`;
 - direct outbound `sendMessage` is independent of the webhook, but historical live-post
@@ -267,6 +272,13 @@ new logical records.
 All outbound messages use a durable outbox. A producer commits the Facebook/property
 state and outbox event in the same SQLite transaction. A separate delivery worker calls
 `sendMessage`.
+
+Telegram credential recovery reads only the labeled `Telegrams` sheet cells needed for
+the `General bot` token and destination chat ID from
+`G:\マイドライブ\AI_Agents\Private\API_AWS_DB.xlsx`. The workbook is never modified.
+The ignored repository `.env` remains the runtime materialization. Setup and health checks
+compare values in memory and report only configured/matching booleans, credential role,
+and safe Bot API status; they never print, log, commit, or publish either value.
 
 Messages cover:
 
