@@ -131,12 +131,15 @@ Messenger adds `messenger/data/messenger.db` with additive tables for:
 - Telegram delivery outbox events.
 
 Before any browser mutation, the database inserts a unique placement intent keyed by
-the inbound message fingerprint. Its state advances through `intent_recorded`,
+`(thread_id, inbound_message_fingerprint)`. Its state advances through `intent_recorded`,
 `write_started`, and either `placed_not_sent`, `placement_ambiguous`, or `excluded`.
 The unique intent and transaction commit happen before the composer is focused. A
-process restart that finds `intent_recorded` or `write_started` never inserts again;
-it reports `placement_recovery_required` for human inspection of the existing
-composer.
+process restart never inserts the same tuple again. An interrupted `intent_recorded`
+means no composer input began; it becomes per-item `recovery_required_no_write` and a
+run-level `preflight_blocked` / exit 20 until reconciled. An interrupted
+`write_started` means input may have occurred; it becomes per-item
+`placement_ambiguous` and run-level `placement_ambiguous` / exit 40. It requires human
+inspection of the existing composer and can never be retried automatically.
 
 Existing `drafts.json` and `threads_state.json` are imported once and retained for
 compatibility. `drafts.json` may remain a latest-view projection but is no longer the
@@ -231,7 +234,9 @@ After rotation, a narrowly scoped migration replaces the exact revoked token onl
 this repository's historical runtime logs using atomic file replacement. It records
 file paths, timestamps, replacement counts, and before/after hashes without recording
 the token. It does not scan unrelated private folders and does not retain an unredacted
-backup.
+backup. The revoked token is supplied once over standard input to the maintenance
+command, is never accepted as a command-line argument or environment variable, and is
+retained only in process memory for the duration of the redaction pass.
 
 Messenger Telegram notices contain the thread display name, short inbound preview,
 draft, thread URL, and `FB入力欄に配置済み・未送信`. They never claim that a message
@@ -314,6 +319,9 @@ Tests cover:
   positive;
 - completion acknowledgements and attachment-only exclusion;
 - message fingerprint deduplication;
+- preservation of every non-empty composer without alteration;
+- crash recovery for `intent_recorded` as `recovery_required_no_write` / exit 20 and
+  for `write_started` as `placement_ambiguous` / exit 40;
 - provider gateway validation and fallback;
 - append-only state and latest-view projections;
 - exact composer readback and sent-message invariants;
