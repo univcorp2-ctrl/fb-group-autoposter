@@ -105,9 +105,20 @@ is behind a provider gateway. Supported adapters are:
 - a local OpenAI-compatible LLM endpoint.
 
 Provider selection is configuration, not business logic. Every provider must accept
-the same minimal JSON input and return the same schema. A deterministic conservative
-template is the final fallback. Subprocess adapters use argument arrays, never a shell,
-and have bounded timeouts and output-size limits.
+the same minimal JSON input and return the same schema. Recovery is deliberately
+phased so it does not become a provider-platform rewrite:
+
+- Phase 1 requires the deterministic conservative template, preserves the existing
+  Anthropic API adapter, adds one OpenAI-compatible HTTP adapter for OpenAI, GLM, and
+  local compatible endpoints, and adds one allowlisted JSON CLI adapter for installed
+  `claude`, `codex`, or `gemini` executables.
+- Phase 2 may add provider-native adapters after posting and Messenger production
+  recovery. Phase 2 is not an acceptance gate for this recovery.
+
+Subprocess adapters use explicit executable allowlists and argument arrays, never a
+shell, and have bounded timeouts and output-size limits. This supplies the requested
+provider switching through two stable transports without duplicating business logic
+for every model vendor.
 
 ### 4.2 Durable state
 
@@ -118,6 +129,14 @@ Messenger adds `messenger/data/messenger.db` with additive tables for:
 - generated draft versions and provider metadata;
 - composer placement attempts and readback evidence; and
 - Telegram delivery outbox events.
+
+Before any browser mutation, the database inserts a unique placement intent keyed by
+the inbound message fingerprint. Its state advances through `intent_recorded`,
+`write_started`, and either `placed_not_sent`, `placement_ambiguous`, or `excluded`.
+The unique intent and transaction commit happen before the composer is focused. A
+process restart that finds `intent_recorded` or `write_started` never inserts again;
+it reports `placement_recovery_required` for human inspection of the existing
+composer.
 
 Existing `drafts.json` and `threads_state.json` are imported once and retained for
 compatibility. `drafts.json` may remain a latest-view projection but is no longer the
@@ -166,12 +185,17 @@ Facebook click helper. The flow is:
 2. revalidate the exact thread and inbound fingerprint;
 3. stop on any account or DOM safety circuit;
 4. require exactly one visible composer;
-5. record the pre-placement last-message fingerprint and sent-message count;
-6. focus only the composer and insert sanitized text without Enter or line breaks;
-7. read the composer back and require an exact normalized match;
-8. confirm that the sent-message count and last outbound fingerprint did not change;
-9. record `placed_not_sent` atomically; and
-10. close the browser context without clicking another control.
+5. read the composer and require it to be empty after normalization;
+6. if operator-entered or older draft text exists, preserve it unchanged and record
+   `excluded:existing_composer_draft`;
+7. commit the unique `intent_recorded` row and then mark `write_started` before the
+   first input event;
+8. record the pre-placement last-message fingerprint and sent-message count;
+9. focus only the composer and insert sanitized text without Enter or line breaks;
+10. read the composer back and require an exact normalized match;
+11. confirm that the sent-message count and last outbound fingerprint did not change;
+12. record `placed_not_sent` atomically; and
+13. close the browser context without clicking another control.
 
 An incomplete or mismatched composer becomes `placement_ambiguous`. It is not
 automatically cleared or retried because further editing could create a worse state.
@@ -185,6 +209,14 @@ The feature has two independent gates, both off by default:
 Both are enabled only after unit, synthetic-browser, dry-run, account-security, and
 one-thread live canary gates pass.
 
+Account security is an explicit local authorization, not an inferred cookie state.
+After the operator confirms two-factor and recovery settings from a familiar browser,
+an agent-neutral CLI records the role, profile fingerprint, authorizer, timestamp,
+and a maximum 30-day expiry without storing passwords or 2FA data. Any checkpoint,
+CAPTCHA, unusual-device warning, login recovery, profile replacement, or fingerprint
+change revokes it immediately. Expiry blocks composer writes but still permits local
+diagnostics that do not open Facebook.
+
 ### 4.6 Telegram and EstateBoard delivery
 
 Facebook state transitions and delivery events are committed together. Telegram and
@@ -195,6 +227,11 @@ automation. Each event has an idempotency key and one of `pending`, `delivered`,
 All HTTP errors redact bot tokens before logging. The exposed Telegram bot credential
 must be rotated before production schedules resume, and the new credential must be
 updated in the private workbook and runtime environment without entering Git history.
+After rotation, a narrowly scoped migration replaces the exact revoked token only in
+this repository's historical runtime logs using atomic file replacement. It records
+file paths, timestamps, replacement counts, and before/after hashes without recording
+the token. It does not scan unrelated private folders and does not retain an unredacted
+backup.
 
 Messenger Telegram notices contain the thread display name, short inbound preview,
 draft, thread URL, and `FB入力欄に配置済み・未送信`. They never claim that a message
@@ -215,8 +252,17 @@ Scheduler `0x00000000` alone is never reported as workload success.
 Each role writes one atomic JSON result with a run ID, start/end timestamps, mode,
 counts, terminal outcome, safe reason codes, artifact paths, and delivery status.
 
-Posting keeps the existing canonical outcomes and exits. Messenger uses analogous
-outcomes without pretending a draft is a sent message:
+Posting uses this explicit canonical outcome and exit contract, which also resolves
+any omission in the referenced DAIWA specification:
+
+- `success` or `no_action` / exit 0;
+- `preflight_blocked` / exit 20;
+- `risk_stopped` / exit 30;
+- `submission_ambiguous` / exit 40;
+- `posted_delivery_pending` / exit 50; and
+- `internal_error` / exit 60.
+
+Messenger uses analogous outcomes without pretending a draft is a sent message:
 
 - `completed` / exit 0: scan completed and all eligible drafts reached a durable
   terminal state;
@@ -230,6 +276,21 @@ outcomes without pretending a draft is a sent message:
 - `internal_error` / exit 60: unexpected internal failure.
 
 No outcome maps a draft placement to `sent`.
+
+Every property, group, thread, placement, and delivery retains its own terminal state.
+For a run containing mixed states, the single run outcome follows this precedence:
+
+1. `risk_stopped` when an account-safety signal exists;
+2. `submission_ambiguous` or `placement_ambiguous` when external mutation cannot be
+   determined and no risk signal exists;
+3. `internal_error` for an unexpected failure with no ambiguous external mutation;
+4. `posted_delivery_pending` or `delivery_pending` when the Facebook state is proven
+   but a delivery is outstanding;
+5. `preflight_blocked` when no external mutation occurred and a known gate blocked;
+6. `success`/`completed` or `no_action` otherwise.
+
+The run result includes all per-item states, so precedence never hides which items
+succeeded, failed, or need human inspection.
 
 ## 6. Test Strategy
 
@@ -282,6 +343,13 @@ Live actions remain sequential and bounded:
 No canary proceeds while Account Center reports the automation profile as an
 unfamiliar device or while the operator has not confirmed account security from a
 familiar browser.
+
+During the canary period the placement limit is one per run. Canary completes only
+after at least seven successful scheduled scans across at least three calendar days,
+at least one human-verified `placed_not_sent` composer canary, zero risk or ambiguous
+placement outcomes, zero sent-message invariant changes, and full outbox
+reconciliation. Only then may the configured limit increase, and never above three
+per run without a new reviewed design.
 
 ## 7. Acceptance Criteria
 
