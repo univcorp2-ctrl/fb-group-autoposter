@@ -1,8 +1,8 @@
 # Facebook Posting and Messenger Draft Recovery Design
 
-**Date:** 2026-08-03  
-**Status:** User direction approved; independent spec review pending  
-**Repository:** `fb-group-autoposter`  
+**Date:** 2026-08-03
+**Status:** User direction approved; independent spec review pending
+**Repository:** `fb-group-autoposter`
 
 ## 1. Purpose
 
@@ -312,4 +312,3 @@ Rollback is configuration-first and history-preserving:
 - do not restore old browser profiles automatically after a checkpoint or unfamiliar-
   device event; and
 - resume only through the same preflight and canary sequence.
-
