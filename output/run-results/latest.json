@@ -1,24 +1,12 @@
 {
   "command": "reconcile-delivery",
-  "delivery": {
-    "claimed": 1,
-    "delivered": 1,
-    "delivery_ambiguous": 0,
-    "failed": 0,
-    "origin_run_id": "6c4ed0e8-b980-4300-aa79-b2bd8cd21c00",
-    "retry_pending": 0,
-    "skipped": 0
-  },
-  "exit_code": 0,
-  "finalized_by": "python",
-  "finished_at": "2026-08-04T10:23:53.135809+00:00",
-  "origin_run_id": "6c4ed0e8-b980-4300-aa79-b2bd8cd21c00",
-  "outcome": "success",
-  "pre_sqlite_failure": false,
-  "reason": "success",
-  "result_at": "2026-08-04T10:23:53.135809+00:00",
-  "run_id": "live-post-20260804-3",
+  "exit_code": null,
+  "finished_at": null,
+  "outcome": "running",
+  "reason": "started",
+  "result_at": "2026-08-04T10:30:56.066070+00:00",
+  "run_id": "live-post-20260804-alert",
   "schema": "fb-autoposter-run/v1",
-  "started_at": "2026-08-04T10:23:37.335847+00:00",
-  "terminal": true
+  "started_at": "2026-08-04T10:30:56.066070+00:00",
+  "terminal": false
 }
