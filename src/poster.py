@@ -13,7 +13,14 @@ from src.browser_runtime import BrowserContract, build_launch_kwargs
 from src.circuits import CircuitManager, FailureKind
 from src.post_verify import cookie_user_id, find_my_post
 from src.queue_db import QueueDB
-from src.selectors import SELECTORS, SelectorAmbiguous, SelectorMissing, exactly_one_visible, is_actionable
+from src.selectors import (
+    SELECTORS,
+    SelectorAmbiguous,
+    SelectorMissing,
+    exactly_one_visible,
+    is_actionable,
+    wait_for_exactly_one_visible,
+)
 from src.session import challenge_message, classify_challenge, is_logged_in, login_required_message
 from src.verifier import dry_run_screenshot_path, save_screenshot, verify_post_visible
 
@@ -626,9 +633,7 @@ class FacebookPoster:
 
     async def _wait_first(self, page: Any, action: str, intent: str) -> Any:
         try:
-            loc = await exactly_one_visible(page, action)
-            await loc.wait_for(state="visible", timeout=8000)
-            return loc
+            return await wait_for_exactly_one_visible(page, action, timeout_ms=8000)
         except (SelectorMissing, SelectorAmbiguous) as exc:
             raise ComposerSelectorFailure(f"{exc}: {intent}") from exc
 

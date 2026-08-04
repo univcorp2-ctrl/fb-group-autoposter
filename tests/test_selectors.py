@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+import src.selectors as selectors
 from src.selectors import SELECTORS, SelectorAmbiguous, SelectorMissing, exactly_one_visible
 
 
@@ -69,3 +70,27 @@ def test_composer_textbox_selectors_never_match_feed_comment_boxes():
     composer and turns a valid composer into an ambiguous write target.
     """
     assert 'div[role="textbox"][contenteditable="true"]' not in SELECTORS["composer_textbox"]
+
+
+def test_wait_for_exactly_one_visible_allows_delayed_composer_mount():
+    selector = SELECTORS["composer_textbox"][0]
+
+    class DelayedPage(_Page):
+        def __init__(self):
+            super().__init__({})
+            self.ready = False
+
+        def locator(self, value):
+            matches = {selector: [True]} if self.ready else {}
+            return _Locator([item for part in value.split(", ") for item in matches.get(part, [])])
+
+        async def wait_for_timeout(self, _milliseconds):
+            self.ready = True
+
+    locator = asyncio.run(
+        selectors.wait_for_exactly_one_visible(
+            DelayedPage(), "composer_textbox", timeout_ms=500, poll_ms=10
+        )
+    )
+
+    assert isinstance(locator, _Match)

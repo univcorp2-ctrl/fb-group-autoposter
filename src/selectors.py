@@ -108,6 +108,31 @@ async def exactly_one_visible(page: Any, action: str) -> Any:
     return visible[0]
 
 
+async def wait_for_exactly_one_visible(
+    page: Any,
+    action: str,
+    *,
+    timeout_ms: int = 8000,
+    poll_ms: int = 100,
+) -> Any:
+    """Wait for a delayed UI mount while preserving fail-closed ambiguity.
+
+    Facebook mounts the create-post editor after the dialog shell.  A missing
+    candidate may therefore be transient; multiple visible candidates are not
+    and remain an immediate safety stop.
+    """
+    elapsed = 0
+    while True:
+        try:
+            return await exactly_one_visible(page, action)
+        except SelectorMissing:
+            if elapsed >= timeout_ms:
+                raise
+            delay = min(poll_ms, timeout_ms - elapsed)
+            await page.wait_for_timeout(delay)
+            elapsed += delay
+
+
 async def is_actionable(locator: Any) -> bool:
     """Return whether a reviewed control can safely receive the final click."""
     enabled = getattr(locator, "is_enabled", None)
