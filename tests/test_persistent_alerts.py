@@ -116,6 +116,11 @@ def test_poll_ack_callback_acknowledges_alert(tmp_path, monkeypatch):
             ],
         },
     )
+    monkeypatch.setattr(
+        approval.transport,
+        "get_webhook_info",
+        lambda: {"ok": True, "code": "ok", "result": {"url": ""}},
+    )
 
     handled = approval.poll_once()
 

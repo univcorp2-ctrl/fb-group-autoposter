@@ -33,6 +33,7 @@ class TelegramApproval:
         self.transport = transport or TelegramTransport(settings.telegram_bot_token, settings.telegram_chat_id)
         self.offset_path = Path("data/telegram_offset.txt")
         self.offset_path.parent.mkdir(parents=True, exist_ok=True)
+        self.last_poll_reason = "not_polled"
 
     @property
     def enabled(self) -> bool:
@@ -156,12 +157,47 @@ class TelegramApproval:
 
     def poll_once(self) -> int:
         if not self.enabled:
+            self.last_poll_reason = "telegram_disabled"
             return 0
+        # Never trust a cached inbound mode: Telegram callbacks are polled only
+        # after this invocation has observed an explicit empty webhook URL.
+        webhook = self.transport.get_webhook_info()
+        webhook_result = webhook.get("result") if isinstance(webhook, dict) else None
+        webhook_url = webhook_result.get("url") if isinstance(webhook_result, dict) else None
+        if not (isinstance(webhook, dict) and webhook.get("ok") is True and isinstance(webhook_url, str)):
+            self.last_poll_reason = "telegram_webhook_state_unknown"
+            self.raise_persistent_alert(
+                "telegram_webhook_state_unknown",
+                "Telegram callback mode could not be verified. Polling was stopped safely.",
+            )
+            return 0
+        if webhook_url:
+            self.last_poll_reason = "telegram_webhook_owns_callbacks"
+            log.info("telegram callback polling skipped: active webhook owns callbacks")
+            return 0
+        # get_updates keeps its own hard gate too. Setting this only avoids a
+        # duplicate read after the fresh, validated gate above.
+        self.transport.inbound_mode = "polling"
         offset = self._read_offset()
         result = self.transport.get_updates(offset=offset)
         if not result.get("ok"):
+            if result.get("code") == "webhook_active":
+                self.last_poll_reason = "telegram_webhook_owns_callbacks"
+                log.info("telegram callback polling skipped: active webhook owns callbacks")
+                return 0
+            if result.get("code") == "inbound_mode_unknown":
+                self.last_poll_reason = "telegram_webhook_state_unknown"
+                # Persist an operator alert through the outbox; do not send an
+                # immediate network message from the callback listener.
+                self.raise_persistent_alert(
+                    "telegram_webhook_state_unknown",
+                    "Telegram callback mode could not be verified. Polling was stopped safely.",
+                )
+                return 0
+            self.last_poll_reason = "telegram_poll_failed"
             log.warning("telegram poll failed: code=%s", result.get("code", "unknown"))
             return 0
+        self.last_poll_reason = "telegram_polled"
         updates = result.get("result", [])
         handled = 0
         for update in updates:

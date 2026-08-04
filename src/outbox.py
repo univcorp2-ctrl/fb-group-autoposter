@@ -29,6 +29,11 @@ class DeliveryOutbox:
     def claim(self, owner: str, *, limit: int = 1, lease_seconds: int = 60) -> list[dict[str, Any]]:
         return self.db.claim_outbox_events(owner, limit=limit, lease_seconds=lease_seconds)
 
+    def claim_oldest_origin(
+        self, owner: str, *, limit: int = 1, lease_seconds: int = 60
+    ) -> list[dict[str, Any]]:
+        return self.db.claim_outbox_events_for_oldest_origin(owner, limit=limit, lease_seconds=lease_seconds)
+
     def mark_delivered(self, event_id: str, owner: str, *, remote_message_id: str | None = None) -> dict[str, Any]:
         return self.db.mark_outbox_delivered(event_id, owner, remote_message_id=remote_message_id)
 
@@ -37,6 +42,12 @@ class DeliveryOutbox:
 
     def mark_ambiguous(self, event_id: str, owner: str, error: str) -> dict[str, Any]:
         return self.db.mark_outbox_ambiguous(event_id, owner, error)
+
+    def retry_or_fail(self, event_id: str, owner: str, error: str, *, max_attempts: int) -> dict[str, Any]:
+        return self.db.retry_or_fail_outbox_event(event_id, owner, error, max_attempts=max_attempts)
+
+    def renew_leases(self, event_ids: list[str], owner: str, *, lease_seconds: int = 60) -> set[str]:
+        return self.db.renew_outbox_leases(event_ids, owner, lease_seconds=lease_seconds)
 
     def reset(
         self,

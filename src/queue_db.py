@@ -420,6 +420,54 @@ class QueueDB:
             ]
         return [event for row in claimed if (event := self._outbox_row(row)) is not None]
 
+    def claim_outbox_events_for_oldest_origin(
+        self, owner: str, *, limit: int = 1, lease_seconds: int = 60
+    ) -> list[dict[str, Any]]:
+        """Atomically claim one bounded origin-run batch, never a mixed batch."""
+        if not isinstance(owner, str) or not owner.strip() or limit < 1 or lease_seconds < 1:
+            raise ValueError("claim owner, limit, and lease duration must be positive")
+        timestamp = now_iso()
+        expiry = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """UPDATE delivery_outbox
+                   SET state='pending', lease_owner=NULL, lease_expires_at=NULL, updated_at=?
+                   WHERE state='leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?""",
+                (timestamp, timestamp),
+            )
+            origin_row = conn.execute(
+                """SELECT origin_run_id FROM delivery_outbox WHERE state='pending'
+                   ORDER BY created_at, rowid LIMIT 1"""
+            ).fetchone()
+            if origin_row is None:
+                return []
+            origin_run_id = origin_row["origin_run_id"]
+            if origin_run_id is None:
+                rows = conn.execute(
+                    """SELECT event_id FROM delivery_outbox WHERE state='pending' AND origin_run_id IS NULL
+                       ORDER BY created_at, rowid LIMIT ?""",
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT event_id FROM delivery_outbox WHERE state='pending' AND origin_run_id=?
+                       ORDER BY created_at, rowid LIMIT ?""",
+                    (origin_run_id, limit),
+                ).fetchall()
+            ids = [row["event_id"] for row in rows]
+            for event_id in ids:
+                conn.execute(
+                    """UPDATE delivery_outbox SET state='leased', lease_owner=?, lease_expires_at=?,
+                       attempt_count=attempt_count+1, updated_at=? WHERE event_id=? AND state='pending'""",
+                    (owner, expiry, timestamp, event_id),
+                )
+            claimed = [
+                conn.execute("SELECT * FROM delivery_outbox WHERE event_id=?", (event_id,)).fetchone()
+                for event_id in ids
+            ]
+        return [event for row in claimed if (event := self._outbox_row(row)) is not None]
+
     def _finish_outbox_event(
         self,
         event_id: str,
@@ -452,6 +500,56 @@ class QueueDB:
 
     def mark_outbox_ambiguous(self, event_id: str, owner: str, error: str) -> dict[str, Any]:
         return self._finish_outbox_event(event_id, owner, state="delivery_ambiguous", error=str(redact(error))[:500])
+
+    def retry_or_fail_outbox_event(
+        self, event_id: str, owner: str, error: str, *, max_attempts: int
+    ) -> dict[str, Any]:
+        """Release a proven pre-submit failure once, or terminally fail at its cap."""
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be positive")
+        safe_error = str(redact(error))[:500]
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """SELECT state, lease_owner, attempt_count FROM delivery_outbox WHERE event_id=?""",
+                (event_id,),
+            ).fetchone()
+            if row is None or row["state"] != "leased" or row["lease_owner"] != owner:
+                raise ValueError("outbox event is not leased by this owner")
+            state = "pending" if row["attempt_count"] < max_attempts else "failed"
+            conn.execute(
+                """UPDATE delivery_outbox SET state=?, lease_owner=NULL, lease_expires_at=NULL,
+                   last_error=?, updated_at=? WHERE event_id=? AND state='leased' AND lease_owner=?""",
+                (state, safe_error, now_iso(), event_id, owner),
+            )
+        event = self.get_outbox_event(event_id)
+        assert event is not None
+        return event
+
+    def renew_outbox_leases(
+        self, event_ids: list[str], owner: str, *, lease_seconds: int = 60
+    ) -> set[str]:
+        """Extend only still-owned, unexpired leases and report exactly those renewed."""
+        if not isinstance(owner, str) or not owner.strip() or lease_seconds < 1:
+            raise ValueError("lease owner and duration must be positive")
+        unique_ids = list(dict.fromkeys(event_ids))
+        if not unique_ids:
+            return set()
+        timestamp = now_iso()
+        expiry = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
+        renewed: set[str] = set()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            for event_id in unique_ids:
+                cursor = conn.execute(
+                    """UPDATE delivery_outbox SET lease_expires_at=?, updated_at=?
+                       WHERE event_id=? AND state='leased' AND lease_owner=?
+                         AND lease_expires_at IS NOT NULL AND lease_expires_at > ?""",
+                    (expiry, timestamp, event_id, owner, timestamp),
+                )
+                if cursor.rowcount == 1:
+                    renewed.add(event_id)
+        return renewed
 
     def reset_outbox_event(
         self,
