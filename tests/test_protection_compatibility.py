@@ -69,12 +69,24 @@ def test_settings_defaults_preserve_conservative_runtime_controls(monkeypatch, t
     settings = Settings.load(tmp_path / "missing.env")
 
     assert settings.auto_approve is False
+    assert settings.dry_run is True
     assert settings.humanize is True
     assert (settings.min_interval_min, settings.max_interval_min) == (15, 35)
     assert settings.max_groups_per_browser == 5
     assert settings.cooldown_hours == 24
     assert settings.profile_dir == Path("profiles/main")
     assert settings.browser_user_agent.endswith("Chrome/126.0.0.0 Safari/537.36")
+
+
+def test_runtime_posting_gates_default_off_in_settings_defaults(monkeypatch, tmp_path):
+    for name in ("DRY_RUN", "AUTO_APPROVE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    settings = Settings.load(tmp_path / "missing.env")
+
+    assert settings.dry_run is True
+    assert settings.auto_approve is False
 
 
 def test_production_example_keeps_stricter_posting_limits():

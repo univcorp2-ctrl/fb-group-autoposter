@@ -34,3 +34,47 @@ The production `.env.example` is intentionally more conservative than code fallb
 `MAX_POSTS_PER_DAY` and `MIN_SAME_GROUP_HOURS`. Runtime recovery must preserve the
 configured values and configuration names; it must not treat the fallback values as a
 reason to increase live cadence.
+
+## Recovery acceptance contract
+
+`tests/test_recovery_acceptance_contract.py` freezes the recovery boundary with these
+offline assertions:
+
+- `test_invalid_permalink_cannot_confirm_a_submission_attempt` and
+  `test_submission_attempt_record_accepts_a_captured_https_facebook_permalink`:
+  the durable attempt record accepts only a captured HTTPS Facebook permalink;
+  every other confirmation candidate becomes reconcile-only/uncertain.
+- `test_daily_posting_reachable_modules_have_no_explicit_group_join_action`: the daily posting
+  command's reachable `run_daily -> orchestrator -> poster` modules cannot invoke an
+  explicit group-join API, URL, or Join/参加 button path. The strict pending
+  `test_unreviewed_write_action_never_uses_healer_coordinate_click` blocks generic healer
+  coordinate clicks until Task 3 limits them to reviewed composer actions.
+- `test_telegram_and_estateboard_failures_preserve_attempt_truth_and_retry_budget`:
+  injected Telegram and EstateBoard failures leave the Facebook attempt's posted truth,
+  retry count, and single execution unchanged.
+- The strict pending verified-post, preview, challenge, and summary producer contracts inject
+  notification failures at their real boundaries and require unchanged target/attempt truth,
+  no retry-budget loss, and a pending delivery event.
+- `test_terminal_outcomes_have_the_canonical_exit_code_contract`: terminal outcomes use
+  `fb-autoposter-run/v1` and map only to exit codes `0`, `20`, `30`, `40`, `50`, and `60`.
+- `test_runtime_posting_gates_default_off_in_settings_defaults` in
+  `tests/test_protection_compatibility.py`: posting remains dry-run and manual-approval
+  gated in settings defaults. `test_installer_keeps_daily_posting_tasks_disabled_until_runtime_gates_pass`
+  separately verifies the installer action state.
+
+The legacy direct poster, named interruption-state, installer-gate, and terminal-propagation
+assertions are strict pending contracts (`test_poster_runtime_invalid_permalink_never_records_posted`,
+`test_named_interruption_states_quarantine_attempts_without_retry`,
+`test_installer_keeps_daily_posting_tasks_disabled_until_runtime_gates_pass`, and
+`test_scheduled_daily_child_propagates_canonical_terminal_result`). The generic-healer and
+producer-delivery pending contracts are also strict (`test_unreviewed_write_action_never_uses_healer_coordinate_click`,
+`test_verified_post_notification_failure_preserves_posted_truth_and_queues_delivery`,
+`test_preview_notification_failure_preserves_approval_truth_and_queues_delivery`,
+`test_challenge_notification_failure_preserves_challenge_stop_and_queues_delivery`, and
+`test_summary_notification_failure_preserves_existing_targets_and_queues_delivery`). They are
+intentionally `xfail(strict=True)` until their runtime boundaries exist; an unexpected pass
+must be investigated, not silently accepted.
+
+Repairs may add stricter preflight checks, but may not remove human typing delays,
+challenge detection, daily/group limits, cooldowns, immutable approvals, or ambiguous-attempt
+quarantine.
