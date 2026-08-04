@@ -1,7 +1,7 @@
 # Facebook Posting and Messenger Draft Recovery Design
 
 **Date:** 2026-08-03
-**Status:** User direction approved; independent spec review pending
+**Status:** Approved by user and independent spec review (2026-08-04)
 **Repository:** `fb-group-autoposter`
 
 ## 1. Purpose
