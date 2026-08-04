@@ -31,7 +31,6 @@ SELECTORS: dict[str, list[str]] = {
         'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
         'div[role="dialog"] div[contenteditable="true"]',
         'div[aria-label="投稿を作成"] div[role="textbox"][contenteditable="true"]',
-        'div[role="textbox"][contenteditable="true"]',
     ],
     "post_button": [
         'div[role="dialog"] div[aria-label="投稿"][role="button"]',
