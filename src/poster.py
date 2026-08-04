@@ -235,7 +235,10 @@ class FacebookPoster:
                     error="manual_reapproval_required",
                 )
             self.db.update_job_status(job["job_id"], "pending")
-            raise RuntimeError("manual_reapproval_required")
+            # Hold this legacy target for a fresh, immutable approval without
+            # aborting the whole scheduler cycle.  No browser was opened, and
+            # later fully-bound jobs may still proceed.
+            return "pending"
 
         # This checks global/environment circuits before Playwright constructs a
         # browser context.  A tripped runtime may never be bypassed by merely
