@@ -8,6 +8,41 @@ from typing import Any
 from src.selectors import SELECTORS
 
 
+def restore_session_boundary(
+    profile_dir: str | Path,
+    *,
+    run_id: str,
+    challenge: str | None = None,
+    probe_callable: Any | None = None,
+    contract: Any | None = None,
+) -> Any:
+    """Prepare only clone-based ordinary-expiry recovery.
+
+    Challenges are terminal for this boundary: they never copy, restore, probe,
+    or promote a profile.  A plain expiry can be probed on a candidate, but the
+    returned decision always keeps submission disabled until a later explicit
+    preflight clears the relevant circuit.
+    """
+
+    from src.browser_runtime import BrowserContract, ProbeResult, prepare_candidate, probe_candidate
+
+    if challenge:
+        return ProbeResult(str(challenge), False, True, False)
+    if probe_callable is None or contract is None:
+        return ProbeResult("manual_profile_recovery_required", False, True, False)
+    candidate = prepare_candidate(profile_dir, run_id)
+    browser_contract = contract if isinstance(contract, BrowserContract) else BrowserContract.from_settings(contract)
+    result = probe_candidate(candidate, probe_callable, contract=browser_contract)
+    # An expiry-triggered candidate probe is diagnostic only.  It can never
+    # clear the circuit or make this run eligible to submit/promote.
+    reason = (
+        "candidate_probe_healthy_manual_recovery_required"
+        if result.healthy
+        else "manual_profile_recovery_required"
+    )
+    return ProbeResult(reason, False, True, False, result.manifest, result.candidate_binding)
+
+
 async def is_logged_in(page: Any) -> bool:
     url = page.url.lower()
     if "login" in url or "checkpoint" in url or "/recover" in url:
@@ -54,20 +89,10 @@ def latest_backup(profile_dir: str | Path) -> Path | None:
 
 
 def restore_profile(profile_dir: str | Path, backup: str | Path | None = None) -> Path | None:
-    """Restore the profile from a backup (latest if not given).
+    """Deprecated fail-closed legacy API; it never overwrites a live profile."""
 
-    Recovery fallback for an expired/corrupted session: copy a known-good
-    profile snapshot back over the live profile dir. Must be called when no
-    browser is using the profile (between posting attempts). Returns the backup
-    used, or None when there is nothing to restore from.
-    """
-    dst = Path(profile_dir)
-    src = Path(backup) if backup is not None else latest_backup(profile_dir)
-    if src is None or not src.exists():
-        return None
-    dst.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src, dst, dirs_exist_ok=True, ignore=_ignore_volatile)
-    return src
+    del profile_dir, backup
+    return None
 
 
 async def classify_challenge(page: Any) -> str | None:

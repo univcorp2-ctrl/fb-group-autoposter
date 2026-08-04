@@ -29,7 +29,6 @@ from src.estateboard_adapter import select_postable
 from src.logging_setup import setup_logging
 from src.orchestrator import run_cycle_grouped
 from src.queue_db import QueueDB
-from src.session import restore_profile
 
 log = logging.getLogger("run_daily")
 
@@ -44,6 +43,16 @@ ALERT_FILE = ROOT / "logs" / "ALERT_SESSION_DEAD.txt"
 # plain cookie expiry, so it gets its own file the monitor can watch separately.
 CHECKPOINT_ALERT_FILE = ROOT / "logs" / "ALERT_CHECKPOINT.txt"
 _CHALLENGE_KINDS = {"checkpoint", "captcha", "two_factor"}
+_SESSION_DEAD_REASONS = {
+    "session_unrecoverable",
+    "no_backup_to_restore",
+    "manual_profile_recovery_required",
+    "candidate_probe_healthy_manual_recovery_required",
+}
+
+
+def _requires_session_dead_alert(reason: object) -> bool:
+    return reason in _SESSION_DEAD_REASONS
 
 
 def _alert_session_dead(result: dict, settings: Settings, db: QueueDB) -> None:
@@ -206,25 +215,23 @@ def main() -> None:
         log.info("cycle summary: %s", json.dumps(summary, ensure_ascii=False))
 
     def restore_session() -> bool:
-        # Recovery fallback: an expired login is restored from the latest healthy
-        # profile backup, then the loop retries. Returns True if a backup existed.
-        used = restore_profile(settings.profile_dir)
-        if used:
-            log.warning("restored profile from backup: %s", used.name)
-        else:
-            log.error("session expired and no profile backup to restore; manual login_once.py needed")
-        return used is not None
+        # Scheduled recovery never writes a backup into the live Chrome profile.
+        log.error("manual_profile_recovery_required: run read-only preflight and manual login_once.py")
+        return False
 
     result = asyncio.run(
         ensure_posted_today(settings, groups, db, run_once=run_once, restore_session=restore_session)
     )
+    if result.get("reason") == "no_backup_to_restore":
+        result["reason"] = "manual_profile_recovery_required"
+        result["circuit_open"] = True
     log.info("run_daily ensure result: %s", json.dumps(result, ensure_ascii=False))
 
     # A dead/unrecoverable session is the one failure a retry can never fix — it
     # needs a human re-login. Surface it loudly even when Telegram is disabled:
     # write a sentinel file (cleared on the next healthy run) and log CRITICAL so
     # the monitor and the operator both see it instead of silent zero-posting.
-    if result.get("reason") in {"session_unrecoverable", "no_backup_to_restore"}:
+    if _requires_session_dead_alert(result.get("reason")):
         _alert_session_dead(result, settings, db)
     else:
         _clear_session_alert(settings, db)
