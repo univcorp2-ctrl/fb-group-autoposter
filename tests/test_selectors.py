@@ -59,3 +59,13 @@ def test_exactly_one_visible_rejects_zero_visible_candidates():
 
     with pytest.raises(SelectorMissing):
         asyncio.run(exactly_one_visible(page, "open_composer"))
+
+
+def test_composer_textbox_selectors_never_match_feed_comment_boxes():
+    """A write boundary must stay inside the create-post dialog.
+
+    Facebook group feeds expose visible contenteditable comment boxes.  A
+    page-wide textbox selector makes those indistinguishable from the post
+    composer and turns a valid composer into an ambiguous write target.
+    """
+    assert 'div[role="textbox"][contenteditable="true"]' not in SELECTORS["composer_textbox"]
