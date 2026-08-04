@@ -118,7 +118,7 @@ class TelegramApproval:
         job = self.db.get_job(job_id)
         degraded = bool(job and job.get("degraded"))
         if self.settings.auto_approve and not (degraded and self.settings.auto_approve_skip_degraded):
-            self.db.approve_job(job_id)
+            self.db.approve_job(job_id, source="auto_policy")
             if getattr(self.settings, "telegram_notify_auto_approval", False):
                 self.enqueue_preview(job_id)
                 self.db.enqueue_outbox_event(
@@ -213,7 +213,7 @@ class TelegramApproval:
             if not job_id:
                 continue
             if action == "approve":
-                self.db.approve_job(job_id)
+                self.db.approve_job(job_id, source="telegram")
                 self.send_message(f"✅ 承認しました: {job_id}")
             elif action == "reject":
                 self.db.reject_job(job_id, "telegram rejected")

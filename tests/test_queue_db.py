@@ -4,7 +4,10 @@ from src.queue_db import QueueDB
 def test_queue_lifecycle_and_unique(tmp_path):
     db = QueueDB(tmp_path / "jobs.db")
     prop = {"property_id": "p1", "title": "A"}
-    variants = [{"group_id": "g1", "body": "body"}, {"group_id": "g1", "body": "body duplicate"}]
+    variants = [
+        {"group_id": "g1", "body": "body", "source_hash": "source", "generation_fingerprint": "fingerprint"},
+        {"group_id": "g1", "body": "body duplicate", "source_hash": "source", "generation_fingerprint": "fingerprint"},
+    ]
     job_id = db.create_job(prop, variants)
     targets = db.get_targets(job_id)
     assert len(targets) == 1

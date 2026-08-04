@@ -814,8 +814,70 @@ class QueueDB:
         assert event is not None
         return event
 
-    def approve_job(self, job_id: str) -> None:
-        self.update_job_status(job_id, "approved")
+    def approve_job(self, job_id: str, *, source: str = "operator") -> bool:
+        """Bind every active target before making a job eligible for posting.
+
+        Legacy rows without source/generation bindings are intentionally held
+        for a fresh review; a job-level approval must never bypass immutable
+        per-target approval records.
+        """
+        if source not in {"telegram", "operator", "auto_policy"}:
+            raise ValueError("invalid approval source")
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute(
+                """SELECT t.*, j.property_id, j.payload_json FROM job_targets t
+                   JOIN jobs j ON j.job_id=t.job_id WHERE t.job_id=? ORDER BY t.id""",
+                (job_id,),
+            ).fetchall()
+            active = [row for row in rows if row["status"] in {"pending", "pending_approval", "approved", "failed"}]
+            invalid = []
+            for target in active:
+                payload_property_id = json.loads(target["payload_json"]).get("property_id")
+                values = (
+                    payload_property_id, target["property_id"], target["group_id"], target["body"],
+                    target["source_hash"], target["normalized_body_hash"], target["generation_fingerprint"],
+                )
+                if not all(isinstance(value, str) and value.strip() for value in values):
+                    invalid.append(target)
+            if invalid:
+                for target in invalid:
+                    conn.execute(
+                        """UPDATE job_targets SET status='pending_approval', last_error='manual_reapproval_required'
+                           WHERE job_id=? AND group_id=?""",
+                        (job_id, target["group_id"]),
+                    )
+                conn.execute("UPDATE jobs SET status='pending', updated_at=? WHERE job_id=?", (now_iso(), job_id))
+                return False
+            for target in active:
+                clicked = conn.execute(
+                    """SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=?
+                       AND click_started_at IS NOT NULL LIMIT 1""",
+                    (target["property_id"], target["group_id"]),
+                ).fetchone()
+                if clicked:
+                    raise ValueError("click boundary permanently prevents approval")
+                if target["status"] == "approved" and target["approval_id"]:
+                    continue
+                approval_id = str(uuid.uuid4())
+                conn.execute(
+                    """INSERT INTO approvals(
+                       approval_id, job_id, property_id, group_id, source_hash, body_hash,
+                       generation_fingerprint, source, approved_at
+                       ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (
+                        approval_id, job_id, target["property_id"], target["group_id"],
+                        target["source_hash"], target["normalized_body_hash"],
+                        target["generation_fingerprint"], source, now_iso(),
+                    ),
+                )
+                conn.execute(
+                    """UPDATE job_targets SET status='approved', approval_id=?, reconcile_only=0,
+                       last_error=NULL WHERE job_id=? AND group_id=?""",
+                    (approval_id, job_id, target["group_id"]),
+                )
+            conn.execute("UPDATE jobs SET status='approved', updated_at=? WHERE job_id=?", (now_iso(), job_id))
+        return True
 
     def approve_target(
         self,
@@ -829,6 +891,7 @@ class QueueDB:
         if source not in {"telegram", "operator", "auto_policy"}:
             raise ValueError("invalid approval source")
         with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             target = conn.execute(
                 """SELECT t.*, j.property_id, j.payload_json FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
                    WHERE t.job_id=? AND t.group_id=?""",
@@ -986,7 +1049,7 @@ class QueueDB:
                 approval["generation_fingerprint"] if approval else None,
                 approval["approval_id"] if approval else None,
             )
-            if target is None or target["status"] != "approved" or values != target_values or values != approval_values:
+            if target is None or target["status"] not in {"approved", "failed"} or values != target_values or values != approval_values:
                 raise ValueError("approval mismatch")
             if (
                 approval["job_id"] != job_id
@@ -1033,7 +1096,8 @@ class QueueDB:
                     ),
                 )
             conn.execute(
-                "UPDATE job_targets SET status='submitting' WHERE job_id=? AND group_id=? AND status='approved'",
+                """UPDATE job_targets SET status='submitting' WHERE job_id=? AND group_id=?
+                   AND status IN ('approved', 'failed')""",
                 (job_id, group_id),
             )
             row = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
@@ -1052,6 +1116,29 @@ class QueueDB:
     def mark_click_started(self, attempt_id: str, *, at: datetime | str | None = None) -> dict[str, Any]:
         timestamp = at.isoformat() if isinstance(at, datetime) else (at or now_iso())
         with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            binding = conn.execute(
+                """SELECT a.approval_id, a.source_hash AS approval_source_hash,
+                          a.body_hash AS approval_body_hash,
+                          a.generation_fingerprint AS approval_generation_fingerprint,
+                          t.approval_id AS target_approval_id, t.source_hash, t.normalized_body_hash,
+                          t.generation_fingerprint, t.status
+                   FROM submission_attempts s
+                   JOIN job_targets t ON t.job_id=s.job_id AND t.group_id=s.group_id
+                   JOIN approvals a ON a.approval_id=s.approval_id
+                   WHERE s.attempt_id=? AND s.state='submitting' AND s.click_started_at IS NULL""",
+                (attempt_id,),
+            ).fetchone()
+            if binding is None or binding["status"] != "submitting" or any(
+                binding[left] != binding[right]
+                for left, right in (
+                    ("approval_id", "target_approval_id"),
+                    ("approval_source_hash", "source_hash"),
+                    ("approval_body_hash", "normalized_body_hash"),
+                    ("approval_generation_fingerprint", "generation_fingerprint"),
+                )
+            ):
+                raise ValueError("attempt is not awaiting click or approval binding changed")
             cursor = conn.execute(
                 """UPDATE submission_attempts SET click_started_at=?
                    WHERE attempt_id=? AND state='submitting' AND click_started_at IS NULL""",
@@ -1263,7 +1350,7 @@ class QueueDB:
     def unposted_targets(self, job_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM job_targets WHERE job_id=? AND status IN ('pending','failed') ORDER BY id",
+                "SELECT * FROM job_targets WHERE job_id=? AND status IN ('approved','failed') ORDER BY id",
                 (job_id,),
             ).fetchall()
         return [dict(r) for r in rows]

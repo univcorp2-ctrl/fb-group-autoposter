@@ -69,3 +69,15 @@ def test_has_more_targets_only_between_targets():
     assert FacebookPoster._has_more_targets(0, 2) is True
     assert FacebookPoster._has_more_targets(0, 1) is False
     assert FacebookPoster._has_more_targets(1, 2) is False
+
+
+def test_confirmed_evidence_failure_flows_through_shared_cadence_tail():
+    import inspect
+
+    source = inspect.getsource(FacebookPoster._post_job_real)
+    branch = source.split('if current and current["status"] == "posted":', 1)[1].split(
+        'if posted_in_browser >= self.settings.max_groups_per_browser:', 1
+    )[0]
+
+    assert "posted_in_browser += 1" in branch
+    assert "continue" not in branch

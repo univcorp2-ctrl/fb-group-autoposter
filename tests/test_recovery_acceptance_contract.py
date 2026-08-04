@@ -207,8 +207,10 @@ def _make_verified_poster(tmp_path, monkeypatch, *, notifier, permalink):
 
     db = QueueDB(tmp_path / "jobs.db")
     job_id = db.create_job(
-        {"property_id": "property-1"}, [{"group_id": "group-1", "body": "body"}]
+        {"property_id": "property-1"},
+        [{"group_id": "group-1", "body": "body", "source_hash": "source", "generation_fingerprint": "fingerprint"}],
     )
+    db.approve_target(job_id, "group-1", source="operator")
     target = db.get_targets(job_id)[0]
     poster = FacebookPoster(
         SimpleNamespace(page_hard_timeout=1),
@@ -228,12 +230,16 @@ def _make_verified_poster(tmp_path, monkeypatch, *, notifier, permalink):
     async def noop(*_args, **_kwargs):
         return None
 
+    async def click_with_boundary(*_args, before_click=None, **_kwargs):
+        if before_click:
+            before_click()
+
     async def returned_permalink(*_args, **_kwargs):
         return permalink
 
     monkeypatch.setattr(poster, "_detect_blocking_markers", noop)
     monkeypatch.setattr(poster, "_human_pause", noop)
-    monkeypatch.setattr(poster, "_click_first", noop)
+    monkeypatch.setattr(poster, "_click_first", click_with_boundary)
     monkeypatch.setattr(poster, "_wait_first", noop)
     monkeypatch.setattr(poster, "_enter_body", noop)
     monkeypatch.setattr(poster, "_attach_images", noop)
@@ -273,7 +279,7 @@ def test_submission_attempt_record_accepts_a_captured_https_facebook_permalink(t
     assert confirmed["state"] == "posted"
     assert db.get_targets("job-1")[0]["permalink"] == permalink
 
-    post_source = inspect.getsource(FacebookPoster._post_one)
+    post_source = inspect.getsource(FacebookPoster._post_one_attempt)
     assert "permalink = await find_my_post(" in post_source
     assert "await self._open_permalink(page, permalink)" in post_source
 
@@ -283,7 +289,11 @@ def test_poster_runtime_invalid_permalink_never_records_posted(tmp_path, monkeyp
     import src.poster as poster_module
 
     db = QueueDB(tmp_path / "jobs.db")
-    job_id = db.create_job({"property_id": "property-1"}, [{"group_id": "group-1", "body": "body"}])
+    job_id = db.create_job(
+        {"property_id": "property-1"},
+        [{"group_id": "group-1", "body": "body", "source_hash": "source", "generation_fingerprint": "fingerprint"}],
+    )
+    db.approve_target(job_id, "group-1", source="operator")
     target = db.get_targets(job_id)[0]
     poster = FacebookPoster(SimpleNamespace(page_hard_timeout=1), db, [{"id": "group-1", "post_url": "https://www.facebook.com/groups/group-1"}])
     poster._user_id = "user-1"
@@ -298,12 +308,16 @@ def test_poster_runtime_invalid_permalink_never_records_posted(tmp_path, monkeyp
     async def noop(*_args, **_kwargs):
         return None
 
+    async def click_with_boundary(*_args, before_click=None, **_kwargs):
+        if before_click:
+            before_click()
+
     async def invalid_permalink(*_args, **_kwargs):
         return permalink
 
     monkeypatch.setattr(poster, "_detect_blocking_markers", noop)
     monkeypatch.setattr(poster, "_human_pause", noop)
-    monkeypatch.setattr(poster, "_click_first", noop)
+    monkeypatch.setattr(poster, "_click_first", click_with_boundary)
     monkeypatch.setattr(poster, "_wait_first", noop)
     monkeypatch.setattr(poster, "_enter_body", noop)
     monkeypatch.setattr(poster, "_attach_images", noop)
@@ -454,7 +468,9 @@ def test_preview_notification_failure_preserves_approval_truth_and_queues_delive
 
     monkeypatch.chdir(tmp_path)
     db = QueueDB(tmp_path / "jobs.db")
-    job_id = db.create_job({"property_id": "property-1"}, [{"group_id": "group-1", "body": "body"}])
+    job_id = db.create_job(
+        {"property_id": "property-1"}, [{"group_id": "group-1", "body": "body"}]
+    )
     settings = SimpleNamespace(
         telegram_bot_token="token",
         telegram_chat_id="chat",
@@ -484,7 +500,12 @@ def test_challenge_notification_failure_preserves_challenge_stop_and_queues_deli
     import src.poster as poster_module
 
     db = QueueDB(tmp_path / "jobs.db")
-    job_id = db.create_job({"property_id": "property-1"}, [{"group_id": "group-1", "body": "body"}])
+    job_id = db.create_job(
+        {"property_id": "property-1"},
+        [{"group_id": "group-1", "body": "body", "source_hash": "source", "generation_fingerprint": "fingerprint"}],
+    )
+    db.approve_target(job_id, "group-1", source="operator")
+    db.update_job_status(job_id, "approved")
     job = db.get_job(job_id)
     calls = {"post": 0, "alert": 0}
 
@@ -540,7 +561,7 @@ def test_challenge_notification_failure_preserves_challenge_stop_and_queues_deli
         asyncio.run(poster._post_job_real(job))
 
     target = db.get_targets(job_id)[0]
-    assert (target["status"], target["attempts"]) == ("pending", 0)
+    assert (target["status"], target["attempts"]) == ("approved", 0)
     assert calls == {"post": 1, "alert": 0}
     _assert_pending_delivery(db, event="challenge")
 
@@ -627,10 +648,6 @@ def test_reachable_module_closure_finds_join_label_button(tmp_path):
         assert _explicit_group_join_findings(_reachable_posting_modules(root=tmp_path)) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Task 3 must block generic healer coordinate clicks unless the action is a reviewed composer action.",
-)
 def test_unreviewed_write_action_never_uses_healer_coordinate_click(monkeypatch):
     import src.poster as poster_module
 
@@ -667,7 +684,8 @@ def test_unreviewed_write_action_never_uses_healer_coordinate_click(monkeypatch)
 
     monkeypatch.setitem(poster_module.SELECTORS, "unreviewed_action", (".missing",))
     monkeypatch.setattr(poster_module, "heal_locate", healed)
-    asyncio.run(poster._click_first(FakePage(), "unreviewed_action", "unreviewed"))
+    with pytest.raises(RuntimeError, match="selector_missing"):
+        asyncio.run(poster._click_first(FakePage(), "unreviewed_action", "unreviewed"))
 
     assert clicks == []
 

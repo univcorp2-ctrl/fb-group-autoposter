@@ -131,6 +131,9 @@ async def run_cycle(settings: Settings, *, selftest: bool = False, run_id: str |
     notifier = TelegramApproval(settings, db)
     summary: dict[str, object] = {"created": 0, "approved_processed": 0, "statuses": []}
     with pipeline_lock():
+        recovered_attempts = db.recover_incomplete_attempts()
+        if recovered_attempts:
+            log.warning("recovered %s incomplete submission attempts", recovered_attempts)
         db.reset_stale_posting_jobs()
         db.mark_heartbeat("orchestrator")
         properties = [sample_property()] if selftest else scan_inbox(settings.inbox_dir)
@@ -192,6 +195,9 @@ async def run_cycle_grouped(
         items = []
 
     with pipeline_lock():
+        recovered_attempts = db.recover_incomplete_attempts()
+        if recovered_attempts:
+            log.warning("recovered %s incomplete submission attempts", recovered_attempts)
         db.reset_stale_posting_jobs()
         db.mark_heartbeat("orchestrator")
 

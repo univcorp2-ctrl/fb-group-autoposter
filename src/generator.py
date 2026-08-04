@@ -26,6 +26,33 @@ def _stable_seed(property_id: str, group_id: str) -> int:
     return int(digest[:12], 16)
 
 
+def _canonical_source_hash(property_data: dict[str, Any]) -> str:
+    """Fingerprint the actual normalized source snapshot used for generation."""
+    canonical = json.dumps(property_data, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _generation_fingerprint(
+    *, source_hash: str, group: dict[str, Any], body: str, revision_instruction: str, provider: str
+) -> str:
+    """Bind a target to its source, reviewed group rules, rendered body and provider."""
+    material = json.dumps(
+        {
+            "source_hash": source_hash,
+            "group_id": group["id"],
+            "group_rules": group,
+            "body": body,
+            "revision_instruction": revision_instruction,
+            "provider": provider,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
 _HASHTAG_TYPE_BASES = {
     "一棟マンション", "一棟アパート", "一棟ビル", "区分マンション",
     "戸建", "商業施設", "ホテル", "土地", "倉庫・工場", "医療・介護施設",
@@ -324,11 +351,14 @@ def generate_variants(
 ) -> GeneratedBatch:
     variants: list[dict[str, Any]] = []
     degraded = False
+    source_hash = _canonical_source_hash(property_data)
     for group in groups:
         body = ""
+        provider = "template"
         if getattr(settings, "anthropic_api_key", ""):
             try:
                 body = _call_claude(settings, property_data, group, revision_instruction)
+                provider = f"anthropic:{getattr(settings, 'claude_model', '')}"
             except Exception as exc:
                 log.warning("claude generation failed for group %s: %s", group.get("id"), exc)
                 degraded = True
@@ -356,6 +386,14 @@ def generate_variants(
                 "images": property_data.get("images", []),
                 "char_count": len(body),
                 "variation_seed": seed,
+                "source_hash": source_hash,
+                "generation_fingerprint": _generation_fingerprint(
+                    source_hash=source_hash,
+                    group=group,
+                    body=body,
+                    revision_instruction=revision_instruction,
+                    provider=provider,
+                ),
             }
         )
     return GeneratedBatch(variants=variants, degraded=degraded)

@@ -97,7 +97,7 @@ def test_production_example_keeps_stricter_posting_limits():
 
 
 def test_poster_keeps_navigation_and_human_pause_ranges():
-    post_source = inspect.getsource(FacebookPoster._post_one)
+    post_source = inspect.getsource(FacebookPoster._post_one_attempt)
     pause_source = inspect.getsource(FacebookPoster._human_pause)
 
     assert "random.randint(1200, 3500)" in post_source

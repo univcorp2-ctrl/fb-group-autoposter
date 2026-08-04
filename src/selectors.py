@@ -1,3 +1,16 @@
+from __future__ import annotations
+
+from typing import Any
+
+
+class SelectorMissing(RuntimeError):
+    """No reviewed, visible element was available for a write boundary."""
+
+
+class SelectorAmbiguous(RuntimeError):
+    """More than one reviewed, visible element was available for an action."""
+
+
 SELECTORS: dict[str, list[str]] = {
     "logged_in_markers": [
         'a[aria-label="Home"]',
@@ -9,11 +22,10 @@ SELECTORS: dict[str, list[str]] = {
     "open_composer": [
         'div[role="button"]:has-text("テキストを入力")',
         'div[role="button"]:has-text("投稿を作成")',
+        'div[role="button"]:has-text("ディスカッションを書く")',
         'div[role="button"]:has-text("Write something")',
         'div[role="button"]:has-text("Create post")',
         'div[role="button"]:has-text("Start discussion")',
-        'div[aria-label*="作成"]',
-        'div[aria-label*="Create"]',
     ],
     "composer_textbox": [
         'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
@@ -69,3 +81,42 @@ def selectors_for(action: str) -> list[str]:
     if not values:
         raise KeyError(f"no selectors registered for {action}")
     return values
+
+
+async def exactly_one_visible(page: Any, action: str) -> Any:
+    """Return the one reviewed visible action target, or fail closed.
+
+    A CSS selector union makes the count a count of DOM elements rather than a
+    count of selector matches, so one element matching two reviewed variants is
+    still one candidate.  This helper only reads locator state; callers decide
+    whether the returned locator may be clicked or typed into.
+    """
+
+    selectors = selectors_for(action)
+    union = ", ".join(selectors)
+    locator = page.locator(union)
+    count = await locator.count()
+    visible: list[Any] = []
+    for index in range(count):
+        candidate = locator.nth(index) if hasattr(locator, "nth") else locator.first
+        is_visible = getattr(candidate, "is_visible", None)
+        if is_visible is None or await is_visible():
+            visible.append(candidate)
+    if not visible:
+        raise SelectorMissing(f"selector_missing:{action}")
+    if len(visible) != 1:
+        raise SelectorAmbiguous(f"selector_ambiguous:{action}")
+    return visible[0]
+
+
+async def is_actionable(locator: Any) -> bool:
+    """Return whether a reviewed control can safely receive the final click."""
+    enabled = getattr(locator, "is_enabled", None)
+    if enabled is not None and not await enabled():
+        return False
+    attribute = getattr(locator, "get_attribute", None)
+    if attribute is not None:
+        disabled = await attribute("aria-disabled")
+        if str(disabled).casefold() == "true":
+            return False
+    return True
