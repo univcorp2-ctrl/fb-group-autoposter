@@ -94,3 +94,7 @@ def test_wait_for_exactly_one_visible_allows_delayed_composer_mount():
     )
 
     assert isinstance(locator, _Match)
+
+
+def test_post_button_selectors_do_not_match_post_addons():
+    assert all(":has-text" not in selector for selector in SELECTORS["post_button"])

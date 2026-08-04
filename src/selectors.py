@@ -35,8 +35,6 @@ SELECTORS: dict[str, list[str]] = {
     "post_button": [
         'div[role="dialog"] div[aria-label="投稿"][role="button"]',
         'div[role="dialog"] div[aria-label="Post"][role="button"]',
-        'div[role="dialog"] div[role="button"]:has-text("投稿")',
-        'div[role="dialog"] div[role="button"]:has-text("Post")',
         'div[aria-label="投稿"][role="button"]',
         'div[aria-label="Post"][role="button"]',
     ],
