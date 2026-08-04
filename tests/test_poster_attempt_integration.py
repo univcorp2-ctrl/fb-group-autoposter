@@ -116,7 +116,7 @@ def test_auto_approval_binds_target_before_final_fake_click(tmp_path):
     assert click_started == [db.get_submission_attempt(attempt_id)["click_started_at"]]
 
 
-def test_unbound_approved_job_stops_before_browser_activity(tmp_path):
+def test_unbound_approved_job_is_held_without_blocking_later_jobs(tmp_path):
     db = QueueDB(tmp_path / "jobs.db")
     db.create_job({"job_id": "legacy", "property_id": "property"}, [{"group_id": "group", "body": "body"}])
     db.approve_job("legacy")
@@ -127,8 +127,13 @@ def test_unbound_approved_job_stops_before_browser_activity(tmp_path):
         ), db, [],
     )
 
-    with pytest.raises(RuntimeError, match="manual_reapproval_required"):
-        asyncio.run(poster._post_job_real({"job_id": "legacy", "property_id": "property"}))
+    status = asyncio.run(
+        poster._post_job_real({"job_id": "legacy", "property_id": "property"})
+    )
+
+    assert status == "pending"
+    assert db.get_job("legacy")["status"] == "pending"
+    assert db.get_targets("legacy")[0]["last_error"] == "manual_reapproval_required"
 
 
 def test_click_error_after_boundary_is_ambiguous_and_never_retried(tmp_path, monkeypatch):
