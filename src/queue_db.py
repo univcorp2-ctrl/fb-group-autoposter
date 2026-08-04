@@ -1,15 +1,65 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
+import re
+import unicodedata
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import parse_qs, urlparse
+
+from src.run_result import (
+    sanitize_terminal_result,
+    validate_command,
+    validate_run_id,
+    validate_timestamp,
+)
+from src.secret_redaction import redact
 
 JOB_STATUSES = {"pending", "approved", "rejected", "posting", "done", "partial_failed", "failed"}
-TARGET_STATUSES = {"pending", "posted", "failed", "skipped", "uncertain"}
+TARGET_STATUSES = {
+    "pending", "pending_approval", "approved", "submitting", "posted",
+    "failed", "skipped", "uncertain",
+}
+OUTBOX_STATES = {"pending", "leased", "delivered", "failed", "delivery_ambiguous"}
+_OUTBOX_PAYLOAD_FIELDS = {
+    "approval_preview": frozenset({"text", "reply_markup"}),
+    "persistent_alert": frozenset({"text", "reply_markup"}),
+    "verified_post": frozenset({"text", "property_id", "group_id", "community", "permalink"}),
+    "verified_promotion": frozenset({"text", "property_id", "group_id", "permalink"}),
+    "uncertain_post": frozenset({"text", "property_id", "group_id"}),
+}
+_TEXT_ONLY_OUTBOX_EVENTS = frozenset({"pipeline_summary", "auto_approval", "alert_recovery", "completion_report"})
+_TARGET_TEXT_OUTBOX_EVENTS = frozenset(
+    {"challenge", "environment", "posting_blocked", "posting_failed", "circuit_warning"}
+)
+AUTO_APPROVAL_GATE_KEYS = frozenset(
+    {
+        "source_present",
+        "source_fresh",
+        "source_hash_matches",
+        "property_identity_matches",
+        "broker_known",
+        "body_hash_matches",
+        "generation_fingerprint_matches",
+        "circuit_clear",
+        "session_healthy",
+        "runtime_healthy",
+        "group_allowed",
+        "duplicate_clear",
+    }
+)
+
+
+def normalized_body_hash(body: str) -> str:
+    """Stable SHA-256 over the body representation shown to an approver."""
+    normalized = unicodedata.normalize("NFC", body).replace("\r\n", "\n").replace("\r", "\n")
+    normalized = "\n".join(line.rstrip() for line in normalized.strip().split("\n"))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def now_iso() -> str:
@@ -49,10 +99,11 @@ class QueueDB:
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=5)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA busy_timeout = 5000")
             yield conn
             conn.commit()
         except Exception:
@@ -62,7 +113,9 @@ class QueueDB:
             conn.close()
 
     def init_db(self) -> None:
-        with sqlite3.connect(self.path) as conn:
+        with sqlite3.connect(self.path, timeout=5) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout = 5000")
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS jobs (
@@ -101,8 +154,507 @@ class QueueDB:
                   disabled_suggested INTEGER NOT NULL DEFAULT 0,
                   updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS runs (
+                  run_id       TEXT PRIMARY KEY,
+                  command      TEXT NOT NULL,
+                  started_at   TEXT NOT NULL,
+                  finished_at  TEXT,
+                  outcome      TEXT,
+                  reason       TEXT,
+                  exit_code    INTEGER,
+                  result_json  TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS safety_circuits (
+                  circuit_id TEXT PRIMARY KEY,
+                  scope TEXT NOT NULL,
+                  subject TEXT NOT NULL,
+                  reason TEXT NOT NULL,
+                  reasons_json TEXT NOT NULL DEFAULT '[]',
+                  opened_at TEXT NOT NULL,
+                  expires_at TEXT,
+                  clearance_mode TEXT NOT NULL,
+                  operator_reviewed_at TEXT,
+                  operator_reviewed_by TEXT,
+                  cleared_at TEXT,
+                  cleared_by TEXT,
+                  clearance_reason TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS circuit_events (
+                  event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  kind TEXT NOT NULL,
+                  group_id TEXT,
+                  environment TEXT,
+                  occurred_at TEXT NOT NULL,
+                  metadata_json TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE TABLE IF NOT EXISTS approvals (
+                  approval_id TEXT PRIMARY KEY,
+                  job_id TEXT NOT NULL,
+                  property_id TEXT NOT NULL,
+                  group_id TEXT NOT NULL,
+                  source_hash TEXT NOT NULL,
+                  body_hash TEXT NOT NULL,
+                  generation_fingerprint TEXT NOT NULL,
+                  source TEXT NOT NULL,
+                  approved_at TEXT NOT NULL,
+                  FOREIGN KEY(job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS submission_attempts (
+                  attempt_id TEXT PRIMARY KEY,
+                  job_id TEXT NOT NULL,
+                  property_id TEXT NOT NULL,
+                  group_id TEXT NOT NULL,
+                  approval_id TEXT NOT NULL,
+                  state TEXT NOT NULL,
+                  created_at TEXT NOT NULL,
+                  click_started_at TEXT,
+                  response_received_at TEXT,
+                  verification_started_at TEXT,
+                  completed_at TEXT,
+                  last_error TEXT,
+                  permalink TEXT,
+                  reopen_count INTEGER NOT NULL DEFAULT 0,
+                  last_reopened_at TEXT,
+                  UNIQUE(property_id, group_id, approval_id),
+                  FOREIGN KEY(job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
+                  FOREIGN KEY(approval_id) REFERENCES approvals(approval_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS delivery_outbox (
+                  event_id TEXT PRIMARY KEY,
+                  event_key TEXT NOT NULL UNIQUE,
+                  destination TEXT NOT NULL,
+                  event_type TEXT NOT NULL,
+                  origin_run_id TEXT,
+                  attempt_id TEXT,
+                  subject_id TEXT,
+                  payload_json TEXT NOT NULL,
+                  state TEXT NOT NULL,
+                  lease_owner TEXT,
+                  lease_expires_at TEXT,
+                  attempt_count INTEGER NOT NULL DEFAULT 0,
+                  remote_message_id TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  last_error TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS delivery_outbox_resolutions (
+                  resolution_id TEXT PRIMARY KEY,
+                  event_id TEXT NOT NULL,
+                  resolution TEXT NOT NULL,
+                  operator TEXT NOT NULL,
+                  resolved_at TEXT NOT NULL,
+                  FOREIGN KEY(event_id) REFERENCES delivery_outbox(event_id)
+                );
                 """
             )
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(job_targets)")}
+            additions = {
+                "source_hash": "TEXT",
+                "normalized_body_hash": "TEXT",
+                "generation_fingerprint": "TEXT",
+                "approval_id": "TEXT",
+                "reconcile_only": "INTEGER NOT NULL DEFAULT 0",
+            }
+            for name, declaration in additions.items():
+                if name not in columns:
+                    conn.execute(f"ALTER TABLE job_targets ADD COLUMN {name} {declaration}")
+            attempt_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(submission_attempts)")
+            }
+            attempt_additions = {
+                "reopen_count": "INTEGER NOT NULL DEFAULT 0",
+                "last_reopened_at": "TEXT",
+            }
+            for name, declaration in attempt_additions.items():
+                if name not in attempt_columns:
+                    conn.execute(
+                        f"ALTER TABLE submission_attempts ADD COLUMN {name} {declaration}"
+                    )
+            circuit_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(safety_circuits)")
+            }
+            if "reasons_json" not in circuit_columns:
+                conn.execute(
+                    "ALTER TABLE safety_circuits ADD COLUMN reasons_json TEXT NOT NULL DEFAULT '[]'"
+                )
+            for row in conn.execute(
+                "SELECT circuit_id, reason, reasons_json FROM safety_circuits"
+            ).fetchall():
+                if not json.loads(row["reasons_json"] or "[]"):
+                    conn.execute(
+                        "UPDATE safety_circuits SET reasons_json=? WHERE circuit_id=?",
+                        (json.dumps([row["reason"]]), row["circuit_id"]),
+                    )
+            conn.executescript(
+                """
+                CREATE INDEX IF NOT EXISTS idx_circuits_active
+                  ON safety_circuits(scope, subject, cleared_at, opened_at);
+                CREATE INDEX IF NOT EXISTS idx_circuit_events_window
+                  ON circuit_events(kind, occurred_at, group_id, environment);
+                CREATE INDEX IF NOT EXISTS idx_attempts_target
+                  ON submission_attempts(property_id, group_id, click_started_at);
+                CREATE INDEX IF NOT EXISTS idx_delivery_outbox_claim
+                  ON delivery_outbox(destination, state, lease_expires_at, created_at);
+                CREATE TRIGGER IF NOT EXISTS approvals_immutable_update
+                  BEFORE UPDATE ON approvals BEGIN
+                    SELECT RAISE(ABORT, 'approvals are immutable');
+                  END;
+                CREATE TRIGGER IF NOT EXISTS approvals_immutable_delete
+                  BEFORE DELETE ON approvals BEGIN
+                    SELECT RAISE(ABORT, 'approvals are immutable');
+                  END;
+                """
+            )
+
+    @staticmethod
+    def _validate_outbox_payload(event_type: str, payload: dict[str, Any]) -> str:
+        """Persist only event-specific, redacted delivery payloads."""
+        if not isinstance(payload, dict):
+            raise ValueError("outbox payload must be an object")
+        allowed = _OUTBOX_PAYLOAD_FIELDS.get(event_type)
+        if allowed is None:
+            if event_type in _TEXT_ONLY_OUTBOX_EVENTS:
+                allowed = frozenset({"text"})
+            elif event_type in _TARGET_TEXT_OUTBOX_EVENTS:
+                allowed = frozenset({"text", "property_id", "group_id"})
+            else:
+                raise ValueError("unsupported outbox event type")
+        if set(payload) - allowed:
+            raise ValueError("outbox payload fields are not allowed for this event type")
+        if "text" not in payload or not isinstance(payload["text"], str):
+            raise ValueError("outbox payload requires text")
+        safe_payload = redact(payload)
+        try:
+            return json.dumps(safe_payload, ensure_ascii=False, sort_keys=True)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("outbox payload must be JSON serializable") from exc
+
+    @staticmethod
+    def _outbox_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        event = dict(row)
+        event["payload"] = json.loads(event["payload_json"])
+        # Compatibility aliases make the producer boundary easy to inspect while
+        # retaining the schema names required by the delivery worker contract.
+        event["event"] = event["event_type"]
+        event["status"] = event["state"]
+        return event
+
+    def enqueue_outbox_event(
+        self,
+        *,
+        event_key: str,
+        event_type: str,
+        payload: dict[str, Any],
+        destination: str = "telegram",
+        origin_run_id: str | None = None,
+        attempt_id: str | None = None,
+        subject_id: str | None = None,
+    ) -> dict[str, Any]:
+        if not all(isinstance(value, str) and value.strip() for value in (event_key, event_type, destination)):
+            raise ValueError("outbox event key, type, and destination are required")
+        serialized_payload = self._validate_outbox_payload(event_type, payload)
+        timestamp = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """INSERT INTO delivery_outbox(
+                   event_id, event_key, destination, event_type, origin_run_id, attempt_id, subject_id,
+                   payload_json, state, created_at, updated_at
+                   ) VALUES(?,?,?,?,?,?,?,?, 'pending', ?, ?) ON CONFLICT(event_key) DO NOTHING""",
+                (
+                    str(uuid.uuid4()), event_key, destination, event_type, origin_run_id, attempt_id,
+                    subject_id, serialized_payload, timestamp, timestamp,
+                ),
+            )
+            row = conn.execute("SELECT * FROM delivery_outbox WHERE event_key=?", (event_key,)).fetchone()
+        event = self._outbox_row(row)
+        assert event is not None
+        return event
+
+    def get_outbox_event(self, event_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM delivery_outbox WHERE event_id=?", (event_id,)).fetchone()
+        return self._outbox_row(row)
+
+    def list_outbox_events(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM delivery_outbox ORDER BY created_at, rowid").fetchall()
+        return [event for row in rows if (event := self._outbox_row(row)) is not None]
+
+    def claim_outbox_events(self, owner: str, *, limit: int = 1, lease_seconds: int = 60) -> list[dict[str, Any]]:
+        if not isinstance(owner, str) or not owner.strip() or limit < 1 or lease_seconds < 1:
+            raise ValueError("claim owner, limit, and lease duration must be positive")
+        timestamp = now_iso()
+        expiry = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """UPDATE delivery_outbox
+                   SET state='pending', lease_owner=NULL, lease_expires_at=NULL, updated_at=?
+                   WHERE state='leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?""",
+                (timestamp, timestamp),
+            )
+            rows = conn.execute(
+                """SELECT event_id FROM delivery_outbox WHERE state='pending'
+                   ORDER BY created_at, rowid LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            ids = [row["event_id"] for row in rows]
+            for event_id in ids:
+                conn.execute(
+                    """UPDATE delivery_outbox SET state='leased', lease_owner=?, lease_expires_at=?,
+                       attempt_count=attempt_count+1, updated_at=? WHERE event_id=? AND state='pending'""",
+                    (owner, expiry, timestamp, event_id),
+                )
+            claimed = [
+                conn.execute("SELECT * FROM delivery_outbox WHERE event_id=?", (event_id,)).fetchone()
+                for event_id in ids
+            ]
+        return [event for row in claimed if (event := self._outbox_row(row)) is not None]
+
+    def claim_outbox_events_for_oldest_origin(
+        self, owner: str, *, limit: int = 1, lease_seconds: int = 60
+    ) -> list[dict[str, Any]]:
+        """Atomically claim one bounded origin-run batch, never a mixed batch."""
+        if not isinstance(owner, str) or not owner.strip() or limit < 1 or lease_seconds < 1:
+            raise ValueError("claim owner, limit, and lease duration must be positive")
+        timestamp = now_iso()
+        expiry = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """UPDATE delivery_outbox
+                   SET state='pending', lease_owner=NULL, lease_expires_at=NULL, updated_at=?
+                   WHERE state='leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?""",
+                (timestamp, timestamp),
+            )
+            origin_row = conn.execute(
+                """SELECT origin_run_id FROM delivery_outbox WHERE state='pending'
+                   ORDER BY created_at, rowid LIMIT 1"""
+            ).fetchone()
+            if origin_row is None:
+                return []
+            origin_run_id = origin_row["origin_run_id"]
+            if origin_run_id is None:
+                rows = conn.execute(
+                    """SELECT event_id FROM delivery_outbox WHERE state='pending' AND origin_run_id IS NULL
+                       ORDER BY created_at, rowid LIMIT ?""",
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT event_id FROM delivery_outbox WHERE state='pending' AND origin_run_id=?
+                       ORDER BY created_at, rowid LIMIT ?""",
+                    (origin_run_id, limit),
+                ).fetchall()
+            ids = [row["event_id"] for row in rows]
+            for event_id in ids:
+                conn.execute(
+                    """UPDATE delivery_outbox SET state='leased', lease_owner=?, lease_expires_at=?,
+                       attempt_count=attempt_count+1, updated_at=? WHERE event_id=? AND state='pending'""",
+                    (owner, expiry, timestamp, event_id),
+                )
+            claimed = [
+                conn.execute("SELECT * FROM delivery_outbox WHERE event_id=?", (event_id,)).fetchone()
+                for event_id in ids
+            ]
+        return [event for row in claimed if (event := self._outbox_row(row)) is not None]
+
+    def _finish_outbox_event(
+        self,
+        event_id: str,
+        owner: str,
+        *,
+        state: str,
+        error: str | None = None,
+        remote_message_id: str | None = None,
+    ) -> dict[str, Any]:
+        if state not in {"delivered", "failed", "delivery_ambiguous"}:
+            raise ValueError("invalid outbox terminal state")
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """UPDATE delivery_outbox SET state=?, lease_owner=NULL, lease_expires_at=NULL,
+                   remote_message_id=COALESCE(?, remote_message_id), last_error=?, updated_at=?
+                   WHERE event_id=? AND state='leased' AND lease_owner=?""",
+                (state, remote_message_id, error, now_iso(), event_id, owner),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("outbox event is not leased by this owner")
+        event = self.get_outbox_event(event_id)
+        assert event is not None
+        return event
+
+    def mark_outbox_delivered(self, event_id: str, owner: str, *, remote_message_id: str | None = None) -> dict[str, Any]:
+        return self._finish_outbox_event(event_id, owner, state="delivered", remote_message_id=remote_message_id)
+
+    def mark_outbox_failed(self, event_id: str, owner: str, error: str) -> dict[str, Any]:
+        return self._finish_outbox_event(event_id, owner, state="failed", error=str(redact(error))[:500])
+
+    def mark_outbox_ambiguous(self, event_id: str, owner: str, error: str) -> dict[str, Any]:
+        return self._finish_outbox_event(event_id, owner, state="delivery_ambiguous", error=str(redact(error))[:500])
+
+    def retry_or_fail_outbox_event(
+        self, event_id: str, owner: str, error: str, *, max_attempts: int
+    ) -> dict[str, Any]:
+        """Release a proven pre-submit failure once, or terminally fail at its cap."""
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be positive")
+        safe_error = str(redact(error))[:500]
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """SELECT state, lease_owner, attempt_count FROM delivery_outbox WHERE event_id=?""",
+                (event_id,),
+            ).fetchone()
+            if row is None or row["state"] != "leased" or row["lease_owner"] != owner:
+                raise ValueError("outbox event is not leased by this owner")
+            state = "pending" if row["attempt_count"] < max_attempts else "failed"
+            conn.execute(
+                """UPDATE delivery_outbox SET state=?, lease_owner=NULL, lease_expires_at=NULL,
+                   last_error=?, updated_at=? WHERE event_id=? AND state='leased' AND lease_owner=?""",
+                (state, safe_error, now_iso(), event_id, owner),
+            )
+        event = self.get_outbox_event(event_id)
+        assert event is not None
+        return event
+
+    def renew_outbox_leases(
+        self, event_ids: list[str], owner: str, *, lease_seconds: int = 60
+    ) -> set[str]:
+        """Extend only still-owned, unexpired leases and report exactly those renewed."""
+        if not isinstance(owner, str) or not owner.strip() or lease_seconds < 1:
+            raise ValueError("lease owner and duration must be positive")
+        unique_ids = list(dict.fromkeys(event_ids))
+        if not unique_ids:
+            return set()
+        timestamp = now_iso()
+        expiry = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
+        renewed: set[str] = set()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            for event_id in unique_ids:
+                cursor = conn.execute(
+                    """UPDATE delivery_outbox SET lease_expires_at=?, updated_at=?
+                       WHERE event_id=? AND state='leased' AND lease_owner=?
+                         AND lease_expires_at IS NOT NULL AND lease_expires_at > ?""",
+                    (expiry, timestamp, event_id, owner, timestamp),
+                )
+                if cursor.rowcount == 1:
+                    renewed.add(event_id)
+        return renewed
+
+    def reset_outbox_event(
+        self,
+        event_id: str,
+        *,
+        operator: str | None = None,
+        resolution: str | None = None,
+        resolved_at: str | None = None,
+    ) -> dict[str, Any]:
+        if not isinstance(operator, str) or not operator.strip():
+            raise ValueError("operator reset is required")
+        if resolution != "confirmed_not_delivered":
+            raise ValueError("confirmed_not_delivered resolution is required")
+        timestamp = resolved_at or now_iso()
+        validate_timestamp(timestamp, "resolved_at")
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """UPDATE delivery_outbox SET state='pending', lease_owner=NULL, lease_expires_at=NULL,
+                   updated_at=?, last_error=COALESCE(last_error, '') || ?
+                   WHERE event_id=? AND state='delivery_ambiguous'""",
+                (timestamp, f" | resolved_by:{operator}", event_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("only delivery_ambiguous events may be resolved")
+            conn.execute(
+                """INSERT INTO delivery_outbox_resolutions(
+                   resolution_id, event_id, resolution, operator, resolved_at
+                   ) VALUES(?,?,?,?,?)""",
+                (str(uuid.uuid4()), event_id, resolution, operator, timestamp),
+            )
+        event = self.get_outbox_event(event_id)
+        assert event is not None
+        return event
+
+    def start_run(
+        self,
+        command: str,
+        *,
+        run_id: str,
+        started_at: str | None = None,
+    ) -> dict[str, Any]:
+        validate_run_id(run_id)
+        validate_command(command)
+        timestamp = started_at or now_iso()
+        validate_timestamp(timestamp, "started_at")
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO runs(run_id, command, started_at) VALUES(?,?,?)",
+                (run_id, command, timestamp),
+            )
+        run = self.get_run(run_id)
+        assert run is not None
+        return run
+
+    def finish_run(
+        self,
+        run_id: str,
+        *,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        validate_run_id(run_id)
+        canonical = sanitize_terminal_result(result)
+        if canonical["run_id"] != run_id:
+            raise ValueError("terminal result run_id does not match SQLite run")
+        serialized = json.dumps(canonical, ensure_ascii=False, sort_keys=True)
+        with self.connect() as conn:
+            existing = conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+            if existing is None:
+                raise RuntimeError(f"run missing or already terminal: {run_id}")
+            if existing["command"] != canonical["command"]:
+                raise ValueError("terminal result command does not match SQLite run")
+            if existing["started_at"] != canonical["started_at"]:
+                raise ValueError("terminal result started_at does not match SQLite run")
+            cursor = conn.execute(
+                """
+                UPDATE runs
+                SET finished_at=?, outcome=?, reason=?, exit_code=?, result_json=?
+                WHERE run_id=? AND finished_at IS NULL
+                """,
+                (
+                    canonical["finished_at"],
+                    canonical["outcome"],
+                    canonical["reason"],
+                    canonical["exit_code"],
+                    serialized,
+                    run_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError(f"run missing or already terminal: {run_id}")
+        run = self.get_run(run_id)
+        assert run is not None
+        return run
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+        return dict(row) if row else None
+
+    def latest_run(self) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM runs ORDER BY started_at DESC, rowid DESC LIMIT 1"
+            ).fetchone()
+        return dict(row) if row else None
 
     def create_job(self, property_data: dict[str, Any], variants: list[dict[str, Any]], *, degraded: bool = False) -> str:
         job_id = property_data.get("job_id") or str(uuid.uuid4())
@@ -114,9 +666,18 @@ class QueueDB:
                 (job_id, property_id, "pending", ts, ts, int(degraded), json.dumps(property_data, ensure_ascii=False)),
             )
             for variant in variants:
+                source_hash = variant.get("source_hash")
+                fingerprint = variant.get("generation_fingerprint")
+                target_status = "pending_approval" if source_hash is not None or fingerprint is not None else "pending"
                 conn.execute(
-                    "INSERT OR IGNORE INTO job_targets(job_id, group_id, body, status) VALUES(?,?,?,?)",
-                    (job_id, variant["group_id"], variant["body"], "pending"),
+                    """INSERT OR IGNORE INTO job_targets(
+                       job_id, group_id, body, status, source_hash,
+                       normalized_body_hash, generation_fingerprint
+                       ) VALUES(?,?,?,?,?,?,?)""",
+                    (
+                        job_id, variant["group_id"], variant["body"], target_status,
+                        source_hash, normalized_body_hash(variant["body"]), fingerprint,
+                    ),
                 )
         return job_id
 
@@ -139,6 +700,30 @@ class QueueDB:
     ) -> None:
         if status not in TARGET_STATUSES:
             raise ValueError(f"invalid target status: {status}")
+        with self.connect() as conn:
+            self._update_target_status_conn(
+                conn,
+                job_id,
+                group_id,
+                status,
+                error=error,
+                screenshot=screenshot,
+                permalink=permalink,
+                increment_attempts=increment_attempts,
+            )
+
+    def _update_target_status_conn(
+        self,
+        conn: sqlite3.Connection,
+        job_id: str,
+        group_id: str,
+        status: str,
+        *,
+        error: str | None = None,
+        screenshot: str | None = None,
+        permalink: str | None = None,
+        increment_attempts: bool = False,
+    ) -> None:
         # 'uncertain' very likely DID publish (we just could not verify it), so
         # stamp it like a post. The same-group spacing guard and daily cap then
         # treat it as a real post and never over-post (block-avoidance first).
@@ -147,31 +732,592 @@ class QueueDB:
         # or a verify sweep re-confirming) keeps the original time. Overwriting it
         # collapsed many historical posts onto the verify time, which wrongly
         # inflated count_posts_today() and blocked all new posting via daily_limit.
+        error = str(redact(error))[:500] if error else None
         posted_at = now_iso() if status in ("posted", "uncertain") else None
+        if status in {"pending", "pending_approval", "approved", "submitting"}:
+            target = conn.execute(
+                """SELECT j.property_id FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
+                   WHERE t.job_id=? AND t.group_id=?""",
+                (job_id, group_id),
+            ).fetchone()
+            if target and conn.execute(
+                """SELECT 1 FROM submission_attempts
+                   WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1""",
+                (target["property_id"], group_id),
+            ).fetchone():
+                raise ValueError("click boundary permanently prevents an eligible target state")
+        if increment_attempts:
+            cursor = conn.execute(
+                """
+                UPDATE job_targets
+                SET status=?, attempts=attempts + 1, last_error=?, posted_at=COALESCE(posted_at, ?),
+                    screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
+                WHERE job_id=? AND group_id=?
+                """,
+                (status, error, posted_at, screenshot, permalink, job_id, group_id),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                UPDATE job_targets
+                SET status=?, last_error=?, posted_at=COALESCE(posted_at, ?),
+                    screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
+                WHERE job_id=? AND group_id=?
+                """,
+                (status, error, posted_at, screenshot, permalink, job_id, group_id),
+            )
+        if cursor.rowcount != 1:
+            raise ValueError("target not found")
+
+    def update_target_status_with_outbox(
+        self,
+        job_id: str,
+        group_id: str,
+        status: str,
+        *,
+        event_key: str,
+        event_type: str,
+        payload: dict[str, Any],
+        destination: str = "telegram",
+        origin_run_id: str | None = None,
+        attempt_id: str | None = None,
+        subject_id: str | None = None,
+        error: str | None = None,
+        screenshot: str | None = None,
+        permalink: str | None = None,
+        increment_attempts: bool = False,
+    ) -> dict[str, Any]:
+        """Commit target truth and its downstream delivery obligation together."""
+        if status not in TARGET_STATUSES:
+            raise ValueError(f"invalid target status: {status}")
+        if not all(isinstance(value, str) and value.strip() for value in (event_key, event_type, destination)):
+            raise ValueError("outbox event key, type, and destination are required")
+        serialized_payload = self._validate_outbox_payload(event_type, payload)
+        timestamp = now_iso()
         with self.connect() as conn:
-            if increment_attempts:
+            self._update_target_status_conn(
+                conn, job_id, group_id, status, error=error, screenshot=screenshot,
+                permalink=permalink, increment_attempts=increment_attempts,
+            )
+            conn.execute(
+                """INSERT INTO delivery_outbox(
+                   event_id, event_key, destination, event_type, origin_run_id, attempt_id, subject_id,
+                   payload_json, state, created_at, updated_at
+                   ) VALUES(?,?,?,?,?,?,?,?, 'pending', ?, ?) ON CONFLICT(event_key) DO NOTHING""",
+                (
+                    str(uuid.uuid4()), event_key, destination, event_type, origin_run_id, attempt_id,
+                    subject_id, serialized_payload, timestamp, timestamp,
+                ),
+            )
+            row = conn.execute("SELECT * FROM delivery_outbox WHERE event_key=?", (event_key,)).fetchone()
+        event = self._outbox_row(row)
+        assert event is not None
+        return event
+
+    def approve_job(self, job_id: str, *, source: str = "operator") -> bool:
+        """Bind every active target before making a job eligible for posting.
+
+        Legacy rows without source/generation bindings are intentionally held
+        for a fresh review; a job-level approval must never bypass immutable
+        per-target approval records.
+        """
+        if source not in {"telegram", "operator", "auto_policy"}:
+            raise ValueError("invalid approval source")
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute(
+                """SELECT t.*, j.property_id, j.payload_json FROM job_targets t
+                   JOIN jobs j ON j.job_id=t.job_id WHERE t.job_id=? ORDER BY t.id""",
+                (job_id,),
+            ).fetchall()
+            active = [row for row in rows if row["status"] in {"pending", "pending_approval", "approved", "failed"}]
+            invalid = []
+            for target in active:
+                payload_property_id = json.loads(target["payload_json"]).get("property_id")
+                values = (
+                    payload_property_id, target["property_id"], target["group_id"], target["body"],
+                    target["source_hash"], target["normalized_body_hash"], target["generation_fingerprint"],
+                )
+                if not all(isinstance(value, str) and value.strip() for value in values):
+                    invalid.append(target)
+            if invalid:
+                for target in invalid:
+                    conn.execute(
+                        """UPDATE job_targets SET status='pending_approval', last_error='manual_reapproval_required'
+                           WHERE job_id=? AND group_id=?""",
+                        (job_id, target["group_id"]),
+                    )
+                conn.execute("UPDATE jobs SET status='pending', updated_at=? WHERE job_id=?", (now_iso(), job_id))
+                return False
+            for target in active:
+                clicked = conn.execute(
+                    """SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=?
+                       AND click_started_at IS NOT NULL LIMIT 1""",
+                    (target["property_id"], target["group_id"]),
+                ).fetchone()
+                if clicked:
+                    raise ValueError("click boundary permanently prevents approval")
+                if target["status"] == "approved" and target["approval_id"]:
+                    continue
+                approval_id = str(uuid.uuid4())
                 conn.execute(
-                    """
-                    UPDATE job_targets
-                    SET status=?, attempts=attempts + 1, last_error=?, posted_at=COALESCE(posted_at, ?),
-                        screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
-                    WHERE job_id=? AND group_id=?
-                    """,
-                    (status, error, posted_at, screenshot, permalink, job_id, group_id),
+                    """INSERT INTO approvals(
+                       approval_id, job_id, property_id, group_id, source_hash, body_hash,
+                       generation_fingerprint, source, approved_at
+                       ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (
+                        approval_id, job_id, target["property_id"], target["group_id"],
+                        target["source_hash"], target["normalized_body_hash"],
+                        target["generation_fingerprint"], source, now_iso(),
+                    ),
+                )
+                conn.execute(
+                    """UPDATE job_targets SET status='approved', approval_id=?, reconcile_only=0,
+                       last_error=NULL WHERE job_id=? AND group_id=?""",
+                    (approval_id, job_id, target["group_id"]),
+                )
+            conn.execute("UPDATE jobs SET status='approved', updated_at=? WHERE job_id=?", (now_iso(), job_id))
+        return True
+
+    def approve_target(
+        self,
+        job_id: str,
+        group_id: str,
+        *,
+        source: str,
+        approval_id: str | None = None,
+        approved_at: str | None = None,
+    ) -> dict[str, Any]:
+        if source not in {"telegram", "operator", "auto_policy"}:
+            raise ValueError("invalid approval source")
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            target = conn.execute(
+                """SELECT t.*, j.property_id, j.payload_json FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
+                   WHERE t.job_id=? AND t.group_id=?""",
+                (job_id, group_id),
+            ).fetchone()
+            if target is None:
+                raise ValueError("target not found")
+            clicked = conn.execute(
+                "SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1",
+                (target["property_id"], group_id),
+            ).fetchone()
+            if clicked:
+                raise ValueError("click boundary permanently prevents approval")
+            if target["status"] == "submitting":
+                raise ValueError("active submission attempt prevents approval changes")
+            source_hash = target["source_hash"] or ""
+            body_hash = target["normalized_body_hash"] or normalized_body_hash(target["body"])
+            fingerprint = target["generation_fingerprint"] or ""
+            payload_property_id = json.loads(target["payload_json"]).get("property_id")
+            if not all(
+                isinstance(value, str) and value.strip()
+                for value in (
+                    payload_property_id, target["property_id"], group_id, target["body"], source_hash,
+                    body_hash, fingerprint,
+                )
+            ):
+                raise ValueError("approval binding fields must all be non-empty")
+            if approval_id is not None:
+                old = conn.execute("SELECT * FROM approvals WHERE approval_id=?", (approval_id,)).fetchone()
+                if old is None or any(
+                    old[name] != value
+                    for name, value in (
+                        ("job_id", job_id), ("group_id", group_id),
+                        ("source_hash", source_hash), ("body_hash", body_hash),
+                        ("generation_fingerprint", fingerprint),
+                    )
+                ):
+                    raise ValueError("stale approval callback")
+                row = old
+            else:
+                approval_id = str(uuid.uuid4())
+                conn.execute(
+                    """INSERT INTO approvals(
+                       approval_id, job_id, property_id, group_id, source_hash, body_hash,
+                       generation_fingerprint, source, approved_at
+                       ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (
+                        approval_id, job_id, target["property_id"], group_id, source_hash,
+                        body_hash, fingerprint, source, approved_at or now_iso(),
+                    ),
+                )
+                row = conn.execute("SELECT * FROM approvals WHERE approval_id=?", (approval_id,)).fetchone()
+            conn.execute(
+                """UPDATE job_targets SET status='approved', approval_id=?, source_hash=?,
+                   normalized_body_hash=?, generation_fingerprint=?, reconcile_only=0
+                   WHERE job_id=? AND group_id=?""",
+                (approval_id, source_hash, body_hash, fingerprint, job_id, group_id),
+            )
+        return dict(row)
+
+    def auto_approve_target(
+        self,
+        job_id: str,
+        group_id: str,
+        *,
+        gates: dict[str, bool],
+        auto_approve_enabled: bool = False,
+    ) -> dict[str, Any]:
+        if auto_approve_enabled is not True:
+            raise ValueError("auto approval is disabled")
+        if set(gates) != AUTO_APPROVAL_GATE_KEYS:
+            raise ValueError("canonical auto-approval gate set is required")
+        if not all(value is True for value in gates.values()):
+            raise ValueError("all auto-approval gates must pass")
+        return self.approve_target(job_id, group_id, source="auto_policy")
+
+    def set_target_content(
+        self,
+        job_id: str,
+        group_id: str,
+        *,
+        body: str,
+        source_hash: str,
+        generation_fingerprint: str,
+    ) -> None:
+        body_hash = normalized_body_hash(body)
+        with self.connect() as conn:
+            # Serialize content invalidation against mark_click_started(). Once
+            # this lock is held, either the pre-click attempt is aborted here or
+            # a previously committed click boundary is observed and preserved.
+            conn.execute("BEGIN IMMEDIATE")
+            target = conn.execute(
+                """SELECT t.*, j.property_id FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
+                   WHERE t.job_id=? AND t.group_id=?""",
+                (job_id, group_id),
+            ).fetchone()
+            if target is None:
+                raise ValueError("target not found")
+            if (
+                target["normalized_body_hash"] == body_hash
+                and target["source_hash"] == source_hash
+                and target["generation_fingerprint"] == generation_fingerprint
+            ):
+                return
+            clicked = conn.execute(
+                "SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1",
+                (target["property_id"], group_id),
+            ).fetchone()
+            status = target["status"] if clicked else "pending_approval"
+            approval_id = target["approval_id"] if clicked else None
+            if not clicked:
+                timestamp = now_iso()
+                conn.execute(
+                    """UPDATE submission_attempts
+                       SET state='aborted_preclick', completed_at=?, last_error='content_invalidated'
+                       WHERE job_id=? AND group_id=? AND state='submitting'
+                         AND click_started_at IS NULL""",
+                    (timestamp, job_id, group_id),
+                )
+            conn.execute(
+                """UPDATE job_targets SET body=?, source_hash=?, normalized_body_hash=?,
+                   generation_fingerprint=?, status=?, approval_id=? WHERE job_id=? AND group_id=?""",
+                (body, source_hash, body_hash, generation_fingerprint, status, approval_id, job_id, group_id),
+            )
+
+    def begin_submission(
+        self,
+        job_id: str,
+        group_id: str,
+        *,
+        approval_id: str,
+        source_hash: str,
+        body_hash: str,
+        generation_fingerprint: str,
+        created_at: str | None = None,
+    ) -> dict[str, Any]:
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            target = conn.execute(
+                """SELECT t.*, j.property_id FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
+                   WHERE t.job_id=? AND t.group_id=?""",
+                (job_id, group_id),
+            ).fetchone()
+            approval = conn.execute("SELECT * FROM approvals WHERE approval_id=?", (approval_id,)).fetchone()
+            values = (source_hash, body_hash, generation_fingerprint, approval_id)
+            target_values = (
+                target["source_hash"] if target else None,
+                target["normalized_body_hash"] if target else None,
+                target["generation_fingerprint"] if target else None,
+                target["approval_id"] if target else None,
+            )
+            approval_values = (
+                approval["source_hash"] if approval else None,
+                approval["body_hash"] if approval else None,
+                approval["generation_fingerprint"] if approval else None,
+                approval["approval_id"] if approval else None,
+            )
+            if target is None or target["status"] not in {"approved", "failed"} or values != target_values or values != approval_values:
+                raise ValueError("approval mismatch")
+            if (
+                approval["job_id"] != job_id
+                or approval["group_id"] != group_id
+                or approval["property_id"] != target["property_id"]
+                or not all(isinstance(value, str) and value.strip() for value in values)
+                or not target["property_id"].strip()
+                or not group_id.strip()
+            ):
+                raise ValueError("approval mismatch")
+            if conn.execute(
+                "SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1",
+                (target["property_id"], group_id),
+            ).fetchone():
+                raise ValueError("click boundary permanently prevents a new attempt")
+            existing = conn.execute(
+                """SELECT * FROM submission_attempts
+                   WHERE property_id=? AND group_id=? AND approval_id=?""",
+                (target["property_id"], group_id, approval_id),
+            ).fetchone()
+            if existing:
+                if existing["state"] != "aborted_preclick" or existing["click_started_at"] is not None:
+                    raise ValueError("existing attempt cannot be reopened")
+                attempt_id = existing["attempt_id"]
+                reopened_at = created_at or now_iso()
+                conn.execute(
+                    """UPDATE submission_attempts
+                       SET state='submitting', completed_at=NULL, last_error=NULL,
+                           response_received_at=NULL, verification_started_at=NULL,
+                           reopen_count=reopen_count+1, last_reopened_at=?
+                       WHERE attempt_id=? AND state='aborted_preclick'
+                         AND click_started_at IS NULL""",
+                    (reopened_at, attempt_id),
                 )
             else:
+                attempt_id = str(uuid.uuid4())
                 conn.execute(
-                    """
-                    UPDATE job_targets
-                    SET status=?, last_error=?, posted_at=COALESCE(posted_at, ?),
-                        screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
-                    WHERE job_id=? AND group_id=?
-                    """,
-                    (status, error, posted_at, screenshot, permalink, job_id, group_id),
+                    """INSERT INTO submission_attempts(
+                       attempt_id, job_id, property_id, group_id, approval_id, state, created_at
+                       ) VALUES(?,?,?,?,?,'submitting',?)""",
+                    (
+                        attempt_id, job_id, target["property_id"], group_id,
+                        approval_id, created_at or now_iso(),
+                    ),
                 )
+            conn.execute(
+                """UPDATE job_targets SET status='submitting' WHERE job_id=? AND group_id=?
+                   AND status IN ('approved', 'failed')""",
+                (job_id, group_id),
+            )
+            row = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+        return dict(row)
 
-    def approve_job(self, job_id: str) -> None:
-        self.update_job_status(job_id, "approved")
+    def get_submission_attempt(self, attempt_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_submission_attempts(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM submission_attempts ORDER BY created_at, rowid").fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_click_started(self, attempt_id: str, *, at: datetime | str | None = None) -> dict[str, Any]:
+        timestamp = at.isoformat() if isinstance(at, datetime) else (at or now_iso())
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            binding = conn.execute(
+                """SELECT a.approval_id, a.source_hash AS approval_source_hash,
+                          a.body_hash AS approval_body_hash,
+                          a.generation_fingerprint AS approval_generation_fingerprint,
+                          t.approval_id AS target_approval_id, t.source_hash, t.normalized_body_hash,
+                          t.generation_fingerprint, t.status
+                   FROM submission_attempts s
+                   JOIN job_targets t ON t.job_id=s.job_id AND t.group_id=s.group_id
+                   JOIN approvals a ON a.approval_id=s.approval_id
+                   WHERE s.attempt_id=? AND s.state='submitting' AND s.click_started_at IS NULL""",
+                (attempt_id,),
+            ).fetchone()
+            if binding is None or binding["status"] != "submitting" or any(
+                binding[left] != binding[right]
+                for left, right in (
+                    ("approval_id", "target_approval_id"),
+                    ("approval_source_hash", "source_hash"),
+                    ("approval_body_hash", "normalized_body_hash"),
+                    ("approval_generation_fingerprint", "generation_fingerprint"),
+                )
+            ):
+                raise ValueError("attempt is not awaiting click or approval binding changed")
+            cursor = conn.execute(
+                """UPDATE submission_attempts SET click_started_at=?
+                   WHERE attempt_id=? AND state='submitting' AND click_started_at IS NULL""",
+                (timestamp, attempt_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("attempt is not awaiting click")
+        return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
+
+    def mark_submission_response(self, attempt_id: str, *, at: str | None = None) -> dict[str, Any]:
+        return self._stamp_attempt(attempt_id, "response_received_at", at or now_iso())
+
+    def mark_verification_started(self, attempt_id: str, *, at: str | None = None) -> dict[str, Any]:
+        return self._stamp_attempt(attempt_id, "verification_started_at", at or now_iso())
+
+    def _stamp_attempt(self, attempt_id: str, column: str, timestamp: str) -> dict[str, Any]:
+        if column not in {"response_received_at", "verification_started_at"}:
+            raise ValueError("invalid attempt timestamp")
+        with self.connect() as conn:
+            cursor = conn.execute(
+                f"UPDATE submission_attempts SET {column}=? WHERE attempt_id=? AND click_started_at IS NOT NULL",
+                (timestamp, attempt_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("click boundary not recorded")
+        return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
+
+    def abort_submission_preclick(self, attempt_id: str, *, reason: str = "") -> dict[str, Any]:
+        with self.connect() as conn:
+            attempt = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+            if attempt is None or attempt["state"] != "submitting" or attempt["click_started_at"] is not None:
+                raise ValueError("pre-click abort is not allowed")
+            conn.execute(
+                "UPDATE submission_attempts SET state='aborted_preclick', completed_at=?, last_error=? WHERE attempt_id=?",
+                (now_iso(), reason, attempt_id),
+            )
+            conn.execute(
+                "UPDATE job_targets SET status='approved' WHERE job_id=? AND group_id=? AND status='submitting'",
+                (attempt["job_id"], attempt["group_id"]),
+            )
+        return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
+
+    def mark_attempt_reconcile_only(self, attempt_id: str, *, reason: str = "ambiguous") -> dict[str, Any]:
+        with self.connect() as conn:
+            attempt = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+            if attempt is None or attempt["click_started_at"] is None:
+                raise ValueError("reconcile-only requires a click boundary")
+            conn.execute(
+                "UPDATE submission_attempts SET state='reconcile_only', last_error=? WHERE attempt_id=?",
+                (reason, attempt_id),
+            )
+            conn.execute(
+                """UPDATE job_targets SET status='uncertain', reconcile_only=1,
+                   posted_at=COALESCE(posted_at, ?) WHERE job_id=? AND group_id=?""",
+                (attempt["click_started_at"], attempt["job_id"], attempt["group_id"]),
+            )
+        return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
+
+    def recover_incomplete_attempts(self) -> int:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM submission_attempts WHERE state='submitting'").fetchall()
+        for row in rows:
+            if row["click_started_at"] is None:
+                self.abort_submission_preclick(row["attempt_id"], reason="process_recovery_before_click")
+            else:
+                self.mark_attempt_reconcile_only(row["attempt_id"], reason="process_exit_after_click")
+        return len(rows)
+
+    def resolve_submission(
+        self, attempt_id: str, *, outcome: str, permalink: str | None = None
+    ) -> dict[str, Any]:
+        attempt = self.get_submission_attempt(attempt_id)
+        if attempt is None or attempt["state"] != "submitting":
+            raise ValueError("resolve_submission requires a currently submitting attempt")
+        if outcome == "confirmed":
+            return self._confirm_submission(attempt_id, permalink=permalink)
+        if outcome in {"ambiguous", "inconclusive"}:
+            return self.mark_attempt_reconcile_only(attempt_id, reason=outcome)
+        raise ValueError("invalid submission outcome")
+
+    def verify_submission(
+        self, attempt_id: str, *, outcome: str, permalink: str | None = None
+    ) -> dict[str, Any]:
+        attempt = self.get_submission_attempt(attempt_id)
+        if attempt is None:
+            raise ValueError("attempt not found")
+        if attempt["click_started_at"] is None:
+            raise ValueError("verification requires a click boundary")
+        if outcome == "confirmed":
+            return self._confirm_submission(attempt_id, permalink=permalink)
+        if outcome == "invalid":
+            return self.mark_attempt_reconcile_only(attempt_id, reason="verification_invalid")
+        if outcome == "inconclusive":
+            return attempt
+        raise ValueError("invalid verification outcome")
+
+    def _confirm_submission(self, attempt_id: str, *, permalink: str | None) -> dict[str, Any]:
+        if not self._is_valid_facebook_permalink(permalink):
+            self.mark_attempt_reconcile_only(
+                attempt_id, reason="missing_or_invalid_facebook_permalink"
+            )
+            raise ValueError("a captured HTTPS Facebook permalink is required")
+        with self.connect() as conn:
+            attempt = conn.execute("SELECT * FROM submission_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+            if attempt is None or attempt["click_started_at"] is None:
+                raise ValueError("confirmation requires a click boundary")
+            conn.execute(
+                """UPDATE submission_attempts SET state='posted', completed_at=?, permalink=COALESCE(?, permalink)
+                   WHERE attempt_id=?""",
+                (now_iso(), permalink, attempt_id),
+            )
+            conn.execute(
+                """UPDATE job_targets SET status='posted', reconcile_only=1,
+                   posted_at=COALESCE(posted_at, ?), permalink=COALESCE(?, permalink)
+                   WHERE job_id=? AND group_id=?""",
+                (attempt["click_started_at"], permalink, attempt["job_id"], attempt["group_id"]),
+            )
+        return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
+
+    @staticmethod
+    def is_valid_facebook_permalink(permalink: str | None) -> bool:
+        if not isinstance(permalink, str) or not permalink.strip():
+            return False
+        parsed = urlparse(permalink)
+        host = (parsed.hostname or "").lower()
+        segments = [segment for segment in parsed.path.split("/") if segment]
+        query = parse_qs(parsed.query)
+        identifier = re.compile(r"^[A-Za-z0-9_-]+$")
+        group_post = any(
+            segments[index] == "groups"
+            and index + 3 < len(segments)
+            and bool(identifier.fullmatch(segments[index + 1]))
+            and segments[index + 2] == "posts"
+            and bool(identifier.fullmatch(segments[index + 3]))
+            for index in range(len(segments))
+        )
+        permalink_path = any(
+            segment == "permalink"
+            and index + 1 < len(segments)
+            and bool(identifier.fullmatch(segments[index + 1]))
+            for index, segment in enumerate(segments)
+        )
+        share_path = any(
+            segments[index:index + 2] == ["share", "p"]
+            and index + 2 < len(segments)
+            and bool(identifier.fullmatch(segments[index + 2]))
+            for index in range(len(segments))
+        )
+        story_id = (query.get("story_fbid") or query.get("fbid") or [""])[0]
+        query_permalink = (
+            bool(segments)
+            and segments[-1] in {"story.php", "photo.php"}
+            and bool(identifier.fullmatch(story_id))
+        )
+        return (
+            parsed.scheme == "https"
+            and (host == "facebook.com" or host.endswith(".facebook.com"))
+            and (group_post or permalink_path or share_path or query_permalink)
+        )
+
+    @staticmethod
+    def _is_valid_facebook_permalink(permalink: str | None) -> bool:
+        """Backward-compatible private alias for older callers."""
+        return QueueDB.is_valid_facebook_permalink(permalink)
+
+    def submission_eligible(self, job_id: str, group_id: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute(
+                """SELECT t.status, t.reconcile_only, j.property_id FROM job_targets t
+                   JOIN jobs j ON j.job_id=t.job_id WHERE t.job_id=? AND t.group_id=?""",
+                (job_id, group_id),
+            ).fetchone()
+            if row is None or row["status"] != "approved" or row["reconcile_only"]:
+                return False
+            clicked = conn.execute(
+                "SELECT 1 FROM submission_attempts WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1",
+                (row["property_id"], group_id),
+            ).fetchone()
+        return clicked is None
 
     def reject_job(self, job_id: str, reason: str = "") -> None:
         self.update_job_status(job_id, "rejected")
@@ -204,7 +1350,7 @@ class QueueDB:
     def unposted_targets(self, job_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM job_targets WHERE job_id=? AND status IN ('pending','failed') ORDER BY id",
+                "SELECT * FROM job_targets WHERE job_id=? AND status IN ('approved','failed') ORDER BY id",
                 (job_id,),
             ).fetchall()
         return [dict(r) for r in rows]

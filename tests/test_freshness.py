@@ -107,6 +107,7 @@ class _FakeDB:
         self.targets = [{"group_id": "g1"}, {"group_id": "g2"}]
         self.updates: list[tuple] = []
         self.job_status: list[tuple] = []
+        self.outbox: list[dict] = []
 
     def update_job_status(self, job_id, status):
         self.job_status.append((job_id, status))
@@ -119,6 +120,10 @@ class _FakeDB:
 
     def finalize_job_from_targets(self, job_id):
         return "skipped"
+
+    def enqueue_outbox_event(self, **event):
+        self.outbox.append(event)
+        return event
 
 
 class _FakeChecker:
@@ -150,7 +155,7 @@ def test_post_job_skips_stale_property_without_posting():
     assert status == "skipped"
     assert all(u[1] == "skipped" for u in db.updates)
     assert all("stale_property:deleted" == u[2] for u in db.updates)
-    assert notifier.alerts and "スキップ" in notifier.alerts[0]
+    assert db.outbox and "スキップ" in db.outbox[0]["payload"]["text"]
 
 
 def test_post_job_alerts_but_allows_when_source_missing():
@@ -158,7 +163,7 @@ def test_post_job_alerts_but_allows_when_source_missing():
     poster = _poster(db, _FakeChecker(FreshnessResult(UNKNOWN, "eb_source_unavailable")), notifier)
     reason = poster._freshness_skip_reason({"job_id": "j1", "property_id": "eb-X"})
     assert reason is None  # fails open
-    assert notifier.alerts and "確認できませんでした" in notifier.alerts[0]
+    assert db.outbox and "確認できませんでした" in db.outbox[0]["payload"]["text"]
 
 
 def test_no_checker_means_no_skip():

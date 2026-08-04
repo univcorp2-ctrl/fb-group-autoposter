@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from src.approval import TelegramApproval
 from src.queue_db import QueueDB
+from src.telegram_transport import TelegramTransport
 
 
 def settings(auto=True, telegram=False):
@@ -15,7 +16,11 @@ def settings(auto=True, telegram=False):
 
 def test_auto_approve_marks_non_degraded_job(tmp_path):
     db = QueueDB(tmp_path / "jobs.db")
-    job_id = db.create_job({"property_id": "p", "title": "A"}, [{"group_id": "g", "body": "body"}], degraded=False)
+    job_id = db.create_job(
+        {"property_id": "p", "title": "A"},
+        [{"group_id": "g", "body": "body", "source_hash": "source", "generation_fingerprint": "fingerprint"}],
+        degraded=False,
+    )
     approval = TelegramApproval(settings(auto=True, telegram=True), db)
     sent = []
     approval._post = lambda method, payload: sent.append((method, payload)) or {"ok": True}
@@ -23,7 +28,37 @@ def test_auto_approve_marks_non_degraded_job(tmp_path):
     approval.auto_or_send_preview(job_id)
 
     assert db.get_job(job_id)["status"] == "approved"
+    target = db.get_targets(job_id)[0]
+    assert target["status"] == "approved"
+    assert target["approval_id"]
     assert sent == []
+
+
+def test_telegram_callback_binds_every_target_before_job_is_approved(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    db = QueueDB(tmp_path / "jobs.db")
+    job_id = db.create_job(
+        {"property_id": "p", "title": "A"},
+        [{"group_id": "g", "body": "body", "source_hash": "source", "generation_fingerprint": "fingerprint"}],
+    )
+
+    class Transport:
+        enabled = True
+        def get_webhook_info(self): return {"ok": True, "result": {"url": ""}}
+        def get_updates(self, *, offset=None):
+            return {"ok": True, "result": [{
+                "update_id": 1,
+                "callback_query": {"from": {"id": 12345}, "data": f"approve:{job_id}"},
+            }]}
+        def send_message(self, *_args, **_kwargs): return {"ok": True, "message_id": 1}
+
+    approval = TelegramApproval(settings(auto=False, telegram=True), db, transport=Transport())
+
+    assert approval.poll_once() == 1
+    target = db.get_targets(job_id)[0]
+    assert db.get_job(job_id)["status"] == "approved"
+    assert (target["status"], target["approval_id"]) == ("approved", target["approval_id"])
+    assert target["approval_id"]
 
 
 def test_auto_approve_skips_degraded_when_configured(tmp_path):
@@ -32,3 +67,45 @@ def test_auto_approve_skips_degraded_when_configured(tmp_path):
     approval = TelegramApproval(settings(auto=True), db)
     approval.auto_or_send_preview(job_id)
     assert db.get_job(job_id)["status"] == "pending"
+
+
+def test_send_message_delegates_composed_payload_to_transport(tmp_path):
+    class Transport:
+        enabled = True
+
+        def __init__(self):
+            self.calls = []
+
+        def send_message(self, text, *, reply_markup=None, disable_web_page_preview=False):
+            self.calls.append((text, reply_markup, disable_web_page_preview))
+            return {"ok": True, "code": "sent", "message_id": 7}
+
+    db = QueueDB(tmp_path / "jobs.db")
+    transport = Transport()
+    approval = TelegramApproval(settings(auto=False, telegram=True), db, transport=transport)
+
+    approval.send_message("safe message", reply_markup={"inline_keyboard": []})
+
+    assert transport.calls == [("safe message", {"inline_keyboard": []}, False)]
+
+
+def test_poll_once_with_fresh_transport_checks_webhook_before_polling(tmp_path):
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"ok": True, "result": {"url": "https://example.test/hook"}}
+
+    calls = []
+
+    def http_request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        return Response()
+
+    db = QueueDB(tmp_path / "jobs.db")
+    transport = TelegramTransport("123456:fake_token_abcdefghijklmnop", "12345", http_request=http_request)
+    approval = TelegramApproval(settings(auto=False, telegram=True), db, transport=transport)
+
+    assert approval.poll_once() == 0
+    assert [url.rsplit("/", 1)[-1] for _, url, _ in calls] == ["getWebhookInfo"]

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
 import sys
@@ -100,21 +101,38 @@ async def run(*, headed: bool, probe: bool) -> dict:
         summary["promoted"] = 0
         summary["demoted"] = 0
         summary["still_pending"] = 0
-        newly_confirmed: list[dict] = []
         for rec in claimed:
             summary["checked"] += 1
             gid = rec["group_id"]
             posts = group_posts.get(gid, [])
             permalink = match_permalink(rec["body"] or "", posts)
-            if permalink:
-                shot = await save_screenshot(await _open(page, permalink), prefix="verified", job_id=rec["job_id"], group_id=gid)
-                db.update_target_status(rec["job_id"], gid, "posted", permalink=permalink, screenshot=shot)
+            if permalink and db.is_valid_facebook_permalink(permalink):
                 summary["confirmed"] += 1
-                if rec["status"] != "posted":
+                if rec["status"] in {"uncertain", "failed"}:
+                    shot = await save_screenshot(await _open(page, permalink), prefix="verified", job_id=rec["job_id"], group_id=gid)
+                    name = groups.get(gid, {}).get("name", gid)
+                    event_subject = f"{rec['job_id']}:{gid}:{permalink}"
+                    db.update_target_status_with_outbox(
+                        rec["job_id"],
+                        gid,
+                        "posted",
+                        permalink=permalink,
+                        screenshot=shot,
+                        event_key=f"telegram:verify:{hashlib.sha256(event_subject.encode()).hexdigest()}:promoted",
+                        event_type="verified_promotion",
+                        origin_run_id="verify_posts",
+                        subject_id=rec["property_id"],
+                        payload={
+                            "text": f"✅ 公開を確認しました（承認済み）: {name}\n"
+                            f"物件: {rec['property_id']}\n🔗 {permalink}",
+                            "property_id": rec["property_id"],
+                            "group_id": gid,
+                            "permalink": permalink,
+                        },
+                    )
                     # Was uncertain/failed and is now confirmed live -> promote and
                     # tell the operator with the link.
                     summary["promoted"] += 1
-                    newly_confirmed.append({"group_id": gid, "property_id": rec["property_id"], "permalink": permalink})
                 log.info("CONFIRMED %s in %s -> %s", rec["property_id"], gid, permalink)
             elif rec["status"] == "posted" and pending_match(rec["body"] or "", posts):
                 # Our post IS present but held for moderator approval (承認制グループ).
@@ -122,7 +140,23 @@ async def run(*, headed: bool, probe: bool) -> dict:
                 # -> DEMOTE to 'uncertain' so it stops counting as 投稿済. This is a
                 # POSITIVE pending detection, not a plain miss, so downgrading is
                 # correct here (posted_at is preserved by update_target_status).
-                db.update_target_status(rec["job_id"], gid, "uncertain", error="pending_approval")
+                name = groups.get(gid, {}).get("name", gid)
+                db.update_target_status_with_outbox(
+                    rec["job_id"],
+                    gid,
+                    "uncertain",
+                    error="pending_approval",
+                    event_key=f"telegram:verify:{rec['job_id']}:{gid}:uncertain",
+                    event_type="uncertain_post",
+                    origin_run_id="verify_posts",
+                    subject_id=rec["property_id"],
+                    payload={
+                        "text": f"⚠️ 投稿は承認待ちです（{name}）。\n"
+                        f"物件: {rec['property_id']}（投稿済みにはカウントしません）",
+                        "property_id": rec["property_id"],
+                        "group_id": gid,
+                    },
+                )
                 summary["demoted"] += 1
                 log.info("DEMOTED (承認待ち→uncertain) %s in %s", rec["property_id"], gid)
             else:
@@ -134,21 +168,6 @@ async def run(*, headed: bool, probe: bool) -> dict:
                 # post time now, so 'posted' stays trustworthy.)
                 summary["missing"] += 1
                 log.info("not-found this run (left as-is, status=%s): %s in %s", rec["status"], rec["property_id"], gid)
-
-        # Notify the operator about posts that just went live (approved).
-        if newly_confirmed:
-            try:
-                from src.approval import TelegramApproval
-
-                notifier = TelegramApproval(settings, db)
-                if getattr(notifier, "enabled", False):
-                    lines = [f"✅ 公開を確認しました（{len(newly_confirmed)}件・承認済み）:", ""]
-                    for c in newly_confirmed:
-                        name = groups.get(c["group_id"], {}).get("name", c["group_id"])
-                        lines.append(f"・{name}：{c['property_id']}\n　🔗 {c['permalink']}")
-                    notifier.send_message("\n".join(lines))
-            except Exception as exc:  # noqa: BLE001
-                log.warning("promotion notice skipped: %s", exc)
 
         await ctx.close()
     return summary

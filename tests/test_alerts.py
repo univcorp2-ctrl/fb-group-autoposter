@@ -66,6 +66,21 @@ def test_state_survives_new_instance(tmp_path):
     assert AlertStore(path).get("session_dead")["message"] == "msg"
 
 
+def test_legacy_alert_json_stays_eligible_until_ambiguous_delivery_is_quarantined(tmp_path):
+    path = tmp_path / "alerts.json"
+    path.write_text(
+        '{"alerts":{"session_dead":{"kind":"session_dead","acknowledged":false}}}',
+        encoding="utf-8",
+    )
+    store = AlertStore(path, now_fn=_clock())
+
+    assert [alert["kind"] for alert in store.pending_unacknowledged()] == ["session_dead"]
+    store.quarantine_delivery("session_dead")
+
+    assert store.pending_unacknowledged() == []
+    assert AlertStore(path).get("session_dead")["delivery_quarantined"] is True
+
+
 def test_corrupt_file_starts_empty(tmp_path):
     path = tmp_path / "alerts.json"
     path.write_text("{ not json", encoding="utf-8")

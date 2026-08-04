@@ -50,6 +50,13 @@ class AlertStore:
         self.path = Path(path)
         self._now = now_fn
 
+    @staticmethod
+    def _public_alert(alert: dict[str, Any]) -> dict[str, Any]:
+        result = dict(alert)
+        result.setdefault("delivery_quarantined", False)
+        result.setdefault("delivery_quarantined_at", None)
+        return result
+
     # --- persistence -------------------------------------------------------
     def _load(self) -> dict[str, dict[str, Any]]:
         if not self.path.exists():
@@ -93,6 +100,8 @@ class AlertStore:
                 "acknowledged_at": None,
                 "notify_count": 0,
                 "last_notified": None,
+                "delivery_quarantined": False,
+                "delivery_quarantined_at": None,
             }
             alerts[kind] = alert
         self._save(alerts)
@@ -118,6 +127,17 @@ class AlertStore:
         alert["last_notified"] = self._now()
         self._save(alerts)
 
+    def quarantine_delivery(self, kind: str) -> bool:
+        """Stop automatic delivery retries after a request may already have been sent."""
+        alerts = self._load()
+        alert = alerts.get(kind)
+        if not alert:
+            return False
+        alert["delivery_quarantined"] = True
+        alert["delivery_quarantined_at"] = self._now()
+        self._save(alerts)
+        return True
+
     def clear(self, kind: str) -> bool:
         """Condition resolved (e.g. session recovered): remove the alert."""
         alerts = self._load()
@@ -130,11 +150,17 @@ class AlertStore:
     # --- queries -----------------------------------------------------------
     def get(self, kind: str) -> dict[str, Any] | None:
         alert = self._load().get(kind)
-        return dict(alert) if alert else None
+        if not alert:
+            return None
+        return self._public_alert(alert)
 
     def all(self) -> list[dict[str, Any]]:
-        return [dict(a) for a in self._load().values()]
+        return [self._public_alert(alert) for alert in self._load().values()]
 
     def pending_unacknowledged(self) -> list[dict[str, Any]]:
         """Open alerts the operator has NOT acknowledged yet (need re-notify)."""
-        return [dict(a) for a in self._load().values() if not a.get("acknowledged")]
+        return [
+            self._public_alert(alert)
+            for alert in self._load().values()
+            if not alert.get("acknowledged") and not alert.get("delivery_quarantined", False)
+        ]

@@ -35,6 +35,16 @@ def test_preflight_blocks_daily_limit(tmp_path):
     assert reason == "daily_limit"
 
 
+def test_preflight_blocks_outside_group_active_hours(tmp_path, monkeypatch):
+    db = QueueDB(tmp_path / "jobs.db")
+    poster = FacebookPoster(settings(), db, [group()])
+    monkeypatch.setattr(poster, "_group_allowed_now", lambda _group: False)
+
+    reason = poster._preflight_target({"property_id": "p"}, {"group_id": "g1"}, group())
+
+    assert reason == "outside_active_hours"
+
+
 def test_preflight_blocks_duplicate_recent_property(tmp_path):
     db = QueueDB(tmp_path / "jobs.db")
     job_id = db.create_job({"property_id": "p"}, [{"group_id": "g1", "body": "body"}])
@@ -59,3 +69,15 @@ def test_has_more_targets_only_between_targets():
     assert FacebookPoster._has_more_targets(0, 2) is True
     assert FacebookPoster._has_more_targets(0, 1) is False
     assert FacebookPoster._has_more_targets(1, 2) is False
+
+
+def test_confirmed_evidence_failure_flows_through_shared_cadence_tail():
+    import inspect
+
+    source = inspect.getsource(FacebookPoster._post_job_real)
+    branch = source.split('if current and current["status"] == "posted":', 1)[1].split(
+        'if posted_in_browser >= self.settings.max_groups_per_browser:', 1
+    )[0]
+
+    assert "posted_in_browser += 1" in branch
+    assert "continue" not in branch

@@ -106,6 +106,14 @@ def test_posted_same_group_recently_counts_uncertain(tmp_path):
     assert db.posted_same_group_recently("g", 24) is True
 
 
+def test_posted_same_group_today_counts_uncertain(tmp_path):
+    db = QueueDB(tmp_path / "jobs.db")
+    job = db.create_job({"property_id": "p"}, [{"group_id": "g", "body": "x"}])
+    db.update_target_status(job, "g", "uncertain")
+
+    assert db.posted_same_group_today("g") is True
+
+
 def test_count_posts_today_counts_posted_and_uncertain(tmp_path):
     db = QueueDB(tmp_path / "jobs.db")
     posted_job = db.create_job({"property_id": "a"}, [{"group_id": "g1", "body": "x"}])
@@ -116,3 +124,11 @@ def test_count_posts_today_counts_posted_and_uncertain(tmp_path):
     db.update_target_status(failed_job, "g3", "failed")
 
     assert db.count_posts_today() == 2
+
+
+def test_uncertain_target_is_never_returned_for_automatic_resubmission(tmp_path):
+    db = QueueDB(tmp_path / "jobs.db")
+    job_id = db.create_job({"property_id": "p"}, [{"group_id": "g", "body": "body"}])
+    db.update_target_status(job_id, "g", "uncertain")
+
+    assert db.unposted_targets(job_id) == []

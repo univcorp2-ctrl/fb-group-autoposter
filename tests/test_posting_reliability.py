@@ -24,6 +24,10 @@ def test_split_body_keeps_short_prefix_and_rest():
     assert len(prefix) <= 20
 
 
+def test_human_typed_prefix_is_exactly_eighteen_characters():
+    assert HUMAN_TYPED_PREFIX_CHARS == 18
+
+
 def test_split_body_handles_body_shorter_than_prefix():
     body = "短い"
     prefix, rest = FacebookPoster._split_body_for_typing(body)

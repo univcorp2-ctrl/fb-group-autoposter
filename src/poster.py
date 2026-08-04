@@ -9,14 +9,19 @@ from typing import Any
 
 from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential_jitter
 
-from src.healer import heal_locate
+from src.browser_runtime import BrowserContract, build_launch_kwargs
+from src.circuits import CircuitManager, FailureKind
 from src.post_verify import cookie_user_id, find_my_post
 from src.queue_db import QueueDB
-from src.selectors import SELECTORS
+from src.selectors import SELECTORS, SelectorAmbiguous, SelectorMissing, exactly_one_visible, is_actionable
 from src.session import challenge_message, classify_challenge, is_logged_in, login_required_message
 from src.verifier import dry_run_screenshot_path, save_screenshot, verify_post_visible
 
 log = logging.getLogger(__name__)
+
+# Compatibility symbol for read-only observation integrations.  It is never
+# invoked by the posting action path: write boundaries use reviewed locators.
+heal_locate = None
 
 # Characters typed key-by-key (human feel) before the rest of the body is
 # inserted in one fast operation. Keep small: long char-by-char typing exceeds
@@ -39,6 +44,10 @@ class PostNotVerified(RuntimeError):
     posts) and NEVER counted as 投稿済."""
 
 
+class SubmissionAmbiguous(RuntimeError):
+    """The final click crossed the irreversible boundary but its result is unknown."""
+
+
 class CheckpointRequired(SessionExpired):
     """A login challenge (checkpoint / captcha / 2FA) that a profile restore can
     never fix — only a human re-login resolves it. Subclasses SessionExpired so
@@ -48,6 +57,10 @@ class CheckpointRequired(SessionExpired):
     def __init__(self, message: str, kind: str = "checkpoint"):
         super().__init__(message)
         self.kind = kind
+
+
+class ComposerSelectorFailure(RuntimeError):
+    """A reviewed composer selector was missing or had more than one target."""
 
 
 class FacebookPoster:
@@ -63,12 +76,50 @@ class FacebookPoster:
         self.db = db
         self.groups_by_id = {g["id"]: g for g in groups}
         self.notifier = notifier
+        self.circuits = CircuitManager(db)
         # Optional pre-post freshness gate. When set, every job is re-validated
         # against the LATEST EstateBoard export right before posting so a listing
         # that has since been deleted/unpublished is never posted. None keeps the
         # original behavior (used by tests and dry runs without a source).
         self.freshness_checker = freshness_checker
         self._user_id: str | None = None  # logged-in bot user id (for verification)
+
+    @property
+    def _runtime_environment(self) -> str:
+        return str(getattr(self.settings, "runtime_environment", "default"))
+
+    def _attempt_key(self, job: dict[str, Any], target: dict[str, Any]) -> str:
+        """Stable producer identity until the submission-attempt migration lands."""
+        return str(target.get("attempt_id") or f"{job['job_id']}:{target['group_id']}")
+
+    def _enqueue_delivery(
+        self,
+        job: dict[str, Any],
+        target: dict[str, Any] | None,
+        *,
+        event_type: str,
+        suffix: str,
+        text: str,
+        permalink: str | None = None,
+    ) -> None:
+        attempt_id = self._attempt_key(job, target) if target else None
+        if target and event_type not in {"challenge", "environment"}:
+            event_key = f"telegram:{attempt_id}:{suffix}"
+        else:
+            event_key = f"telegram:{job['job_id']}:environment:{suffix}"
+        payload: dict[str, Any] = {"text": text, "property_id": job["property_id"]}
+        if target:
+            payload["group_id"] = target["group_id"]
+        if permalink:
+            payload["permalink"] = permalink
+        self.db.enqueue_outbox_event(
+            event_key=event_key,
+            event_type=event_type,
+            origin_run_id=job["job_id"],
+            attempt_id=attempt_id,
+            subject_id=job["property_id"],
+            payload=payload,
+        )
 
     def _freshness_skip_reason(self, job: dict[str, Any]) -> str | None:
         """Return a skip reason when the property is no longer live on EstateBoard,
@@ -83,10 +134,13 @@ class FacebookPoster:
             return None
         if result.is_stale:
             return f"stale_property:{result.reason}"
-        if getattr(result, "source_missing", False) and self.notifier:
-            self.notifier.alert(
+        if getattr(result, "source_missing", False):
+            self._enqueue_delivery(
+                job, None, event_type="environment", suffix="source_missing",
+                text=(
                 f"⚠️ 物件の最新性を確認できませんでした（検証ソース未取得）: "
                 f"{job['property_id']}（{result.reason}）。投稿は継続します。"
+                ),
             )
         return None
 
@@ -96,11 +150,13 @@ class FacebookPoster:
         for target in self.db.unposted_targets(job["job_id"]):
             self.db.update_target_status(job["job_id"], target["group_id"], "skipped", error=reason)
         log.warning("skipping stale property %s: %s", job.get("property_id"), reason)
-        if self.notifier:
-            self.notifier.alert(
+        self._enqueue_delivery(
+            job, None, event_type="environment", suffix="stale_property",
+            text=(
                 f"⏭ 物件が最新でないため投稿をスキップしました: {job['property_id']}（{reason}）。"
                 "EstateBoardから掲載が消えている/削除済みの可能性があります。"
-            )
+            ),
+        )
         return self.db.finalize_job_from_targets(job["job_id"])
 
     def _group_allowed_now(self, group: dict[str, Any]) -> bool:
@@ -160,16 +216,39 @@ class FacebookPoster:
     async def _post_job_real(self, job: dict[str, Any]) -> str:
         from playwright.async_api import async_playwright
 
+        unbound = [
+            target for target in self.db.get_targets(job["job_id"])
+            if target["status"] in {"pending", "pending_approval", "approved", "failed"}
+            and not self._target_has_approval_binding(target)
+        ]
+        if unbound:
+            for target in unbound:
+                self.db.update_target_status(
+                    job["job_id"], target["group_id"], "pending_approval",
+                    error="manual_reapproval_required",
+                )
+            self.db.update_job_status(job["job_id"], "pending")
+            raise RuntimeError("manual_reapproval_required")
+
+        # This checks global/environment circuits before Playwright constructs a
+        # browser context.  A tripped runtime may never be bypassed by merely
+        # having a usable profile on disk.
+        blocking = self.circuits.blocking_circuit(environment=self._runtime_environment)
+        if blocking:
+            for target in self.db.unposted_targets(job["job_id"]):
+                self.db.update_target_status(
+                    job["job_id"], target["group_id"], "skipped",
+                    error=f"circuit_open:{blocking['reason']}",
+                )
+            return self.db.finalize_job_from_targets(job["job_id"])
+
         async with async_playwright() as p:
             if self.settings.browser_backend != "playwright":
                 raise NotImplementedError("BROWSER_BACKEND=adspower is reserved extension point")
-            browser_context = await p.chromium.launch_persistent_context(
-                user_data_dir=str(self.settings.profile_dir),
-                headless=False,
-                viewport={"width": 1366, "height": 900},
-                user_agent=self.settings.browser_user_agent,
-                timeout=self.settings.page_hard_timeout * 1000,
-            )
+            contract = BrowserContract.from_settings(self.settings)
+            launch_kwargs = build_launch_kwargs(contract)
+            launch_kwargs["timeout"] = self.settings.page_hard_timeout * 1000
+            browser_context = await p.chromium.launch_persistent_context(**launch_kwargs)
             page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
             # The bot's own user id (c_user cookie) lets us open
             # /groups/{gid}/user/{c_user} to verify each post actually published.
@@ -188,14 +267,43 @@ class FacebookPoster:
                     if reason:
                         self.db.update_target_status(job["job_id"], target["group_id"], "skipped", error=reason)
                         continue
+                    group_circuit = self.circuits.blocking_circuit(
+                        group_id=target["group_id"], environment=self._runtime_environment
+                    )
+                    if group_circuit:
+                        self.db.update_target_status(
+                            job["job_id"], target["group_id"], "skipped",
+                            error=f"circuit_open:{group_circuit['reason']}",
+                        )
+                        continue
                     try:
                         await self._post_one(page, job, target, group)
                         self.db.record_group_result(target["group_id"], success=True, threshold=self.settings.group_fail_threshold)
                         posted_in_browser += 1
-                    except SessionExpired:
-                        if self.notifier:
-                            self.notifier.alert(login_required_message())
+                    except SessionExpired as exc:
+                        reason = exc.kind if isinstance(exc, CheckpointRequired) else "login"
+                        failure = {
+                            "checkpoint": FailureKind.CHECKPOINT,
+                            "captcha": FailureKind.CAPTCHA,
+                            "two_factor": FailureKind.TWO_FACTOR,
+                        }.get(reason, FailureKind.SESSION_EXPIRED)
+                        self.circuits.record_failure(
+                            failure, group_id=target["group_id"], environment=self._runtime_environment
+                        )
+                        self._enqueue_delivery(
+                            job, target, event_type="challenge", suffix=reason,
+                            text=str(exc) or login_required_message(),
+                        )
                         raise
+                    except ComposerSelectorFailure as exc:
+                        self.circuits.record_failure(
+                            FailureKind.SELECTOR_FAILURE,
+                            group_id=target["group_id"], environment=self._runtime_environment,
+                            metadata={"reason": str(exc)[:160]},
+                        )
+                        self.db.update_target_status(
+                            job["job_id"], target["group_id"], "skipped", error=str(exc)
+                        )
                     except PostNotVerified:
                         # Submitted but not confirmed live. _post_one already
                         # recorded it 'uncertain' (NOT 投稿済) and alerted with the
@@ -205,36 +313,65 @@ class FacebookPoster:
                         # the scheduled verify sweep promotes posts once approved.
                         self.db.record_group_result(target["group_id"], success=False, threshold=self.settings.group_fail_threshold)
                     except PostingBlocked as exc:
-                        self.db.update_target_status(job["job_id"], target["group_id"], "failed", error=str(exc), increment_attempts=True)
-                        if self.notifier:
-                            self.notifier.alert(f"投稿制限検知。当日の残投稿を停止します: {exc}")
+                        self.circuits.record_failure(
+                            FailureKind.POSTING_BLOCK,
+                            group_id=target["group_id"], environment=self._runtime_environment,
+                        )
+                        text = f"投稿制限検知。当日の残投稿を停止します: {exc}"
+                        attempt_id = self._attempt_key(job, target)
+                        self.db.update_target_status_with_outbox(
+                            job["job_id"], target["group_id"], "failed", error=str(exc), increment_attempts=True,
+                            event_key=f"telegram:{attempt_id}:posting_blocked", event_type="posting_blocked",
+                            origin_run_id=job["job_id"], attempt_id=attempt_id, subject_id=job["property_id"],
+                            payload={"text": text, "property_id": job["property_id"], "group_id": target["group_id"]},
+                        )
                         break
                     except Exception as exc:
-                        screenshot = await save_screenshot(page, prefix="failed", job_id=job["job_id"], group_id=target["group_id"])
-                        sanitized_error = f"{type(exc).__name__}: {exc}"[:500]
-                        self.db.update_target_status(job["job_id"], target["group_id"], "failed", error=sanitized_error, screenshot=screenshot, increment_attempts=True)
-                        suggest_disable = self.db.record_group_result(target["group_id"], success=False, threshold=self.settings.group_fail_threshold)
-                        # Notify EVERY failure (not only at the threshold): the run
-                        # will auto-retry this group on its next scheduled/logon
-                        # trigger (the JST day-guard keeps that idempotent), so the
-                        # operator is told both that it failed and that recovery is
-                        # already in motion.
-                        group_name = group.get("name", target["group_id"])
-                        if self.notifier:
-                            self.notifier.alert(
+                        current = next(
+                            (item for item in self.db.get_targets(job["job_id"])
+                             if item["group_id"] == target["group_id"]),
+                            None,
+                        )
+                        if current and current["status"] == "posted":
+                            log.warning(
+                                "post confirmed before downstream evidence failure for %s: %s",
+                                target["group_id"], type(exc).__name__,
+                            )
+                            self.db.record_group_result(
+                                target["group_id"], success=True,
+                                threshold=self.settings.group_fail_threshold,
+                            )
+                            posted_in_browser += 1
+                        else:
+                            self.circuits.record_failure(
+                                FailureKind.OTHER_PRESUBMIT_RUNTIME,
+                                group_id=target["group_id"], environment=self._runtime_environment,
+                                metadata={"error_type": type(exc).__name__},
+                            )
+                            screenshot = await save_screenshot(page, prefix="failed", job_id=job["job_id"], group_id=target["group_id"])
+                            sanitized_error = f"{type(exc).__name__}: {exc}"[:500]
+                            group_name = group.get("name", target["group_id"])
+                            text = (
                                 f"投稿失敗（自動リトライします）: {group_name}\n"
                                 f"property={job['property_id']}\n{sanitized_error}"
                             )
-                        if suggest_disable and self.notifier:
-                            self.notifier.alert(f"連続失敗閾値到達。groups.yamlでenabled:false検討: {target['group_id']}")
+                            attempt_id = self._attempt_key(job, target)
+                            self.db.update_target_status_with_outbox(
+                                job["job_id"], target["group_id"], "failed", error=sanitized_error,
+                                screenshot=screenshot, increment_attempts=True,
+                                event_key=f"telegram:{attempt_id}:posting_failed", event_type="posting_failed",
+                                origin_run_id=job["job_id"], attempt_id=attempt_id, subject_id=job["property_id"],
+                                payload={"text": text, "property_id": job["property_id"], "group_id": target["group_id"]},
+                            )
+                            suggest_disable = self.db.record_group_result(target["group_id"], success=False, threshold=self.settings.group_fail_threshold)
+                            if suggest_disable:
+                                self._enqueue_delivery(
+                                    job, target, event_type="circuit_warning", suffix="failure_threshold",
+                                    text=f"連続失敗閾値到達。groups.yamlでenabled:false検討: {target['group_id']}",
+                                )
                     if posted_in_browser >= self.settings.max_groups_per_browser:
                         await browser_context.close()
-                        browser_context = await p.chromium.launch_persistent_context(
-                            user_data_dir=str(self.settings.profile_dir),
-                            headless=False,
-                            viewport={"width": 1366, "height": 900},
-                            timeout=self.settings.page_hard_timeout * 1000,
-                        )
+                        browser_context = await p.chromium.launch_persistent_context(**launch_kwargs)
                         page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
                         posted_in_browser = 0
                     if self._has_more_targets(index, len(targets)):
@@ -283,10 +420,32 @@ class FacebookPoster:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential_jitter(initial=1, max=8),
-        retry=retry_if_not_exception_type((SessionExpired, PostingBlocked, PostNotVerified)),
+        retry=retry_if_not_exception_type((
+            SessionExpired, PostingBlocked, PostNotVerified, ComposerSelectorFailure, SubmissionAmbiguous,
+        )),
         reraise=True,
     )
     async def _post_one(self, page: Any, job: dict[str, Any], target: dict[str, Any], group: dict[str, Any]) -> None:
+        attempt_id = self._begin_submission_if_bound(job, target)
+        try:
+            await self._post_one_attempt(page, job, target, group, attempt_id)
+        except BaseException as exc:
+            attempt = self.db.get_submission_attempt(attempt_id)
+            clicked = bool(attempt and attempt["click_started_at"] is not None)
+            confirmed = bool(attempt and attempt["state"] == "posted")
+            self._quarantine_or_abort_attempt(attempt_id)
+            if clicked and not confirmed and not isinstance(exc, (PostNotVerified, SubmissionAmbiguous)):
+                raise SubmissionAmbiguous("submission outcome unknown after final click") from exc
+            raise
+
+    async def _post_one_attempt(
+        self,
+        page: Any,
+        job: dict[str, Any],
+        target: dict[str, Any],
+        group: dict[str, Any],
+        attempt_id: str,
+    ) -> None:
         await page.goto(group["post_url"], wait_until="domcontentloaded", timeout=self.settings.page_hard_timeout * 1000)
         # Short randomized dwell so the first interaction after navigation does not
         # look robotically instant (a checkpoint trigger).
@@ -301,40 +460,61 @@ class FacebookPoster:
         await self._attach_images(page, group, target)
         await self._detect_blocking_markers(page)
         await self._verify_composer_contains(page, target["body"])
-        await self._click_first(page, "post_button", "投稿を確定するボタン", strict_after=True)
+        await self._click_first(
+            page,
+            "post_button",
+            "投稿を確定するボタン",
+            strict_after=True,
+            before_click=lambda: self.db.mark_click_started(attempt_id),
+        )
+        self.db.mark_submission_response(attempt_id)
         # Let the composer settle/close, then VERIFY for real: find this post's
         # direct permalink on the bot's in-group posts page. A closed composer is
         # NOT proof of publication (approval-gated groups close it but hold the
         # post) — only a found permalink is. This is the fix for false "posted".
         await verify_post_visible(page, target["body"])
+        self.db.mark_verification_started(attempt_id)
         permalink = None
         if self._user_id:
             permalink = await find_my_post(
                 page, target["group_id"], self._user_id, target["body"], post_url=group.get("post_url")
             )
         group_name = group.get("name", target["group_id"])
-        if permalink:
+        if permalink and self.db.is_valid_facebook_permalink(permalink):
+            self.db.resolve_submission(attempt_id, outcome="confirmed", permalink=permalink)
             await self._open_permalink(page, permalink)
             screenshot = await save_screenshot(page, prefix="posted", job_id=job["job_id"], group_id=target["group_id"])
-            self.db.update_target_status(job["job_id"], target["group_id"], "posted", screenshot=screenshot, permalink=permalink)
-            if self.notifier:
-                self.notifier.send_message(
-                    f"✅ 投稿を確認しました（{group_name}）\n物件: {job['property_id']}\n🔗 {permalink}"
-                )
+            text = f"✅ 投稿を確認しました（{group_name}）\n物件: {job['property_id']}\n🔗 {permalink}"
+            delivery_attempt_id = attempt_id
+            self.db.update_target_status_with_outbox(
+                job["job_id"], target["group_id"], "posted", screenshot=screenshot, permalink=permalink,
+                event_key=f"telegram:{delivery_attempt_id}:verified", event_type="verified_post",
+                origin_run_id=job["job_id"], attempt_id=delivery_attempt_id, subject_id=job["property_id"],
+                payload={
+                    "text": text,
+                    "property_id": job["property_id"],
+                    "group_id": target["group_id"],
+                    "community": group_name,
+                    "permalink": permalink,
+                },
+            )
             return
         # Submitted but not found live -> record 'uncertain' (blocks same-day
         # re-post to avoid duplicate pending submissions) but NOT counted as 投稿済.
         screenshot = await save_screenshot(page, prefix="uncertain", job_id=job["job_id"], group_id=target["group_id"])
-        self.db.update_target_status(
-            job["job_id"], target["group_id"], "uncertain",
-            error="post not found live on group after submit (approval-gated/blocked?)",
-            screenshot=screenshot,
-        )
-        if self.notifier:
-            self.notifier.alert(
+        text = (
                 f"⚠️ 投稿を確認できませんでした（{group_name}）。承認制グループ/制限の可能性があります。\n"
                 f"確認URL: {group['post_url']}\n物件: {job['property_id']}（投稿済みにはカウントしません）"
-            )
+        )
+        self._quarantine_or_abort_attempt(attempt_id)
+        delivery_attempt_id = attempt_id
+        self.db.update_target_status_with_outbox(
+            job["job_id"], target["group_id"], "uncertain",
+            error="post not found live on group after submit (approval-gated/blocked?)", screenshot=screenshot,
+            event_key=f"telegram:{delivery_attempt_id}:uncertain", event_type="uncertain_post",
+            origin_run_id=job["job_id"], attempt_id=delivery_attempt_id, subject_id=job["property_id"],
+            payload={"text": text, "property_id": job["property_id"], "group_id": target["group_id"]},
+        )
         raise PostNotVerified(f"post not verified live in group {target['group_id']}")
 
     async def _open_permalink(self, page: Any, permalink: str) -> None:
@@ -371,28 +551,63 @@ class FacebookPoster:
             except Exception:
                 continue
 
-    async def _click_first(self, page: Any, action: str, intent: str, *, strict_after: bool = False) -> None:
-        for selector in SELECTORS[action]:
-            try:
-                loc = page.locator(selector).first
-                if await loc.count() > 0:
-                    await loc.click(timeout=8000)
-                    return
-            except Exception:
-                continue
-        if await self._text_click_fallback(page, action):
-            if strict_after:
-                await page.wait_for_timeout(1000)
-            return
-        healed = await heal_locate(page, intent, self.settings)
-        if healed:
-            await page.mouse.click(healed.x, healed.y)
-            if strict_after:
-                await page.wait_for_timeout(1000)
-            return
-        raise RuntimeError(f"selector and vision heal failed for {action}: {intent}")
+    @staticmethod
+    def _target_has_approval_binding(target: dict[str, Any]) -> bool:
+        required = ("approval_id", "source_hash", "normalized_body_hash", "generation_fingerprint")
+        return all(target.get(key) for key in required)
 
-    # Text phrases used as a no-API fallback when CSS selectors miss (FB DOM drift).
+    def _begin_submission_if_bound(self, job: dict[str, Any], target: dict[str, Any]) -> str:
+        """Fail closed unless this exact target has an immutable approval binding."""
+        if target.get("status") not in {"approved", "failed"} or not self._target_has_approval_binding(target):
+            raise RuntimeError("manual_reapproval_required")
+        attempt = self.db.begin_submission(
+            job["job_id"], target["group_id"], approval_id=target["approval_id"],
+            source_hash=target["source_hash"], body_hash=target["normalized_body_hash"],
+            generation_fingerprint=target["generation_fingerprint"],
+        )
+        return str(attempt["attempt_id"])
+
+    def _quarantine_or_abort_attempt(self, attempt_id: str | None) -> None:
+        if not attempt_id:
+            return
+        attempt = self.db.get_submission_attempt(attempt_id)
+        if not attempt or attempt["state"] != "submitting":
+            return
+        if attempt["click_started_at"] is None:
+            self.db.abort_submission_preclick(attempt_id, reason="selector_or_runtime_before_click")
+            return
+        self.circuits.record_failure(
+            FailureKind.POST_SUBMIT_AMBIGUITY,
+            group_id=attempt["group_id"], attempt_id=attempt_id,
+            environment=self._runtime_environment,
+        )
+
+    async def _click_first(
+        self,
+        page: Any,
+        action: str,
+        intent: str,
+        *,
+        strict_after: bool = False,
+        before_click: Any | None = None,
+    ) -> None:
+        try:
+            loc = await exactly_one_visible(page, action)
+        except (SelectorMissing, SelectorAmbiguous) as exc:
+            raise ComposerSelectorFailure(f"{exc}: {intent}") from exc
+        if action == "post_button" and not await is_actionable(loc):
+            raise RuntimeError("final_control_not_actionable")
+        if before_click:
+            result = before_click()
+            if hasattr(result, "__await__"):
+                await result
+        await loc.click(timeout=8000)
+        if strict_after:
+            await page.wait_for_timeout(1000)
+
+    # Retained only as read-only documentation of reviewed current language
+    # variants.  Posting actions use exactly_one_visible() above; broad text
+    # fallback and coordinate healing are deliberately not executable.
     _TEXT_FALLBACKS = {
         "open_composer": ["テキストを入力", "投稿を作成", "ディスカッションを書く", "その気持ち", "近況", "Write something", "Create post"],
         "post_button": ["投稿", "Post"],
@@ -410,24 +625,12 @@ class FacebookPoster:
         return False
 
     async def _wait_first(self, page: Any, action: str, intent: str) -> Any:
-        for selector in SELECTORS[action]:
-            try:
-                loc = page.locator(selector).first
-                await loc.wait_for(state="visible", timeout=8000)
-                return loc
-            except Exception:
-                continue
-        healed = await heal_locate(page, intent, self.settings)
-        if healed:
-            await page.mouse.click(healed.x, healed.y)
-            for selector in SELECTORS[action]:
-                try:
-                    loc = page.locator(selector).first
-                    await loc.wait_for(state="visible", timeout=4000)
-                    return loc
-                except Exception:
-                    continue
-        raise RuntimeError(f"unable to locate {intent}")
+        try:
+            loc = await exactly_one_visible(page, action)
+            await loc.wait_for(state="visible", timeout=8000)
+            return loc
+        except (SelectorMissing, SelectorAmbiguous) as exc:
+            raise ComposerSelectorFailure(f"{exc}: {intent}") from exc
 
     async def _attach_images(self, page: Any, group: dict[str, Any], target: dict[str, Any]) -> None:
         images = target.get("images") or []

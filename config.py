@@ -37,6 +37,7 @@ class Settings:
     claude_vision_model: str
     telegram_bot_token: str
     telegram_chat_id: str
+    telegram_authorized_user_id: str
     notion_token: str
     notion_database_id: str
     dry_run: bool
@@ -75,6 +76,7 @@ class Settings:
             claude_vision_model=os.getenv("CLAUDE_VISION_MODEL", "claude-sonnet-4-6"),
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
+            telegram_authorized_user_id=os.getenv("TELEGRAM_AUTHORIZED_USER_ID", ""),
             notion_token=os.getenv("NOTION_TOKEN", ""),
             notion_database_id=os.getenv("NOTION_DATABASE_ID", ""),
             dry_run=_bool("DRY_RUN", True),
