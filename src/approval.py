@@ -9,42 +9,57 @@ import requests
 
 from src.alerts import AlertStore
 from src.queue_db import QueueDB
+from src.secret_redaction import redact
+from src.telegram_transport import TelegramTransport
 
 log = logging.getLogger(__name__)
 
 
+class DeliveryAmbiguousError(requests.RequestException):
+    """Telegram may have accepted the request; automatic resend is unsafe."""
+
+
 class TelegramApproval:
-    def __init__(self, settings: Any, db: QueueDB, alert_store: AlertStore | None = None):
+    def __init__(
+        self,
+        settings: Any,
+        db: QueueDB,
+        alert_store: AlertStore | None = None,
+        transport: TelegramTransport | None = None,
+    ):
         self.settings = settings
         self.db = db
         self.alert_store = alert_store or AlertStore()
-        self.base_url = f"https://api.telegram.org/bot{settings.telegram_bot_token}" if settings.telegram_bot_token else ""
+        self.transport = transport or TelegramTransport(settings.telegram_bot_token, settings.telegram_chat_id)
         self.offset_path = Path("data/telegram_offset.txt")
         self.offset_path.parent.mkdir(parents=True, exist_ok=True)
 
     @property
     def enabled(self) -> bool:
-        return bool(self.settings.telegram_bot_token and self.settings.telegram_chat_id)
+        return self.transport.enabled
 
     def _post(self, method: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         if not self.enabled:
             log.info("telegram disabled: %s", method)
             return None
-        try:
-            resp = requests.post(f"{self.base_url}/{method}", json=payload, timeout=20)
-            resp.raise_for_status()
-        except requests.HTTPError as exc:
-            raise requests.HTTPError(
-                f"Telegram API error on {method}: {exc.response.status_code}"
-            ) from None
-        return resp.json()
+        if method != "sendMessage":
+            raise ValueError("unsupported Telegram operation")
+        result = self.transport.send_message(
+            str(payload.get("text", "")), reply_markup=payload.get("reply_markup")
+        )
+        if not result.get("ok"):
+            if result.get("code") == "delivery_ambiguous":
+                raise DeliveryAmbiguousError("Telegram send outcome is delivery_ambiguous")
+            raise requests.RequestException(f"Telegram {method} failed: {result.get('code', 'unknown')}")
+        return {"ok": True, "result": {"message_id": result.get("message_id")}}
 
     def _sanitize_error(self, exc: BaseException) -> str:
-        text = str(exc)
-        token = self.settings.telegram_bot_token
-        if token:
-            text = text.replace(token, "<telegram-token>")
-        return text[:500]
+        return str(
+            redact(
+                exc,
+                secrets=(self.settings.telegram_bot_token, self.settings.telegram_chat_id),
+            )
+        )[:500]
 
     def send_message(self, text: str, *, reply_markup: dict[str, Any] | None = None) -> None:
         payload: dict[str, Any] = {"chat_id": self.settings.telegram_chat_id, "text": text[:4096]}
@@ -101,24 +116,22 @@ class TelegramApproval:
 
     def _is_authorized_sender(self, callback: dict[str, Any]) -> bool:
         sender_id = str(callback.get("from", {}).get("id", ""))
-        msg_chat_id = str((callback.get("message") or {}).get("chat", {}).get("id", ""))
-        expected = str(self.settings.telegram_chat_id)
-        return sender_id == expected or msg_chat_id == expected
+        authorized_user_id = str(getattr(self.settings, "telegram_authorized_user_id", "")).strip()
+        if authorized_user_id:
+            return sender_id == authorized_user_id
+        configured_chat_id = str(self.settings.telegram_chat_id).strip()
+        is_private_user_chat = configured_chat_id.isdigit() and int(configured_chat_id) > 0
+        return is_private_user_chat and sender_id in {configured_chat_id, "<telegram-chat-id>"}
 
     def poll_once(self) -> int:
         if not self.enabled:
             return 0
-        params: dict[str, Any] = {"timeout": 0}
         offset = self._read_offset()
-        if offset is not None:
-            params["offset"] = offset
-        try:
-            resp = requests.get(f"{self.base_url}/getUpdates", params=params, timeout=20)
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            log.warning("telegram poll failed: %s", self._sanitize_error(exc))
+        result = self.transport.get_updates(offset=offset)
+        if not result.get("ok"):
+            log.warning("telegram poll failed: code=%s", result.get("code", "unknown"))
             return 0
-        updates = resp.json().get("result", [])
+        updates = result.get("result", [])
         handled = 0
         for update in updates:
             self._write_offset(update["update_id"] + 1)
@@ -182,8 +195,11 @@ class TelegramApproval:
                 reply_markup=buttons,
             )
             self.alert_store.mark_notified(kind)
+        except DeliveryAmbiguousError:
+            self.alert_store.quarantine_delivery(kind)
+            log.warning("persistent alert delivery quarantined (%s): code=delivery_ambiguous", kind)
         except Exception as exc:  # noqa: BLE001 - never let notification crash the caller
-            log.warning("persistent alert send failed (%s): %s", kind, exc)
+            log.warning("persistent alert send failed (%s): %s", kind, self._sanitize_error(exc))
 
     def clear_persistent_alert(self, kind: str, *, notify_recovery: bool = True) -> None:
         """Clear an open alert (condition resolved) and optionally announce it."""
@@ -191,7 +207,7 @@ class TelegramApproval:
             try:
                 self.send_message(f"✅ 復旧を確認しました（{kind}）。再通知を停止します。")
             except Exception as exc:  # noqa: BLE001
-                log.warning("recovery notice send failed (%s): %s", kind, exc)
+                log.warning("recovery notice send failed (%s): %s", kind, self._sanitize_error(exc))
 
     def renotify_pending(self) -> int:
         """Re-send every unacknowledged open alert. Returns how many were sent."""

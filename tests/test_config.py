@@ -62,3 +62,11 @@ def test_settings_validate_runtime_auto_approve_skips_telegram(monkeypatch, tmp_
     settings = Settings.load(env_file=tmp_path / ".env")
     # AUTO_APPROVE + degraded fallback => no external secrets required.
     settings.validate_runtime(require_external=True)
+
+
+def test_settings_loads_explicit_telegram_authorized_user_id(monkeypatch, tmp_path):
+    monkeypatch.setenv("TELEGRAM_AUTHORIZED_USER_ID", "777")
+
+    settings = Settings.load(env_file=tmp_path / ".env")
+
+    assert settings.telegram_authorized_user_id == "777"

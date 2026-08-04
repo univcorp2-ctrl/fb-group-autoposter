@@ -14,6 +14,7 @@ def _settings(chat_id="12345"):
     return SimpleNamespace(
         telegram_bot_token="fake-token",
         telegram_chat_id=chat_id,
+        telegram_authorized_user_id="",
         auto_approve=False,
         auto_approve_skip_degraded=True,
     )
@@ -63,31 +64,77 @@ def test_renotify_resends_until_acknowledged(tmp_path):
     assert sent == []
 
 
+def test_delivery_ambiguous_quarantines_alert_and_prevents_future_renotify(tmp_path):
+    class Transport:
+        enabled = True
+
+        def __init__(self):
+            self.calls = 0
+
+        def send_message(self, *args, **kwargs):
+            self.calls += 1
+            return {"ok": False, "code": "delivery_ambiguous"}
+
+    db = QueueDB(tmp_path / "jobs.db")
+    store = AlertStore(tmp_path / "alerts.json")
+    transport = Transport()
+    approval = TelegramApproval(_settings(), db, alert_store=store, transport=transport)
+
+    approval.raise_persistent_alert("session_dead", "msg")
+
+    assert store.get("session_dead")["delivery_quarantined"] is True
+    assert approval.renotify_pending() == 0
+    assert transport.calls == 1
+    assert AlertStore(store.path).pending_unacknowledged() == []
+
+
+def test_pre_submit_failure_remains_eligible_for_renotify(tmp_path):
+    class Transport:
+        enabled = True
+
+        def __init__(self):
+            self.calls = 0
+
+        def send_message(self, *args, **kwargs):
+            self.calls += 1
+            return {"ok": False, "code": "retryable_pre_submit"}
+
+    db = QueueDB(tmp_path / "jobs.db")
+    store = AlertStore(tmp_path / "alerts.json")
+    transport = Transport()
+    approval = TelegramApproval(_settings(), db, alert_store=store, transport=transport)
+
+    approval.raise_persistent_alert("session_dead", "msg")
+
+    assert store.get("session_dead").get("delivery_quarantined") is False
+    assert approval.renotify_pending() == 1
+    assert transport.calls == 2
+
+
 def test_poll_ack_callback_acknowledges_alert(tmp_path, monkeypatch):
     sent: list = []
     approval, store = _approval(tmp_path, sent)
     approval.raise_persistent_alert("checkpoint", "checkpoint!")
 
-    # Stub Telegram getUpdates to return an authorized ✅ tap on the alert.
-    class _Resp:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {
-                "result": [
-                    {
-                        "update_id": 1,
-                        "callback_query": {
-                            "from": {"id": 12345},
-                            "message": {"chat": {"id": 12345}},
-                            "data": "ack:checkpoint",
-                        },
-                    }
-                ]
-            }
-
-    monkeypatch.setattr("src.approval.requests.get", lambda *a, **k: _Resp())
+    # Fake the external transport result; approval still performs real callback handling.
+    monkeypatch.setattr(
+        approval.transport,
+        "get_updates",
+        lambda *, offset=None: {
+            "ok": True,
+            "code": "ok",
+            "result": [
+                {
+                    "update_id": 1,
+                    "callback_query": {
+                        "from": {"id": 12345},
+                        "message": {"chat": {"id": 12345}},
+                        "data": "ack:checkpoint",
+                    },
+                }
+            ],
+        },
+    )
 
     handled = approval.poll_once()
 
