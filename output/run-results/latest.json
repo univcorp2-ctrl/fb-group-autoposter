@@ -1,0 +1,12 @@
+{
+  "command": "reconcile-delivery",
+  "exit_code": null,
+  "finished_at": null,
+  "outcome": "running",
+  "reason": "started",
+  "result_at": "2026-08-04T10:23:00.462223+00:00",
+  "run_id": "live-post-20260804-1",
+  "schema": "fb-autoposter-run/v1",
+  "started_at": "2026-08-04T10:23:00.462223+00:00",
+  "terminal": false
+}
