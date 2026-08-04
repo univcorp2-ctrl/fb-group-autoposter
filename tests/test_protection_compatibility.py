@@ -167,7 +167,8 @@ def test_posting_block_records_failure_without_screenshot_evidence():
         "except Exception as exc:", 1
     )[0]
 
-    assert 'update_target_status(job["job_id"], target["group_id"], "failed"' in blocked_branch
+    assert 'update_target_status_with_outbox(' in blocked_branch
+    assert '"failed"' in blocked_branch
     assert "save_screenshot" not in blocked_branch
 
 

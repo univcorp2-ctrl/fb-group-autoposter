@@ -109,8 +109,10 @@ def main() -> int:
         kind = result.get("challenge")
         msg = challenge_message(kind) if kind else login_required_message()
         log.error("session NOT healthy (challenge=%s): %s", kind, result["detail"])
-        if notifier.enabled:
-            notifier.alert(f"Facebookセッション要再ログイン: {msg}")
+        # Persist the human-required obligation independently of delivery.  The
+        # outbox worker is responsible for transport; keepalive never sends.
+        alert_kind = str(kind or "session_dead")
+        notifier.raise_persistent_alert(alert_kind, f"Facebookセッション要再ログイン: {msg}")
     return 0
 
 

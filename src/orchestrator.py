@@ -8,6 +8,7 @@ import os
 import random
 import sys
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -23,6 +24,17 @@ from src.poster import FacebookPoster
 from src.queue_db import QueueDB
 
 log = logging.getLogger(__name__)
+
+
+def _enqueue_pipeline_summary(db: QueueDB, summary: dict[str, Any], *, flow: str, run_id: str) -> None:
+    """Record the summary for downstream delivery; this producer never sends it."""
+    db.enqueue_outbox_event(
+        event_key=f"telegram:{run_id}:summary",
+        event_type="pipeline_summary",
+        origin_run_id=run_id,
+        subject_id=flow,
+        payload={"text": f"📊 pipeline summary\n{json.dumps(summary, ensure_ascii=False, indent=2)}"},
+    )
 
 
 def _pid_is_running(pid: int) -> bool:
@@ -110,11 +122,12 @@ def sample_property() -> dict[str, object]:
     }
 
 
-async def run_cycle(settings: Settings, *, selftest: bool = False) -> dict[str, object]:
+async def run_cycle(settings: Settings, *, selftest: bool = False, run_id: str | None = None) -> dict[str, object]:
     setup_logging()
     settings.validate_runtime(require_external=not selftest and not settings.dry_run)
     groups = load_groups()
     db = QueueDB(settings.db_path)
+    run_id = str(run_id or getattr(settings, "run_id", "") or uuid.uuid4())
     notifier = TelegramApproval(settings, db)
     summary: dict[str, object] = {"created": 0, "approved_processed": 0, "statuses": []}
     with pipeline_lock():
@@ -139,8 +152,8 @@ async def run_cycle(settings: Settings, *, selftest: bool = False) -> dict[str, 
             summary["approved_processed"] = int(summary["approved_processed"]) + 1
             summary["statuses"].append({"job_id": job["job_id"], "status": status})
         db.mark_heartbeat("orchestrator")
-    if notifier.enabled and getattr(settings, "telegram_notify_pipeline_summary", False):
-        notifier.send_message(f"📊 pipeline summary\n{json.dumps(summary, ensure_ascii=False, indent=2)}")
+    if getattr(settings, "telegram_notify_pipeline_summary", False):
+        _enqueue_pipeline_summary(db, summary, flow="run_cycle", run_id=run_id)
     return summary
 
 
@@ -149,6 +162,7 @@ async def run_cycle_grouped(
     *,
     source: str | Path,
     sleeper: Any = asyncio.sleep,
+    run_id: str | None = None,
 ) -> dict[str, object]:
     """Daily flow where EACH group picks its OWN next property by its OWN order.
 
@@ -167,6 +181,7 @@ async def run_cycle_grouped(
     settings.validate_runtime(require_external=not settings.dry_run)
     groups = load_groups()
     db = QueueDB(settings.db_path)
+    run_id = str(run_id or getattr(settings, "run_id", "") or uuid.uuid4())
     notifier = TelegramApproval(settings, db)
     summary: dict[str, Any] = {"created": 0, "approved_processed": 0, "skipped_groups": 0, "statuses": []}
 
@@ -221,8 +236,8 @@ async def run_cycle_grouped(
                 await sleeper(random.randint(settings.min_interval_min * 60, settings.max_interval_min * 60))
         db.mark_heartbeat("orchestrator")
 
-    if notifier.enabled and getattr(settings, "telegram_notify_pipeline_summary", False):
-        notifier.send_message(f"📊 pipeline summary\n{json.dumps(summary, ensure_ascii=False, indent=2)}")
+    if getattr(settings, "telegram_notify_pipeline_summary", False):
+        _enqueue_pipeline_summary(db, summary, flow="run_cycle_grouped", run_id=run_id)
     return summary
 
 
@@ -235,9 +250,14 @@ def run_approval_poll(settings: Settings) -> int:
 def healthcheck(settings: Settings) -> int:
     db = QueueDB(settings.db_path)
     age = db.heartbeat_age_minutes("orchestrator")
-    approval = TelegramApproval(settings, db)
     if age is None or age > settings.heartbeat_timeout_min:
-        approval.alert(f"ハートビート停滞: age_min={age}")
+        db.enqueue_outbox_event(
+            event_key="telegram:healthcheck:environment:heartbeat_stalled",
+            event_type="environment",
+            origin_run_id="healthcheck",
+            subject_id="orchestrator",
+            payload={"text": f"🔴 ハートビート停滞: age_min={age}"},
+        )
         return 1
     return 0
 

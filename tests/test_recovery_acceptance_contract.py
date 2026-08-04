@@ -278,10 +278,6 @@ def test_submission_attempt_record_accepts_a_captured_https_facebook_permalink(t
     assert "await self._open_permalink(page, permalink)" in post_source
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="The legacy poster currently records any truthy verifier URL as posted; recovery must quarantine invalid URLs.",
-)
 @pytest.mark.parametrize("permalink", ("http://www.facebook.com/groups/group-1/posts/1", "https://example.invalid/post"))
 def test_poster_runtime_invalid_permalink_never_records_posted(tmp_path, monkeypatch, permalink):
     import src.poster as poster_module
@@ -419,10 +415,6 @@ def test_telegram_and_estateboard_failures_preserve_attempt_truth_and_retry_budg
     assert QueueDB(settings.db_path).get_targets("job-1")[0]["status"] == "posted"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Verified-post notifier failure currently escapes after recording posted instead of preserving truth and queuing delivery.",
-)
 def test_verified_post_notification_failure_preserves_posted_truth_and_queues_delivery(
     tmp_path, monkeypatch
 ):
@@ -453,14 +445,10 @@ def test_verified_post_notification_failure_preserves_posted_truth_and_queues_de
 
     after = db.get_targets(job_id)[0]
     assert (after["status"], after["attempts"]) == ("posted", 0)
-    assert notifier.attempts == 1
+    assert notifier.attempts == 0
     _assert_pending_delivery(db, event="verified_post")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Preview notifier failure currently escapes the approval producer instead of leaving it pending with delivery queued.",
-)
 def test_preview_notification_failure_preserves_approval_truth_and_queues_delivery(tmp_path, monkeypatch):
     from src.approval import TelegramApproval
 
@@ -485,14 +473,10 @@ def test_preview_notification_failure_preserves_approval_truth_and_queues_delive
 
     target = db.get_targets(job_id)[0]
     assert (target["status"], target["attempts"]) == ("pending_approval", 0)
-    assert attempts["preview"] == 1
+    assert attempts["preview"] == 0
     _assert_pending_delivery(db, event="approval_preview")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Challenge notifier failure currently replaces the required SessionExpired stop instead of queuing delivery.",
-)
 def test_challenge_notification_failure_preserves_challenge_stop_and_queues_delivery(
     tmp_path, monkeypatch
 ):
@@ -557,14 +541,10 @@ def test_challenge_notification_failure_preserves_challenge_stop_and_queues_deli
 
     target = db.get_targets(job_id)[0]
     assert (target["status"], target["attempts"]) == ("pending", 0)
-    assert calls == {"post": 1, "alert": 1}
+    assert calls == {"post": 1, "alert": 0}
     _assert_pending_delivery(db, event="challenge")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Summary notifier failure currently escapes the producer instead of preserving targets and queuing delivery.",
-)
 def test_summary_notification_failure_preserves_existing_targets_and_queues_delivery(
     tmp_path, monkeypatch
 ):
@@ -606,7 +586,7 @@ def test_summary_notification_failure_preserves_existing_targets_and_queues_deli
     after = db.get_targets(job_id)[0]
     assert summary["created"] == 0
     assert (after["status"], after["attempts"]) == (before["status"], before["attempts"])
-    assert sends["summary"] == 1
+    assert sends["summary"] == 0
     _assert_pending_delivery(db, event="pipeline_summary")
 
 

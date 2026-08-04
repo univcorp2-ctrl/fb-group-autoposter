@@ -115,8 +115,6 @@ def _send_completion_report(settings: Settings, db: QueueDB, groups: list[dict])
     genuinely verified, and always ships the link to double-check."""
     from datetime import datetime, timedelta, timezone
 
-    from src.approval import TelegramApproval
-
     jst = timezone(timedelta(hours=9))
     start = datetime.now(jst).replace(hour=0, minute=0, second=0, microsecond=0)
     start_utc = start.astimezone(timezone.utc).isoformat()
@@ -152,11 +150,16 @@ def _send_completion_report(settings: Settings, db: QueueDB, groups: list[dict])
             lines.append(f"　確認: {urls.get(r['group_id'], '')}")
 
     try:
-        notifier = TelegramApproval(settings, db)
-        if getattr(notifier, "enabled", False):
-            notifier.send_message("\n".join(lines))
-    except Exception as exc:  # noqa: BLE001 - report is best-effort
-        log.warning("completion report skipped: %s: %s", type(exc).__name__, exc)
+        report_day = start.strftime("%Y-%m-%d")
+        db.enqueue_outbox_event(
+            event_key=f"telegram:daily:{report_day}:completion_report",
+            event_type="completion_report",
+            origin_run_id=f"daily:{report_day}",
+            subject_id=report_day,
+            payload={"text": "\n".join(lines)},
+        )
+    except Exception as exc:  # noqa: BLE001 - reporting must never block posting
+        log.warning("completion report enqueue skipped: %s: %s", type(exc).__name__, exc)
 
 
 def _load_items(source: Path) -> list[dict]:

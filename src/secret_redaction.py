@@ -9,10 +9,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 _BOT_URL_TOKEN = re.compile(r"(https?://api\.telegram\.org/bot)([^/\s?#]+)", re.IGNORECASE)
+_BOT_TOKEN_SHAPE = re.compile(r"\b\d{5,}:[A-Za-z0-9_-]{20,}\b")
 
 
 def _redact_text(value: str, secrets: Sequence[str]) -> str:
     safe = _BOT_URL_TOKEN.sub(r"\1<telegram-token>", value)
+    safe = _BOT_TOKEN_SHAPE.sub("<telegram-token>", safe)
     for secret in sorted((item for item in secrets if item), key=len, reverse=True):
         replacement = "<telegram-chat-id>" if re.fullmatch(r"-?\d{5,}", secret) else "<secret>"
         if ":" in secret:

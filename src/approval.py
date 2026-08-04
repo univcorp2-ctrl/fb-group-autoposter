@@ -67,10 +67,11 @@ class TelegramApproval:
             payload["reply_markup"] = reply_markup
         self._post("sendMessage", payload)
 
-    def send_preview(self, job_id: str) -> None:
+    def preview_payload(self, job_id: str) -> dict[str, Any] | None:
+        """Compose the approval preview without contacting Telegram."""
         job = self.db.get_job(job_id)
         if not job:
-            return
+            return None
         payload = json.loads(job["payload_json"])
         targets = self.db.get_targets(job_id)
         degraded = "⚠️簡易生成" if job.get("degraded") else ""
@@ -92,7 +93,25 @@ class TelegramApproval:
                 [{"text": "👁️全文", "callback_data": f"full:{job_id}"}],
             ]
         }
-        self.send_message(text, reply_markup=buttons)
+        return {"text": text, "reply_markup": buttons}
+
+    def enqueue_preview(self, job_id: str) -> None:
+        payload = self.preview_payload(job_id)
+        if payload is None:
+            return
+        self.db.enqueue_outbox_event(
+            event_key=f"telegram:job:{job_id}:preview",
+            event_type="approval_preview",
+            origin_run_id=job_id,
+            subject_id=job_id,
+            payload=payload,
+        )
+
+    def send_preview(self, job_id: str) -> None:
+        """Legacy direct transport for an explicit operator action only."""
+        payload = self.preview_payload(job_id)
+        if payload:
+            self.send_message(payload["text"], reply_markup=payload["reply_markup"])
 
     def auto_or_send_preview(self, job_id: str) -> None:
         job = self.db.get_job(job_id)
@@ -100,10 +119,22 @@ class TelegramApproval:
         if self.settings.auto_approve and not (degraded and self.settings.auto_approve_skip_degraded):
             self.db.approve_job(job_id)
             if getattr(self.settings, "telegram_notify_auto_approval", False):
-                self.send_preview(job_id)
-                self.send_message(f"✅ AUTO_APPROVEにより承認済み: {job_id}")
+                self.enqueue_preview(job_id)
+                self.db.enqueue_outbox_event(
+                    event_key=f"telegram:job:{job_id}:auto_approved",
+                    event_type="auto_approval",
+                    origin_run_id=job_id,
+                    subject_id=job_id,
+                    payload={"text": f"✅ AUTO_APPROVEにより承認済み: {job_id}"},
+                )
         else:
-            self.send_preview(job_id)
+            # Jobs created by older callers used ``pending`` rather than the
+            # explicit approval state.  Normalize before enqueuing the review
+            # request, without changing its body or approval binding.
+            for target in self.db.get_targets(job_id):
+                if target["status"] == "pending":
+                    self.db.update_target_status(job_id, target["group_id"], "pending_approval")
+            self.enqueue_preview(job_id)
 
     def _read_offset(self) -> int | None:
         if not self.offset_path.exists():
@@ -181,33 +212,56 @@ class TelegramApproval:
         self.send_persistent_alert(kind, message)
 
     def send_persistent_alert(self, kind: str, message: str) -> None:
-        """(Re)send a persistent alert with an inline ✅ acknowledge button."""
+        """Queue a persistent alert with an inline ✅ acknowledge button."""
+        if any(
+            event["event_type"] == "persistent_alert"
+            and event["subject_id"] == kind
+            and event["state"] == "delivery_ambiguous"
+            for event in self.db.list_outbox_events()
+        ):
+            # A timeout after submission may already have alerted the operator.
+            # Do not generate a successor obligation until an operator resolves it.
+            self.alert_store.quarantine_delivery(kind)
+            return
         buttons = {
             "inline_keyboard": [
                 [{"text": "✅ 確認した（対応します）", "callback_data": f"ack:{kind}"}]
             ]
         }
         try:
-            self.send_message(
-                f"🔴🔁 {message}\n\n"
-                "※ 復旧（再ログイン）まで通知し続けます。\n"
-                f"　止めるには ✅ ボタン、または PCで `python scripts/ack_alert.py {kind}` を実行してください。",
-                reply_markup=buttons,
+            alert = self.alert_store.get(kind) or {}
+            sequence = int(alert.get("notify_count", 0)) + 1
+            self.db.enqueue_outbox_event(
+                event_key=f"telegram:alert:{kind}:persistent:{sequence}",
+                event_type="persistent_alert",
+                origin_run_id=f"alert:{kind}",
+                subject_id=kind,
+                payload={
+                    "text": (
+                        f"🔴🔁 {message}\n\n"
+                        "※ 復旧（再ログイン）まで通知し続けます。\n"
+                        f"　止めるには ✅ ボタン、または PCで `python scripts/ack_alert.py {kind}` を実行してください。"
+                    ),
+                    "reply_markup": buttons,
+                },
             )
             self.alert_store.mark_notified(kind)
-        except DeliveryAmbiguousError:
-            self.alert_store.quarantine_delivery(kind)
-            log.warning("persistent alert delivery quarantined (%s): code=delivery_ambiguous", kind)
         except Exception as exc:  # noqa: BLE001 - never let notification crash the caller
-            log.warning("persistent alert send failed (%s): %s", kind, self._sanitize_error(exc))
+            log.warning("persistent alert enqueue failed (%s): %s", kind, self._sanitize_error(exc))
 
     def clear_persistent_alert(self, kind: str, *, notify_recovery: bool = True) -> None:
         """Clear an open alert (condition resolved) and optionally announce it."""
         if self.alert_store.clear(kind) and notify_recovery:
             try:
-                self.send_message(f"✅ 復旧を確認しました（{kind}）。再通知を停止します。")
+                self.db.enqueue_outbox_event(
+                    event_key=f"telegram:alert:{kind}:recovered",
+                    event_type="alert_recovery",
+                    origin_run_id=f"alert:{kind}",
+                    subject_id=kind,
+                    payload={"text": f"✅ 復旧を確認しました（{kind}）。再通知を停止します。"},
+                )
             except Exception as exc:  # noqa: BLE001
-                log.warning("recovery notice send failed (%s): %s", kind, self._sanitize_error(exc))
+                log.warning("recovery notice enqueue failed (%s): %s", kind, self._sanitize_error(exc))
 
     def renotify_pending(self) -> int:
         """Re-send every unacknowledged open alert. Returns how many were sent."""

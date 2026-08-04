@@ -18,12 +18,25 @@ from src.run_result import (
     validate_run_id,
     validate_timestamp,
 )
+from src.secret_redaction import redact
 
 JOB_STATUSES = {"pending", "approved", "rejected", "posting", "done", "partial_failed", "failed"}
 TARGET_STATUSES = {
     "pending", "pending_approval", "approved", "submitting", "posted",
     "failed", "skipped", "uncertain",
 }
+OUTBOX_STATES = {"pending", "leased", "delivered", "failed", "delivery_ambiguous"}
+_OUTBOX_PAYLOAD_FIELDS = {
+    "approval_preview": frozenset({"text", "reply_markup"}),
+    "persistent_alert": frozenset({"text", "reply_markup"}),
+    "verified_post": frozenset({"text", "property_id", "group_id", "community", "permalink"}),
+    "verified_promotion": frozenset({"text", "property_id", "group_id", "permalink"}),
+    "uncertain_post": frozenset({"text", "property_id", "group_id"}),
+}
+_TEXT_ONLY_OUTBOX_EVENTS = frozenset({"pipeline_summary", "auto_approval", "alert_recovery", "completion_report"})
+_TARGET_TEXT_OUTBOX_EVENTS = frozenset(
+    {"challenge", "environment", "posting_blocked", "posting_failed", "circuit_warning"}
+)
 AUTO_APPROVAL_GATE_KEYS = frozenset(
     {
         "source_present",
@@ -86,10 +99,11 @@ class QueueDB:
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, timeout=5)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA busy_timeout = 5000")
             yield conn
             conn.commit()
         except Exception:
@@ -99,8 +113,9 @@ class QueueDB:
             conn.close()
 
     def init_db(self) -> None:
-        with sqlite3.connect(self.path) as conn:
+        with sqlite3.connect(self.path, timeout=5) as conn:
             conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout = 5000")
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS jobs (
@@ -209,6 +224,34 @@ class QueueDB:
                   FOREIGN KEY(job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
                   FOREIGN KEY(approval_id) REFERENCES approvals(approval_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS delivery_outbox (
+                  event_id TEXT PRIMARY KEY,
+                  event_key TEXT NOT NULL UNIQUE,
+                  destination TEXT NOT NULL,
+                  event_type TEXT NOT NULL,
+                  origin_run_id TEXT,
+                  attempt_id TEXT,
+                  subject_id TEXT,
+                  payload_json TEXT NOT NULL,
+                  state TEXT NOT NULL,
+                  lease_owner TEXT,
+                  lease_expires_at TEXT,
+                  attempt_count INTEGER NOT NULL DEFAULT 0,
+                  remote_message_id TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  last_error TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS delivery_outbox_resolutions (
+                  resolution_id TEXT PRIMARY KEY,
+                  event_id TEXT NOT NULL,
+                  resolution TEXT NOT NULL,
+                  operator TEXT NOT NULL,
+                  resolved_at TEXT NOT NULL,
+                  FOREIGN KEY(event_id) REFERENCES delivery_outbox(event_id)
+                );
                 """
             )
             columns = {row[1] for row in conn.execute("PRAGMA table_info(job_targets)")}
@@ -257,6 +300,8 @@ class QueueDB:
                   ON circuit_events(kind, occurred_at, group_id, environment);
                 CREATE INDEX IF NOT EXISTS idx_attempts_target
                   ON submission_attempts(property_id, group_id, click_started_at);
+                CREATE INDEX IF NOT EXISTS idx_delivery_outbox_claim
+                  ON delivery_outbox(destination, state, lease_expires_at, created_at);
                 CREATE TRIGGER IF NOT EXISTS approvals_immutable_update
                   BEFORE UPDATE ON approvals BEGIN
                     SELECT RAISE(ABORT, 'approvals are immutable');
@@ -267,6 +312,179 @@ class QueueDB:
                   END;
                 """
             )
+
+    @staticmethod
+    def _validate_outbox_payload(event_type: str, payload: dict[str, Any]) -> str:
+        """Persist only event-specific, redacted delivery payloads."""
+        if not isinstance(payload, dict):
+            raise ValueError("outbox payload must be an object")
+        allowed = _OUTBOX_PAYLOAD_FIELDS.get(event_type)
+        if allowed is None:
+            if event_type in _TEXT_ONLY_OUTBOX_EVENTS:
+                allowed = frozenset({"text"})
+            elif event_type in _TARGET_TEXT_OUTBOX_EVENTS:
+                allowed = frozenset({"text", "property_id", "group_id"})
+            else:
+                raise ValueError("unsupported outbox event type")
+        if set(payload) - allowed:
+            raise ValueError("outbox payload fields are not allowed for this event type")
+        if "text" not in payload or not isinstance(payload["text"], str):
+            raise ValueError("outbox payload requires text")
+        safe_payload = redact(payload)
+        try:
+            return json.dumps(safe_payload, ensure_ascii=False, sort_keys=True)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("outbox payload must be JSON serializable") from exc
+
+    @staticmethod
+    def _outbox_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        event = dict(row)
+        event["payload"] = json.loads(event["payload_json"])
+        # Compatibility aliases make the producer boundary easy to inspect while
+        # retaining the schema names required by the delivery worker contract.
+        event["event"] = event["event_type"]
+        event["status"] = event["state"]
+        return event
+
+    def enqueue_outbox_event(
+        self,
+        *,
+        event_key: str,
+        event_type: str,
+        payload: dict[str, Any],
+        destination: str = "telegram",
+        origin_run_id: str | None = None,
+        attempt_id: str | None = None,
+        subject_id: str | None = None,
+    ) -> dict[str, Any]:
+        if not all(isinstance(value, str) and value.strip() for value in (event_key, event_type, destination)):
+            raise ValueError("outbox event key, type, and destination are required")
+        serialized_payload = self._validate_outbox_payload(event_type, payload)
+        timestamp = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """INSERT INTO delivery_outbox(
+                   event_id, event_key, destination, event_type, origin_run_id, attempt_id, subject_id,
+                   payload_json, state, created_at, updated_at
+                   ) VALUES(?,?,?,?,?,?,?,?, 'pending', ?, ?) ON CONFLICT(event_key) DO NOTHING""",
+                (
+                    str(uuid.uuid4()), event_key, destination, event_type, origin_run_id, attempt_id,
+                    subject_id, serialized_payload, timestamp, timestamp,
+                ),
+            )
+            row = conn.execute("SELECT * FROM delivery_outbox WHERE event_key=?", (event_key,)).fetchone()
+        event = self._outbox_row(row)
+        assert event is not None
+        return event
+
+    def get_outbox_event(self, event_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM delivery_outbox WHERE event_id=?", (event_id,)).fetchone()
+        return self._outbox_row(row)
+
+    def list_outbox_events(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM delivery_outbox ORDER BY created_at, rowid").fetchall()
+        return [event for row in rows if (event := self._outbox_row(row)) is not None]
+
+    def claim_outbox_events(self, owner: str, *, limit: int = 1, lease_seconds: int = 60) -> list[dict[str, Any]]:
+        if not isinstance(owner, str) or not owner.strip() or limit < 1 or lease_seconds < 1:
+            raise ValueError("claim owner, limit, and lease duration must be positive")
+        timestamp = now_iso()
+        expiry = (datetime.now(UTC) + timedelta(seconds=lease_seconds)).isoformat()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """UPDATE delivery_outbox
+                   SET state='pending', lease_owner=NULL, lease_expires_at=NULL, updated_at=?
+                   WHERE state='leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?""",
+                (timestamp, timestamp),
+            )
+            rows = conn.execute(
+                """SELECT event_id FROM delivery_outbox WHERE state='pending'
+                   ORDER BY created_at, rowid LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            ids = [row["event_id"] for row in rows]
+            for event_id in ids:
+                conn.execute(
+                    """UPDATE delivery_outbox SET state='leased', lease_owner=?, lease_expires_at=?,
+                       attempt_count=attempt_count+1, updated_at=? WHERE event_id=? AND state='pending'""",
+                    (owner, expiry, timestamp, event_id),
+                )
+            claimed = [
+                conn.execute("SELECT * FROM delivery_outbox WHERE event_id=?", (event_id,)).fetchone()
+                for event_id in ids
+            ]
+        return [event for row in claimed if (event := self._outbox_row(row)) is not None]
+
+    def _finish_outbox_event(
+        self,
+        event_id: str,
+        owner: str,
+        *,
+        state: str,
+        error: str | None = None,
+        remote_message_id: str | None = None,
+    ) -> dict[str, Any]:
+        if state not in {"delivered", "failed", "delivery_ambiguous"}:
+            raise ValueError("invalid outbox terminal state")
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """UPDATE delivery_outbox SET state=?, lease_owner=NULL, lease_expires_at=NULL,
+                   remote_message_id=COALESCE(?, remote_message_id), last_error=?, updated_at=?
+                   WHERE event_id=? AND state='leased' AND lease_owner=?""",
+                (state, remote_message_id, error, now_iso(), event_id, owner),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("outbox event is not leased by this owner")
+        event = self.get_outbox_event(event_id)
+        assert event is not None
+        return event
+
+    def mark_outbox_delivered(self, event_id: str, owner: str, *, remote_message_id: str | None = None) -> dict[str, Any]:
+        return self._finish_outbox_event(event_id, owner, state="delivered", remote_message_id=remote_message_id)
+
+    def mark_outbox_failed(self, event_id: str, owner: str, error: str) -> dict[str, Any]:
+        return self._finish_outbox_event(event_id, owner, state="failed", error=str(redact(error))[:500])
+
+    def mark_outbox_ambiguous(self, event_id: str, owner: str, error: str) -> dict[str, Any]:
+        return self._finish_outbox_event(event_id, owner, state="delivery_ambiguous", error=str(redact(error))[:500])
+
+    def reset_outbox_event(
+        self,
+        event_id: str,
+        *,
+        operator: str | None = None,
+        resolution: str | None = None,
+        resolved_at: str | None = None,
+    ) -> dict[str, Any]:
+        if not isinstance(operator, str) or not operator.strip():
+            raise ValueError("operator reset is required")
+        if resolution != "confirmed_not_delivered":
+            raise ValueError("confirmed_not_delivered resolution is required")
+        timestamp = resolved_at or now_iso()
+        validate_timestamp(timestamp, "resolved_at")
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """UPDATE delivery_outbox SET state='pending', lease_owner=NULL, lease_expires_at=NULL,
+                   updated_at=?, last_error=COALESCE(last_error, '') || ?
+                   WHERE event_id=? AND state='delivery_ambiguous'""",
+                (timestamp, f" | resolved_by:{operator}", event_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("only delivery_ambiguous events may be resolved")
+            conn.execute(
+                """INSERT INTO delivery_outbox_resolutions(
+                   resolution_id, event_id, resolution, operator, resolved_at
+                   ) VALUES(?,?,?,?,?)""",
+                (str(uuid.uuid4()), event_id, resolution, operator, timestamp),
+            )
+        event = self.get_outbox_event(event_id)
+        assert event is not None
+        return event
 
     def start_run(
         self,
@@ -384,6 +602,30 @@ class QueueDB:
     ) -> None:
         if status not in TARGET_STATUSES:
             raise ValueError(f"invalid target status: {status}")
+        with self.connect() as conn:
+            self._update_target_status_conn(
+                conn,
+                job_id,
+                group_id,
+                status,
+                error=error,
+                screenshot=screenshot,
+                permalink=permalink,
+                increment_attempts=increment_attempts,
+            )
+
+    def _update_target_status_conn(
+        self,
+        conn: sqlite3.Connection,
+        job_id: str,
+        group_id: str,
+        status: str,
+        *,
+        error: str | None = None,
+        screenshot: str | None = None,
+        permalink: str | None = None,
+        increment_attempts: bool = False,
+    ) -> None:
         # 'uncertain' very likely DID publish (we just could not verify it), so
         # stamp it like a post. The same-group spacing guard and daily cap then
         # treat it as a real post and never over-post (block-avoidance first).
@@ -392,40 +634,87 @@ class QueueDB:
         # or a verify sweep re-confirming) keeps the original time. Overwriting it
         # collapsed many historical posts onto the verify time, which wrongly
         # inflated count_posts_today() and blocked all new posting via daily_limit.
+        error = str(redact(error))[:500] if error else None
         posted_at = now_iso() if status in ("posted", "uncertain") else None
+        if status in {"pending", "pending_approval", "approved", "submitting"}:
+            target = conn.execute(
+                """SELECT j.property_id FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
+                   WHERE t.job_id=? AND t.group_id=?""",
+                (job_id, group_id),
+            ).fetchone()
+            if target and conn.execute(
+                """SELECT 1 FROM submission_attempts
+                   WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1""",
+                (target["property_id"], group_id),
+            ).fetchone():
+                raise ValueError("click boundary permanently prevents an eligible target state")
+        if increment_attempts:
+            cursor = conn.execute(
+                """
+                UPDATE job_targets
+                SET status=?, attempts=attempts + 1, last_error=?, posted_at=COALESCE(posted_at, ?),
+                    screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
+                WHERE job_id=? AND group_id=?
+                """,
+                (status, error, posted_at, screenshot, permalink, job_id, group_id),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                UPDATE job_targets
+                SET status=?, last_error=?, posted_at=COALESCE(posted_at, ?),
+                    screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
+                WHERE job_id=? AND group_id=?
+                """,
+                (status, error, posted_at, screenshot, permalink, job_id, group_id),
+            )
+        if cursor.rowcount != 1:
+            raise ValueError("target not found")
+
+    def update_target_status_with_outbox(
+        self,
+        job_id: str,
+        group_id: str,
+        status: str,
+        *,
+        event_key: str,
+        event_type: str,
+        payload: dict[str, Any],
+        destination: str = "telegram",
+        origin_run_id: str | None = None,
+        attempt_id: str | None = None,
+        subject_id: str | None = None,
+        error: str | None = None,
+        screenshot: str | None = None,
+        permalink: str | None = None,
+        increment_attempts: bool = False,
+    ) -> dict[str, Any]:
+        """Commit target truth and its downstream delivery obligation together."""
+        if status not in TARGET_STATUSES:
+            raise ValueError(f"invalid target status: {status}")
+        if not all(isinstance(value, str) and value.strip() for value in (event_key, event_type, destination)):
+            raise ValueError("outbox event key, type, and destination are required")
+        serialized_payload = self._validate_outbox_payload(event_type, payload)
+        timestamp = now_iso()
         with self.connect() as conn:
-            if status in {"pending", "pending_approval", "approved", "submitting"}:
-                target = conn.execute(
-                    """SELECT j.property_id FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
-                       WHERE t.job_id=? AND t.group_id=?""",
-                    (job_id, group_id),
-                ).fetchone()
-                if target and conn.execute(
-                    """SELECT 1 FROM submission_attempts
-                       WHERE property_id=? AND group_id=? AND click_started_at IS NOT NULL LIMIT 1""",
-                    (target["property_id"], group_id),
-                ).fetchone():
-                    raise ValueError("click boundary permanently prevents an eligible target state")
-            if increment_attempts:
-                conn.execute(
-                    """
-                    UPDATE job_targets
-                    SET status=?, attempts=attempts + 1, last_error=?, posted_at=COALESCE(posted_at, ?),
-                        screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
-                    WHERE job_id=? AND group_id=?
-                    """,
-                    (status, error, posted_at, screenshot, permalink, job_id, group_id),
-                )
-            else:
-                conn.execute(
-                    """
-                    UPDATE job_targets
-                    SET status=?, last_error=?, posted_at=COALESCE(posted_at, ?),
-                        screenshot=COALESCE(?, screenshot), permalink=COALESCE(?, permalink)
-                    WHERE job_id=? AND group_id=?
-                    """,
-                    (status, error, posted_at, screenshot, permalink, job_id, group_id),
-                )
+            self._update_target_status_conn(
+                conn, job_id, group_id, status, error=error, screenshot=screenshot,
+                permalink=permalink, increment_attempts=increment_attempts,
+            )
+            conn.execute(
+                """INSERT INTO delivery_outbox(
+                   event_id, event_key, destination, event_type, origin_run_id, attempt_id, subject_id,
+                   payload_json, state, created_at, updated_at
+                   ) VALUES(?,?,?,?,?,?,?,?, 'pending', ?, ?) ON CONFLICT(event_key) DO NOTHING""",
+                (
+                    str(uuid.uuid4()), event_key, destination, event_type, origin_run_id, attempt_id,
+                    subject_id, serialized_payload, timestamp, timestamp,
+                ),
+            )
+            row = conn.execute("SELECT * FROM delivery_outbox WHERE event_key=?", (event_key,)).fetchone()
+        event = self._outbox_row(row)
+        assert event is not None
+        return event
 
     def approve_job(self, job_id: str) -> None:
         self.update_job_status(job_id, "approved")
@@ -785,7 +1074,7 @@ class QueueDB:
         return self.get_submission_attempt(attempt_id)  # type: ignore[return-value]
 
     @staticmethod
-    def _is_valid_facebook_permalink(permalink: str | None) -> bool:
+    def is_valid_facebook_permalink(permalink: str | None) -> bool:
         if not isinstance(permalink, str) or not permalink.strip():
             return False
         parsed = urlparse(permalink)
@@ -824,6 +1113,11 @@ class QueueDB:
             and (host == "facebook.com" or host.endswith(".facebook.com"))
             and (group_post or permalink_path or share_path or query_permalink)
         )
+
+    @staticmethod
+    def _is_valid_facebook_permalink(permalink: str | None) -> bool:
+        """Backward-compatible private alias for older callers."""
+        return QueueDB.is_valid_facebook_permalink(permalink)
 
     def submission_eligible(self, job_id: str, group_id: str) -> bool:
         with self.connect() as conn:

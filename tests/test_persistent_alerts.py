@@ -29,7 +29,7 @@ def _approval(tmp_path, sent):
     return approval, store
 
 
-def test_raise_persistent_alert_records_and_sends_with_ack_button(tmp_path):
+def test_raise_persistent_alert_records_and_queues_with_ack_button(tmp_path):
     sent: list = []
     approval, store = _approval(tmp_path, sent)
 
@@ -38,9 +38,9 @@ def test_raise_persistent_alert_records_and_sends_with_ack_button(tmp_path):
     alert = store.get("session_dead")
     assert alert is not None and alert["acknowledged"] is False
     assert alert["notify_count"] == 1
-    # The single send carries an inline ✅ ack button with callback ack:session_dead.
-    assert len(sent) == 1
-    _, payload = sent[0]
+    # The queued payload carries an inline ✅ ack button with callback ack:session_dead.
+    assert sent == []
+    payload = approval.db.list_outbox_events()[0]["payload"]
     button = payload["reply_markup"]["inline_keyboard"][0][0]
     assert button["callback_data"] == "ack:session_dead"
 
@@ -51,10 +51,11 @@ def test_renotify_resends_until_acknowledged(tmp_path):
     approval.raise_persistent_alert("session_dead", "msg")
     sent.clear()
 
-    # Two re-notify passes while unacknowledged -> two more sends.
+    # Two re-notify passes while unacknowledged -> two more queued obligations.
     assert approval.renotify_pending() == 1
     assert approval.renotify_pending() == 1
-    assert len(sent) == 2
+    assert sent == []
+    assert len(approval.db.list_outbox_events()) == 3
     assert store.get("session_dead")["notify_count"] == 3  # 1 initial + 2 resends
 
     # Operator acknowledges -> no longer re-sent.
@@ -65,50 +66,30 @@ def test_renotify_resends_until_acknowledged(tmp_path):
 
 
 def test_delivery_ambiguous_quarantines_alert_and_prevents_future_renotify(tmp_path):
-    class Transport:
-        enabled = True
-
-        def __init__(self):
-            self.calls = 0
-
-        def send_message(self, *args, **kwargs):
-            self.calls += 1
-            return {"ok": False, "code": "delivery_ambiguous"}
-
     db = QueueDB(tmp_path / "jobs.db")
     store = AlertStore(tmp_path / "alerts.json")
-    transport = Transport()
-    approval = TelegramApproval(_settings(), db, alert_store=store, transport=transport)
+    approval = TelegramApproval(_settings(), db, alert_store=store)
 
     approval.raise_persistent_alert("session_dead", "msg")
+    event = db.claim_outbox_events("worker")[0]
+    db.mark_outbox_ambiguous(event["event_id"], "worker", "timeout")
+    assert approval.renotify_pending() == 1
 
     assert store.get("session_dead")["delivery_quarantined"] is True
     assert approval.renotify_pending() == 0
-    assert transport.calls == 1
     assert AlertStore(store.path).pending_unacknowledged() == []
 
 
 def test_pre_submit_failure_remains_eligible_for_renotify(tmp_path):
-    class Transport:
-        enabled = True
-
-        def __init__(self):
-            self.calls = 0
-
-        def send_message(self, *args, **kwargs):
-            self.calls += 1
-            return {"ok": False, "code": "retryable_pre_submit"}
-
     db = QueueDB(tmp_path / "jobs.db")
     store = AlertStore(tmp_path / "alerts.json")
-    transport = Transport()
-    approval = TelegramApproval(_settings(), db, alert_store=store, transport=transport)
+    approval = TelegramApproval(_settings(), db, alert_store=store)
 
     approval.raise_persistent_alert("session_dead", "msg")
 
     assert store.get("session_dead").get("delivery_quarantined") is False
     assert approval.renotify_pending() == 1
-    assert transport.calls == 2
+    assert len(db.list_outbox_events()) == 2
 
 
 def test_poll_ack_callback_acknowledges_alert(tmp_path, monkeypatch):
@@ -154,8 +135,8 @@ def test_clear_persistent_alert_removes_and_announces_recovery(tmp_path):
     approval.clear_persistent_alert("session_dead")
 
     assert store.get("session_dead") is None
-    assert len(sent) == 1  # a recovery notice was sent
-    assert "復旧" in sent[0][1]["text"]
+    assert sent == []
+    assert "復旧" in approval.db.list_outbox_events()[-1]["payload"]["text"]
 
     # Clearing again (nothing open) sends nothing.
     sent.clear()

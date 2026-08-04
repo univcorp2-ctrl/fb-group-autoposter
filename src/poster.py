@@ -70,6 +70,39 @@ class FacebookPoster:
         self.freshness_checker = freshness_checker
         self._user_id: str | None = None  # logged-in bot user id (for verification)
 
+    def _attempt_key(self, job: dict[str, Any], target: dict[str, Any]) -> str:
+        """Stable producer identity until the submission-attempt migration lands."""
+        return str(target.get("attempt_id") or f"{job['job_id']}:{target['group_id']}")
+
+    def _enqueue_delivery(
+        self,
+        job: dict[str, Any],
+        target: dict[str, Any] | None,
+        *,
+        event_type: str,
+        suffix: str,
+        text: str,
+        permalink: str | None = None,
+    ) -> None:
+        attempt_id = self._attempt_key(job, target) if target else None
+        if target and event_type not in {"challenge", "environment"}:
+            event_key = f"telegram:{attempt_id}:{suffix}"
+        else:
+            event_key = f"telegram:{job['job_id']}:environment:{suffix}"
+        payload: dict[str, Any] = {"text": text, "property_id": job["property_id"]}
+        if target:
+            payload["group_id"] = target["group_id"]
+        if permalink:
+            payload["permalink"] = permalink
+        self.db.enqueue_outbox_event(
+            event_key=event_key,
+            event_type=event_type,
+            origin_run_id=job["job_id"],
+            attempt_id=attempt_id,
+            subject_id=job["property_id"],
+            payload=payload,
+        )
+
     def _freshness_skip_reason(self, job: dict[str, Any]) -> str | None:
         """Return a skip reason when the property is no longer live on EstateBoard,
         else None. UNKNOWN (unverifiable / source missing) fails OPEN so a transient
@@ -83,10 +116,13 @@ class FacebookPoster:
             return None
         if result.is_stale:
             return f"stale_property:{result.reason}"
-        if getattr(result, "source_missing", False) and self.notifier:
-            self.notifier.alert(
+        if getattr(result, "source_missing", False):
+            self._enqueue_delivery(
+                job, None, event_type="environment", suffix="source_missing",
+                text=(
                 f"⚠️ 物件の最新性を確認できませんでした（検証ソース未取得）: "
                 f"{job['property_id']}（{result.reason}）。投稿は継続します。"
+                ),
             )
         return None
 
@@ -96,11 +132,13 @@ class FacebookPoster:
         for target in self.db.unposted_targets(job["job_id"]):
             self.db.update_target_status(job["job_id"], target["group_id"], "skipped", error=reason)
         log.warning("skipping stale property %s: %s", job.get("property_id"), reason)
-        if self.notifier:
-            self.notifier.alert(
+        self._enqueue_delivery(
+            job, None, event_type="environment", suffix="stale_property",
+            text=(
                 f"⏭ 物件が最新でないため投稿をスキップしました: {job['property_id']}（{reason}）。"
                 "EstateBoardから掲載が消えている/削除済みの可能性があります。"
-            )
+            ),
+        )
         return self.db.finalize_job_from_targets(job["job_id"])
 
     def _group_allowed_now(self, group: dict[str, Any]) -> bool:
@@ -192,9 +230,12 @@ class FacebookPoster:
                         await self._post_one(page, job, target, group)
                         self.db.record_group_result(target["group_id"], success=True, threshold=self.settings.group_fail_threshold)
                         posted_in_browser += 1
-                    except SessionExpired:
-                        if self.notifier:
-                            self.notifier.alert(login_required_message())
+                    except SessionExpired as exc:
+                        reason = exc.kind if isinstance(exc, CheckpointRequired) else "login"
+                        self._enqueue_delivery(
+                            job, target, event_type="challenge", suffix=reason,
+                            text=str(exc) or login_required_message(),
+                        )
                         raise
                     except PostNotVerified:
                         # Submitted but not confirmed live. _post_one already
@@ -205,28 +246,42 @@ class FacebookPoster:
                         # the scheduled verify sweep promotes posts once approved.
                         self.db.record_group_result(target["group_id"], success=False, threshold=self.settings.group_fail_threshold)
                     except PostingBlocked as exc:
-                        self.db.update_target_status(job["job_id"], target["group_id"], "failed", error=str(exc), increment_attempts=True)
-                        if self.notifier:
-                            self.notifier.alert(f"投稿制限検知。当日の残投稿を停止します: {exc}")
+                        text = f"投稿制限検知。当日の残投稿を停止します: {exc}"
+                        attempt_id = self._attempt_key(job, target)
+                        self.db.update_target_status_with_outbox(
+                            job["job_id"], target["group_id"], "failed", error=str(exc), increment_attempts=True,
+                            event_key=f"telegram:{attempt_id}:posting_blocked", event_type="posting_blocked",
+                            origin_run_id=job["job_id"], attempt_id=attempt_id, subject_id=job["property_id"],
+                            payload={"text": text, "property_id": job["property_id"], "group_id": target["group_id"]},
+                        )
                         break
                     except Exception as exc:
                         screenshot = await save_screenshot(page, prefix="failed", job_id=job["job_id"], group_id=target["group_id"])
                         sanitized_error = f"{type(exc).__name__}: {exc}"[:500]
-                        self.db.update_target_status(job["job_id"], target["group_id"], "failed", error=sanitized_error, screenshot=screenshot, increment_attempts=True)
+                        group_name = group.get("name", target["group_id"])
+                        text = (
+                            f"投稿失敗（自動リトライします）: {group_name}\n"
+                            f"property={job['property_id']}\n{sanitized_error}"
+                        )
+                        attempt_id = self._attempt_key(job, target)
+                        self.db.update_target_status_with_outbox(
+                            job["job_id"], target["group_id"], "failed", error=sanitized_error,
+                            screenshot=screenshot, increment_attempts=True,
+                            event_key=f"telegram:{attempt_id}:posting_failed", event_type="posting_failed",
+                            origin_run_id=job["job_id"], attempt_id=attempt_id, subject_id=job["property_id"],
+                            payload={"text": text, "property_id": job["property_id"], "group_id": target["group_id"]},
+                        )
                         suggest_disable = self.db.record_group_result(target["group_id"], success=False, threshold=self.settings.group_fail_threshold)
                         # Notify EVERY failure (not only at the threshold): the run
                         # will auto-retry this group on its next scheduled/logon
                         # trigger (the JST day-guard keeps that idempotent), so the
                         # operator is told both that it failed and that recovery is
                         # already in motion.
-                        group_name = group.get("name", target["group_id"])
-                        if self.notifier:
-                            self.notifier.alert(
-                                f"投稿失敗（自動リトライします）: {group_name}\n"
-                                f"property={job['property_id']}\n{sanitized_error}"
+                        if suggest_disable:
+                            self._enqueue_delivery(
+                                job, target, event_type="circuit_warning", suffix="failure_threshold",
+                                text=f"連続失敗閾値到達。groups.yamlでenabled:false検討: {target['group_id']}",
                             )
-                        if suggest_disable and self.notifier:
-                            self.notifier.alert(f"連続失敗閾値到達。groups.yamlでenabled:false検討: {target['group_id']}")
                     if posted_in_browser >= self.settings.max_groups_per_browser:
                         await browser_context.close()
                         browser_context = await p.chromium.launch_persistent_context(
@@ -313,28 +368,39 @@ class FacebookPoster:
                 page, target["group_id"], self._user_id, target["body"], post_url=group.get("post_url")
             )
         group_name = group.get("name", target["group_id"])
-        if permalink:
+        if permalink and self.db.is_valid_facebook_permalink(permalink):
             await self._open_permalink(page, permalink)
             screenshot = await save_screenshot(page, prefix="posted", job_id=job["job_id"], group_id=target["group_id"])
-            self.db.update_target_status(job["job_id"], target["group_id"], "posted", screenshot=screenshot, permalink=permalink)
-            if self.notifier:
-                self.notifier.send_message(
-                    f"✅ 投稿を確認しました（{group_name}）\n物件: {job['property_id']}\n🔗 {permalink}"
-                )
+            text = f"✅ 投稿を確認しました（{group_name}）\n物件: {job['property_id']}\n🔗 {permalink}"
+            attempt_id = self._attempt_key(job, target)
+            self.db.update_target_status_with_outbox(
+                job["job_id"], target["group_id"], "posted", screenshot=screenshot, permalink=permalink,
+                event_key=f"telegram:{attempt_id}:verified", event_type="verified_post",
+                origin_run_id=job["job_id"], attempt_id=attempt_id, subject_id=job["property_id"],
+                payload={
+                    "text": text,
+                    "property_id": job["property_id"],
+                    "group_id": target["group_id"],
+                    "community": group_name,
+                    "permalink": permalink,
+                },
+            )
             return
         # Submitted but not found live -> record 'uncertain' (blocks same-day
         # re-post to avoid duplicate pending submissions) but NOT counted as 投稿済.
         screenshot = await save_screenshot(page, prefix="uncertain", job_id=job["job_id"], group_id=target["group_id"])
-        self.db.update_target_status(
-            job["job_id"], target["group_id"], "uncertain",
-            error="post not found live on group after submit (approval-gated/blocked?)",
-            screenshot=screenshot,
-        )
-        if self.notifier:
-            self.notifier.alert(
+        text = (
                 f"⚠️ 投稿を確認できませんでした（{group_name}）。承認制グループ/制限の可能性があります。\n"
                 f"確認URL: {group['post_url']}\n物件: {job['property_id']}（投稿済みにはカウントしません）"
-            )
+        )
+        attempt_id = self._attempt_key(job, target)
+        self.db.update_target_status_with_outbox(
+            job["job_id"], target["group_id"], "uncertain",
+            error="post not found live on group after submit (approval-gated/blocked?)", screenshot=screenshot,
+            event_key=f"telegram:{attempt_id}:uncertain", event_type="uncertain_post",
+            origin_run_id=job["job_id"], attempt_id=attempt_id, subject_id=job["property_id"],
+            payload={"text": text, "property_id": job["property_id"], "group_id": target["group_id"]},
+        )
         raise PostNotVerified(f"post not verified live in group {target['group_id']}")
 
     async def _open_permalink(self, page: Any, permalink: str) -> None:
