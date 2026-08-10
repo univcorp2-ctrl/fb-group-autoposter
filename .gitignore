@@ -25,6 +25,7 @@ __pycache__/
 .DS_Store
 desktop.ini
 _archive/
+.github/workflows/* (1).yml
 
 # generated artifacts
 .coverage
