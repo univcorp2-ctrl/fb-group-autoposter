@@ -2,17 +2,23 @@
 from __future__ import annotations
 
 import json
+<<<<<<< HEAD
 import re
+=======
+>>>>>>> origin/main
 import sqlite3
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+<<<<<<< HEAD
 _SECRET_PATTERN = re.compile(
     r"(?i)(access[_-]?token|api[_-]?key|authorization|cookie|password|secret)\s*[:=]\s*\S+"
 )
 
+=======
+>>>>>>> origin/main
 
 def _parse(value: str | None) -> datetime | None:
     if not value:
@@ -24,6 +30,7 @@ def _parse(value: str | None) -> datetime | None:
         return None
 
 
+<<<<<<< HEAD
 def _safe_error(value: str | None) -> str | None:
     if not value:
         return None
@@ -31,6 +38,8 @@ def _safe_error(value: str | None) -> str | None:
     return redacted[:500]
 
 
+=======
+>>>>>>> origin/main
 def build_runtime_status(db_path: str | Path, *, limit: int = 50) -> dict[str, Any]:
     now = datetime.now(UTC)
     path = Path(db_path)
@@ -51,7 +60,11 @@ def build_runtime_status(db_path: str | Path, *, limit: int = 50) -> dict[str, A
         rows = conn.execute(
             """
             SELECT j.property_id, t.group_id, t.status, t.attempts, t.last_error,
+<<<<<<< HEAD
                    t.posted_at, t.permalink, j.updated_at
+=======
+                   t.posted_at, t.permalink, t.screenshot, j.updated_at
+>>>>>>> origin/main
             FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
             ORDER BY COALESCE(t.posted_at, j.updated_at) DESC LIMIT ?
             """,
@@ -63,6 +76,7 @@ def build_runtime_status(db_path: str | Path, *, limit: int = 50) -> dict[str, A
         conn.close()
     except sqlite3.Error as exc:
         return {**base, "health": "error", "message": f"SQLite読込エラー: {exc}"}
+<<<<<<< HEAD
 
     recent: list[dict[str, Any]] = []
     for row in rows:
@@ -70,6 +84,9 @@ def build_runtime_status(db_path: str | Path, *, limit: int = 50) -> dict[str, A
         item["last_error"] = _safe_error(item.get("last_error"))
         recent.append(item)
 
+=======
+    recent = [dict(row) for row in rows]
+>>>>>>> origin/main
     counts = Counter(str(row["status"]) for row in rows)
     published_times = [
         _parse(row["posted_at"] or row["updated_at"])
