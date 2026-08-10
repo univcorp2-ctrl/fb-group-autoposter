@@ -65,14 +65,15 @@ def run_checked(argv: list[str], *, timeout: int) -> dict[str, Any]:
         cwd=str(ROOT),
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=timeout,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         check=False,
     )
     return {
         "returncode": proc.returncode,
-        "stdout": proc.stdout[-6000:],
-        "stderr": proc.stderr[-6000:],
+        "stdout": (proc.stdout or "")[-6000:],
+        "stderr": (proc.stderr or "")[-6000:],
     }
 
 
