@@ -1,0 +1,59 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "python",
+      "ok": true,
+      "detail": "3.11.9",
+      "required": true
+    },
+    {
+      "name": "estateboard_source",
+      "ok": true,
+      "detail": "G:\\マイドライブ\\AI_Agents\\github\\repos\\EstateBoard\\output\\received\\properties.json",
+      "required": true
+    },
+    {
+      "name": "drive_archive",
+      "ok": true,
+      "detail": "G:\\マイドライブ\\0.物件資料_お客様紹介用\\Estateboard",
+      "required": true
+    },
+    {
+      "name": "profile_outside_drive",
+      "ok": true,
+      "detail": "profiles\\main",
+      "required": true
+    },
+    {
+      "name": "database_outside_drive",
+      "ok": true,
+      "detail": "data\\jobs.db",
+      "required": true
+    },
+    {
+      "name": "groups",
+      "ok": true,
+      "detail": "enabled=11",
+      "required": true
+    },
+    {
+      "name": "playwright_chromium",
+      "ok": true,
+      "detail": "C:\\Users\\t0015\\AppData\\Local\\ms-playwright\\chromium-1223\\chrome-win64\\chrome.exe",
+      "required": true
+    },
+    {
+      "name": "codex_cli",
+      "ok": true,
+      "detail": "C:\\Users\\t0015\\AppData\\Roaming\\npm\\codex.CMD",
+      "required": false
+    },
+    {
+      "name": "drive_image_sample",
+      "ok": true,
+      "detail": "sample images=1",
+      "required": true
+    }
+  ]
+}
