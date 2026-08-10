@@ -70,10 +70,11 @@ def _pid_is_running(pid: int) -> bool:
     return True
 
 
-# A lock older than this is considered stale regardless of pid, as a backstop:
-# posting runs are capped at ~1h by the scheduler, so a 2h-old lock means the
-# owner died without cleaning up (terminated run). Never block forever.
-_LOCK_STALE_SECONDS = 2 * 60 * 60
+# Age is diagnostic only. A normal grouped posting run deliberately sleeps
+# 15-35 minutes between groups and can therefore take several hours. Never
+# steal a lock from a process that is still alive; doing so can create two
+# simultaneous Facebook browser sessions and duplicate/unsafe posting.
+_LOCK_STALE_SECONDS = 8 * 60 * 60
 
 
 @contextmanager
@@ -88,9 +89,10 @@ def pipeline_lock(path: str | Path = "data/pipeline.lock") -> Iterator[None]:
             except OSError:
                 age = 0.0
             owner_alive = bool(pid) and pid != os.getpid() and _pid_is_running(pid)
-            if owner_alive and age < _LOCK_STALE_SECONDS:
+            if owner_alive:
                 raise RuntimeError(f"pipeline lock exists: {lock} pid={pid}")
-            # Stale (owner dead, or lock too old to be real) -> reclaim it.
+            # Only a dead owner is reclaimable. Age is retained in the log for
+            # diagnostics but never overrides a positive liveness check.
             if age >= _LOCK_STALE_SECONDS:
                 log.warning("reclaiming stale pipeline lock (age=%.0fs, pid=%s)", age, pid)
             lock.unlink(missing_ok=True)
