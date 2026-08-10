@@ -1,0 +1,42 @@
+name: Diagnose core tests
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Capture core test output
+        shell: bash
+        run: |
+          set +e
+          pytest -q --no-cov --ignore=tests/test_analytics_export.py --ignore=tests/test_facebook_metrics.py -x > ci-core-test-output.txt 2>&1
+          code=$?
+          echo "$code" > ci-core-test-exit.txt
+          exit 0
+      - name: Persist sanitized diagnostic
+        shell: bash
+        run: |
+          {
+            echo '# Latest core-test diagnostic'
+            echo
+            echo '```text'
+            tail -n 160 ci-core-test-output.txt
+            echo '```'
+          } > CI_CORE_TEST_DIAGNOSTIC.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add CI_CORE_TEST_DIAGNOSTIC.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update core-test diagnostic'
+            git push origin HEAD:main
+          fi

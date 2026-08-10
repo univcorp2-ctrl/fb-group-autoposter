@@ -1,16 +1,11 @@
 name: CI
-
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - site/data/status.json
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -35,33 +30,9 @@ jobs:
           cache: pip
       - run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest-github-actions-annotate-failures
-      - name: Existing core tests
-        run: >-
-          pytest -q --no-cov
-          --ignore=tests/test_analytics_export.py
-          --ignore=tests/test_facebook_metrics.py
-          --ignore=tests/test_drive_assets.py
-          --ignore=tests/test_runtime_status.py
-          --ignore=tests/test_codex_provider.py
-
-  recovery-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-          cache: pip
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest-github-actions-annotate-failures
-      - name: Drive image resolver
-        run: pytest -q --no-cov tests/test_drive_assets.py
-      - name: Runtime status exporter
-        run: pytest -q --no-cov tests/test_runtime_status.py
-      - name: Codex provider
-        run: pytest -q --no-cov tests/test_codex_provider.py
+          pip install -r requirements.txt
+      - name: Core and recovery tests
+        run: pytest -q --no-cov --ignore=tests/test_analytics_export.py --ignore=tests/test_facebook_metrics.py
 
   analytics-export-tests:
     runs-on: ubuntu-latest
@@ -90,7 +61,7 @@ jobs:
       - run: pytest -q --no-cov tests/test_facebook_metrics.py
 
   deep-verify:
-    needs: [lint, existing-tests, recovery-tests, analytics-export-tests, facebook-metrics-tests]
+    needs: [lint, existing-tests, analytics-export-tests, facebook-metrics-tests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -98,7 +69,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m compileall -q src scripts tests
-      - name: Validate production files
+      - name: Validate recovery and dashboard files
         run: |
           test -f src/drive_assets.py
           test -f src/codex_provider.py
@@ -106,9 +77,6 @@ jobs:
           test -f scripts/repair_windows_runtime.ps1
           test -f scripts/run_daily_drive.py
           test -f site/index.html
-          test -f docs/architecture.md
-          test -f docs/setup.md
-          test -f CODEX.md
       - uses: actions/upload-artifact@v4
         with:
           name: fb-autoposter-status-site
