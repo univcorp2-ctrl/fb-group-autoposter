@@ -36,11 +36,7 @@ def main() -> int:
         with sync_playwright() as playwright:
             executable = Path(playwright.chromium.executable_path)
         rows.append(check("playwright_chromium", executable.exists(), str(executable)))
-<<<<<<< HEAD
     except Exception as exc:
-=======
-    except Exception as exc:  # noqa: BLE001
->>>>>>> origin/main
         rows.append(check("playwright_chromium", False, f"{type(exc).__name__}: {exc}"))
     codex_requested = os.getenv("POST_TEXT_PROVIDER", "").casefold() == "codex"
     rows.append(

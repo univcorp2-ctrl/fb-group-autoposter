@@ -68,16 +68,10 @@ def _pid_is_running(pid: int) -> bool:
     return True
 
 
-<<<<<<< HEAD
 # Age is diagnostic only. A normal grouped posting run deliberately sleeps
 # 15-35 minutes between groups and can therefore take several hours. Never
 # steal a lock from a process that is still alive; doing so can create two
 # simultaneous Facebook browser sessions and duplicate/unsafe posting.
-=======
-# Posting runs deliberately wait 15-35 minutes between groups and may take
-# several hours. Lock age is diagnostic only: a live owner must never be
-# pre-empted because doing so could create two simultaneous Facebook sessions.
->>>>>>> origin/main
 _LOCK_STALE_SECONDS = 8 * 60 * 60
 
 
@@ -95,13 +89,8 @@ def pipeline_lock(path: str | Path = "data/pipeline.lock") -> Iterator[None]:
             owner_alive = bool(pid) and pid != os.getpid() and _pid_is_running(pid)
             if owner_alive:
                 raise RuntimeError(f"pipeline lock exists: {lock} pid={pid}")
-<<<<<<< HEAD
             # Only a dead owner is reclaimable. Age is retained in the log for
             # diagnostics but never overrides a positive liveness check.
-=======
-            # Only a dead owner is reclaimable. Age is retained for diagnostics
-            # and never overrides a positive liveness check.
->>>>>>> origin/main
             if age >= _LOCK_STALE_SECONDS:
                 log.warning("reclaiming stale pipeline lock (age=%.0fs, pid=%s)", age, pid)
             lock.unlink(missing_ok=True)
@@ -163,13 +152,8 @@ async def run_cycle(settings: Settings, *, selftest: bool = False, run_id: str |
             summary["approved_processed"] = int(summary["approved_processed"]) + 1
             summary["statuses"].append({"job_id": job["job_id"], "status": status})
         db.mark_heartbeat("orchestrator")
-<<<<<<< HEAD
     if getattr(settings, "telegram_notify_pipeline_summary", False):
         _enqueue_pipeline_summary(db, summary, flow="run_cycle", run_id=run_id)
-=======
-    if notifier.enabled:
-        notifier.send_message(f"📊 pipeline summary\n{json.dumps(summary, ensure_ascii=False, indent=2)}")
->>>>>>> origin/main
     return summary
 
 
@@ -231,13 +215,8 @@ async def run_cycle_grouped(
                 await sleeper(random.randint(settings.min_interval_min * 60, settings.max_interval_min * 60))
         db.mark_heartbeat("orchestrator")
 
-<<<<<<< HEAD
     if getattr(settings, "telegram_notify_pipeline_summary", False):
         _enqueue_pipeline_summary(db, summary, flow="run_cycle_grouped", run_id=run_id)
-=======
-    if notifier.enabled:
-        notifier.send_message(f"📊 pipeline summary\n{json.dumps(summary, ensure_ascii=False, indent=2)}")
->>>>>>> origin/main
     return summary
 
 

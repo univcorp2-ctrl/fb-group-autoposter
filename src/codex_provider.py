@@ -91,11 +91,7 @@ def generate_variants_with_codex(
         body = ""
         try:
             body = _call_codex(build_codex_prompt(property_data, group, revision_instruction), timeout)
-<<<<<<< HEAD
         except Exception as exc:
-=======
-        except Exception as exc:  # noqa: BLE001 - fallback is deliberate
->>>>>>> origin/main
             log.warning("Codex generation failed for group %s: %s", group.get("id"), exc)
             degraded = True
         if not body:

@@ -37,7 +37,6 @@ def main() -> None:
         orchestrator.generate_variants = generate_variants_with_codex
     from scripts.run_daily import main as existing_main
 
-<<<<<<< HEAD
     original_argv = sys.argv[:]
     source = os.getenv("ESTATEBOARD_SOURCE", "").strip()
     if len(sys.argv) == 1 and source:
@@ -46,20 +45,11 @@ def main() -> None:
         existing_main()
     finally:
         sys.argv[:] = original_argv
-=======
-    try:
-        existing_main()
-    finally:
->>>>>>> origin/main
         try:
             from scripts.publish_runtime_status import publish_runtime_status
 
             publish_runtime_status(push=os.getenv("PUBLISH_STATUS_GIT", "0") == "1")
-<<<<<<< HEAD
         except Exception as exc:
-=======
-        except Exception as exc:  # noqa: BLE001 - status publishing must not mask posting result
->>>>>>> origin/main
             print(f"runtime status publish skipped: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
