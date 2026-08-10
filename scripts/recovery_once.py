@@ -3,7 +3,7 @@
 The script is marker-controlled and intentionally conservative:
 1) atomically consumes data/recovery_once.flag (no automatic rerun),
 2) runs focused regression tests,
-3) re-registers Task Scheduler with the repaired long posting limit,
+3) repairs ONLY the four long-running posting tasks,
 4) verifies the Facebook session without bypassing any challenge,
 5) submits at most ONE already-approved property through FacebookPoster,
 6) syncs EstateBoard only when a real permalink-confirmed post is recorded.
@@ -76,9 +76,9 @@ def run_checked(argv: list[str], *, timeout: int) -> dict[str, Any]:
     }
 
 
-def register_tasks() -> dict[str, Any]:
+def register_posting_tasks() -> dict[str, Any]:
     ps = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
-    script = ROOT / "scripts" / "install_windows_tasks.ps1"
+    script = ROOT / "scripts" / "repair_posting_tasks.ps1"
     result = run_checked(
         [
             ps,
@@ -91,10 +91,10 @@ def register_tasks() -> dict[str, Any]:
             "-File",
             str(script),
         ],
-        timeout=180,
+        timeout=120,
     )
     if result["returncode"] != 0:
-        raise RuntimeError(f"scheduled task registration failed: {result['stderr'][-1000:]}")
+        raise RuntimeError(f"posting task repair failed: {result['stderr'][-1500:]}")
     return result
 
 
@@ -108,11 +108,12 @@ def run_focused_tests() -> dict[str, Any]:
             "tests/test_orchestrator_lock.py",
             "tests/test_protection_compatibility.py",
             "tests/test_recovery_acceptance_contract.py",
+            "tests/test_scheduler_long_run_safety.py",
         ],
         timeout=180,
     )
     if result["returncode"] != 0:
-        raise RuntimeError(f"focused tests failed: {result['stdout'][-1500:]} {result['stderr'][-1500:]}")
+        raise RuntimeError(f"focused tests failed: {result['stdout'][-1800:]} {result['stderr'][-1800:]}")
     return result
 
 
@@ -193,13 +194,13 @@ async def main_async() -> int:
     write_result(result)
     try:
         tests = run_focused_tests()
-        result["tests"] = {"returncode": tests["returncode"], "stdout": tests["stdout"][-2000:]}
+        result["tests"] = {"returncode": tests["returncode"], "stdout": tests["stdout"][-2500:]}
         result["phase"] = "tests_passed"
         write_result(result)
 
-        registration = register_tasks()
-        result["task_registration"] = {"returncode": registration["returncode"], "stdout": registration["stdout"][-2500:]}
-        result["phase"] = "tasks_registered"
+        registration = register_posting_tasks()
+        result["task_registration"] = {"returncode": registration["returncode"], "stdout": registration["stdout"][-4000:]}
+        result["phase"] = "posting_tasks_repaired"
         write_result(result)
 
         settings = Settings.load()
