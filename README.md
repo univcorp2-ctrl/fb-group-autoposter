@@ -62,6 +62,18 @@ powershell -ExecutionPolicy Bypass -File scripts\repair_windows_runtime.ps1 -Pos
 
 同一グループはJSTの同日内に1回だけ、投稿済み／要確認は重複対象として扱うため、フォールバックが複数回動いても過剰投稿しません。
 
+## Facebook投稿分析
+
+Facebook投稿結果はEstateBoard側の共有分析画面でも確認できます。
+
+- 分析画面: https://estateboard.pages.dev/facebook-analytics/
+- EstateBoard: https://github.com/univcorp2-ctrl/EstateBoard
+- Autoposter: https://github.com/univcorp2-ctrl/fb-group-autoposter
+- 分析同期を有効化する場合: `ANALYTICS_SYNC_ENABLED=true`
+- Windowsから分析画面を開く補助スクリプト: `open-facebook-analytics.cmd`
+
+投稿成功後のpermalink・投稿先・投稿日をEstateBoardへ同期し、Facebook投稿分析と物件単位の投稿履歴を同じ導線から確認します。
+
 ## 設定
 
 秘密値は `.env` に置き、Gitへcommitしません。主な項目:
@@ -75,6 +87,7 @@ POST_TEXT_PROVIDER=
 ANTHROPIC_API_KEY=
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+ANALYTICS_SYNC_ENABLED=true
 ```
 
 `POST_TEXT_PROVIDER` が空なら既存Claude設定を優先し、APIキーがない場合は安全な決定論的テンプレートへフォールバックします。`codex` を指定した場合は、Codex CLIのログイン済みセッションを使います。
