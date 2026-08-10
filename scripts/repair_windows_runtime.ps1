@@ -91,7 +91,7 @@ function Register-FBTask {
     $logon.Delay = 'PT4M'
     $triggers += $logon
   }
-  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours $ExecutionHours)
+  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -Hidden -ExecutionTimeLimit (New-TimeSpan -Hours $ExecutionHours)
   Register-ScheduledTask -TaskName $Name -Action $action -Trigger $triggers -Settings $settings -Description 'Drive-safe Facebook property autoposter' -Force | Out-Null
 }
 Register-FBTask 'FBAutoposter-Keepalive' 'scripts\keepalive.py' '08:00' 20 -AtLogon

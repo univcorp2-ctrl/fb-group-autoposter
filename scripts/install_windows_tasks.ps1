@@ -32,6 +32,7 @@ function New-DailyRun {
         -RestartCount 3 `
         -RestartInterval (New-TimeSpan -Minutes 10) `
         -MultipleInstances IgnoreNew `
+        -Hidden `
         -ExecutionTimeLimit (New-TimeSpan -Hours $ExecutionHours)
     Register-ScheduledTask -TaskName $Name -Action $action -Trigger $triggers -Settings $settings -Description $Desc -Force | Out-Null
 }
@@ -69,6 +70,7 @@ function New-RepeatingRun {
         -AllowStartIfOnBatteries `
         -DontStopIfGoingOnBatteries `
         -MultipleInstances IgnoreNew `
+        -Hidden `
         -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
     Register-ScheduledTask -TaskName $Name -Action $action -Trigger @($trigger, $logon) -Settings $settings -Description $Desc -Force | Out-Null
 }
