@@ -34,6 +34,7 @@ function Register-PostingTask {
         -RestartCount 3 `
         -RestartInterval (New-TimeSpan -Minutes 10) `
         -MultipleInstances IgnoreNew `
+        -Hidden `
         -ExecutionTimeLimit (New-TimeSpan -Hours 8)
     Register-ScheduledTask -TaskName $Name -Action $action -Trigger $triggers -Settings $settings -Description $Desc -Force | Out-Null
 }

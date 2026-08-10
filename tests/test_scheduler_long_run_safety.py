@@ -23,3 +23,11 @@ def test_runtime_repair_keeps_hidden_launcher_and_long_posting_limit():
     assert "[int]$ExecutionHours=1" in source
     assert "-WindowStyle Hidden" in source
     assert "-Hidden" in source
+
+
+def test_one_shot_task_repair_keeps_tasks_hidden_and_long_running():
+    source = (ROOT / "scripts" / "repair_posting_tasks.ps1").read_text(encoding="utf-8")
+    assert "-ExecutionTimeLimit (New-TimeSpan -Hours 8)" in source
+    assert "-MultipleInstances IgnoreNew" in source
+    assert "-Hidden" in source
+    assert ".venv\\Scripts\\pythonw.exe" in source
