@@ -61,18 +61,20 @@ def backup_profile(profile_dir: str | Path, keep: int = 7) -> Path | None:
     if not src.exists():
         return None
     backup_root = src.parent
-    stamp = datetime.now(UTC).strftime("backup_%Y%m%d_%H%M%S")
+    stamp = datetime.now(UTC).strftime("backup_%Y%m%d_%H%M%S_%f")
     dst = backup_root / stamp
     # Skip Chromium lock/socket files that can't be copied and aren't needed.
     shutil.copytree(src, dst, dirs_exist_ok=True, ignore=_ignore_volatile)
     backups = sorted(backup_root.glob("backup_*"), key=lambda p: p.name, reverse=True)
+    archive_root = backup_root / "_archive" / "session-backups"
     for old in backups[keep:]:
-        shutil.rmtree(old, ignore_errors=True)
+        archive_root.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(old), str(archive_root / old.name))
     return dst
 
 
 # Chromium runtime files that lock or are recreated on launch — never copy them.
-_VOLATILE = {"SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"}
+_VOLATILE = {"SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile", "desktop.ini"}
 
 
 def _ignore_volatile(_dir: str, names: list[str]) -> set[str]:

@@ -11,17 +11,34 @@ def test_backup_is_retained_but_legacy_restore_fails_closed_without_live_mutatio
     profile.mkdir(parents=True)
     (profile / "cookies.txt").write_text("session=GOOD", encoding="utf-8")
     (profile / "SingletonLock").write_text("lock", encoding="utf-8")  # volatile, must be skipped
+    (profile / "desktop.ini").write_text("drive metadata", encoding="utf-8")
 
     backup = backup_profile(profile, keep=3)
     assert backup is not None
     assert (backup / "cookies.txt").read_text(encoding="utf-8") == "session=GOOD"
     assert not (backup / "SingletonLock").exists()  # volatile file not copied
+    assert not (backup / "desktop.ini").exists()  # Drive metadata can disappear during copy
 
     # A scheduler-reachable expiry must never overwrite the live profile.
     (profile / "cookies.txt").write_text("EXPIRED", encoding="utf-8")
     used = restore_profile(profile)
     assert used is None
     assert (profile / "cookies.txt").read_text(encoding="utf-8") == "EXPIRED"
+
+
+def test_backup_retention_archives_old_snapshots_instead_of_deleting(tmp_path):
+    profile = tmp_path / "profiles" / "main"
+    profile.mkdir(parents=True)
+    (profile / "Preferences").write_text("healthy", encoding="utf-8")
+    old = profile.parent / "backup_20000101_000000_000000"
+    old.mkdir()
+    (old / "Preferences").write_text("old", encoding="utf-8")
+
+    backup_profile(profile, keep=1)
+
+    archived = profile.parent / "_archive" / "session-backups" / old.name
+    assert archived.is_dir()
+    assert (archived / "Preferences").read_text(encoding="utf-8") == "old"
 
 
 def test_latest_backup_and_restore_none_when_absent(tmp_path):
