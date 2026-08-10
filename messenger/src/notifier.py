@@ -8,34 +8,27 @@ from __future__ import annotations
 
 import logging
 
-import requests
+from src.telegram_transport import TelegramTransport
 
 log = logging.getLogger(__name__)
 
 
 class TelegramNotifier:
-    def __init__(self, token: str, chat_id: str):
+    def __init__(self, token: str, chat_id: str, *, transport: TelegramTransport | None = None):
         self.token = token
         self.chat_id = chat_id
-        self.base_url = f"https://api.telegram.org/bot{token}" if token else ""
+        self.transport = transport or TelegramTransport(token, chat_id)
 
     @property
     def enabled(self) -> bool:
-        return bool(self.token and self.chat_id)
+        return self.transport.enabled
 
     def send_message(self, text: str) -> bool:
         if not self.enabled:
             log.info("telegram disabled; message not sent")
             return False
-        try:
-            resp = requests.post(
-                f"{self.base_url}/sendMessage",
-                json={"chat_id": self.chat_id, "text": text[:4096], "disable_web_page_preview": True},
-                timeout=20,
-            )
-            resp.raise_for_status()
+        result = self.transport.send_message(text, disable_web_page_preview=True)
+        if result.get("ok"):
             return True
-        except Exception as exc:  # noqa: BLE001 - notification must never crash the run
-            sanitized = str(exc).replace(self.token, "<telegram-token>") if self.token else str(exc)
-            log.warning("telegram send failed: %s", sanitized[:300])
-            return False
+        log.warning("telegram send failed: %s", result.get("code", "unknown"))
+        return False

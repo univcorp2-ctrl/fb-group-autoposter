@@ -54,6 +54,7 @@ def test_browser_contract_viewport_cannot_be_mutated():
 
 def test_settings_defaults_preserve_conservative_runtime_controls(monkeypatch, tmp_path):
     for name in (
+        "DRY_RUN",
         "AUTO_APPROVE",
         "HUMANIZE",
         "MIN_INTERVAL_MIN",

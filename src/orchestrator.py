@@ -132,7 +132,7 @@ async def run_cycle(settings: Settings, *, selftest: bool = False, run_id: str |
     run_id = str(run_id or getattr(settings, "run_id", "") or uuid.uuid4())
     notifier = TelegramApproval(settings, db)
     summary: dict[str, object] = {"created": 0, "approved_processed": 0, "statuses": []}
-    with pipeline_lock():
+    with pipeline_lock(Path(settings.db_path).with_name("pipeline.lock")):
         recovered_attempts = db.recover_incomplete_attempts()
         if recovered_attempts:
             log.warning("recovered %s incomplete submission attempts", recovered_attempts)
@@ -195,7 +195,7 @@ async def run_cycle_grouped(
         log.warning("EstateBoard source not found: %s", source)
         items = []
 
-    with pipeline_lock():
+    with pipeline_lock(Path(settings.db_path).with_name("pipeline.lock")):
         recovered_attempts = db.recover_incomplete_attempts()
         if recovered_attempts:
             log.warning("recovered %s incomplete submission attempts", recovered_attempts)
