@@ -23,6 +23,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 .DS_Store
+desktop.ini
 _archive/
 
 # generated artifacts
