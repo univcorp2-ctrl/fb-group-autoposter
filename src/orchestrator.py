@@ -43,8 +43,10 @@ def _pid_is_running(pid: int) -> bool:
     if pid == os.getpid():
         return True
     if sys.platform == "win32":
-        # os.kill(pid, 0) is unreliable on Windows. Query the Win32 process
-        # handle and confirm that the owner has not exited.
+        # os.kill(pid, 0) is unreliable on Windows (raises WinError 87 /
+        # SystemError for dead pids), which made a stale lock from a terminated
+        # run crash EVERY later run and silently halt posting. Query the process
+        # via the Win32 API instead and confirm it has not exited.
         import ctypes
 
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -145,6 +147,9 @@ async def run_cycle(settings: Settings, *, selftest: bool = False, run_id: str |
         if selftest and settings.dry_run:
             for job in db.pending_jobs():
                 db.approve_job(job["job_id"])
+        # Freshness gate: re-validate each property against the latest EstateBoard
+        # export at post time so deleted/unpublished listings are never posted.
+        # Selftest uses a synthetic property with no source -> checker is skipped.
         checker = None if selftest else build_checker(settings.estateboard_source)
         poster = FacebookPoster(settings, db, groups, notifier, freshness_checker=checker)
         for job in db.approved_jobs():
@@ -164,7 +169,17 @@ async def run_cycle_grouped(
     sleeper: Any = asyncio.sleep,
     run_id: str | None = None,
 ) -> dict[str, object]:
-    """Daily flow where each group picks its own next property."""
+    """Daily flow where EACH group picks its OWN next property by its OWN order.
+
+    Unlike `run_cycle` (one property to all groups), this independently selects
+    the next unposted property per group (by that group's `selection_order`),
+    generates a single-group variant, queues + auto-approves it, then posts the
+    approved jobs with a randomized sleep between posts (block avoidance).
+
+    The JST calendar-day one-post-per-group guard is preserved: a group already
+    posted today is skipped before selection, and the poster's preflight is the
+    final backstop.
+    """
     from scripts.run_daily import _load_items
 
     setup_logging()
@@ -186,6 +201,10 @@ async def run_cycle_grouped(
             log.warning("recovered %s incomplete submission attempts", recovered_attempts)
         db.reset_stale_posting_jobs()
         db.mark_heartbeat("orchestrator")
+
+        # Properties chosen for an earlier group THIS run, so no two groups ever
+        # post the SAME listing on the same day — even when their selection_order
+        # overlaps (which happens once there are more groups than distinct orders).
         selected_this_run: set[str] = set()
         for group in groups:
             if db.posted_same_group_today(group["id"]):
@@ -193,7 +212,12 @@ async def run_cycle_grouped(
                 continue
             order = group.get("selection_order", "newest")
             exclude = db.posted_property_ids_for_group(group["id"]) | selected_this_run
-            picks = select_postable(items, limit=1, exclude_ids=exclude, order=order)
+            picks = select_postable(
+                items,
+                limit=1,
+                exclude_ids=exclude,
+                order=order,
+            )
             if not picks:
                 log.warning("no fresh property for group %s (order=%s)", group["id"], order)
                 continue
@@ -204,6 +228,8 @@ async def run_cycle_grouped(
             notifier.auto_or_send_preview(job_id)
             summary["created"] = int(summary["created"]) + 1
 
+        # Freshness gate built from the SAME source these groups selected from, so
+        # a property deleted between selection and posting is skipped, not posted.
         checker = build_checker(source)
         poster = FacebookPoster(settings, db, groups, notifier, freshness_checker=checker)
         approved = db.approved_jobs()
@@ -211,6 +237,8 @@ async def run_cycle_grouped(
             status = await poster.post_job(job)
             summary["approved_processed"] = int(summary["approved_processed"]) + 1
             summary["statuses"].append({"job_id": job["job_id"], "status": status})
+            # Randomized spacing BETWEEN posts (not after the last) to avoid
+            # robotic cadence that trips block detection.
             if index < len(approved) - 1:
                 await sleeper(random.randint(settings.min_interval_min * 60, settings.max_interval_min * 60))
         db.mark_heartbeat("orchestrator")

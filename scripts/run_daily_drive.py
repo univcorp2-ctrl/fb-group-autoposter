@@ -49,7 +49,7 @@ def main() -> None:
             from scripts.publish_runtime_status import publish_runtime_status
 
             publish_runtime_status(push=os.getenv("PUBLISH_STATUS_GIT", "0") == "1")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - status publishing must not mask posting result
             print(f"runtime status publish skipped: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
