@@ -1,0 +1,19 @@
+name: Cleanup Ruff diagnostic
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Remove temporary diagnostic files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -f RUFF_DIAGNOSTIC.md .github/workflows/diagnose-ruff.yml .github/workflows/cleanup-ruff-diagnostic.yml
+          git commit -m 'Remove temporary Ruff diagnostics'
+          git push origin HEAD:main
