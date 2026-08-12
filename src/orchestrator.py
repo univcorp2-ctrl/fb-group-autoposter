@@ -204,7 +204,7 @@ async def run_cycle_grouped(
 
         # Do not create more work than today's remaining posting capacity. This
         # prevents a growing approved backlog as the community pool expands.
-        remaining_slots = max(0, settings.max_posts_per_day - db.count_posts_today())
+        remaining_slots = max(0, int(getattr(settings, "max_posts_per_day", 8)) - db.count_posts_today())
         existing_approved = db.approved_jobs()
         backlog_targets = sum(len(db.unposted_targets(job["job_id"])) for job in existing_approved)
         new_slots = max(0, remaining_slots - backlog_targets)
