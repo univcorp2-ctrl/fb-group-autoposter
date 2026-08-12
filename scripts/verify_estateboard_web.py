@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 import urllib.request
 from datetime import datetime
@@ -10,16 +11,16 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from config import Settings
-from scripts.sync_estateboard_status import sync_estateboard_status
-from src.queue_db import QueueDB
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from config import Settings  # noqa: E402
+from scripts.sync_estateboard_status import sync_estateboard_status  # noqa: E402
+from src.queue_db import QueueDB  # noqa: E402
 
 PUBLIC_DATA_URL = "https://estateboard.pages.dev/data.json"
-STATUS_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "logs"
-    / "estateboard_web_sync_status.json"
-)
+STATUS_PATH = ROOT / "logs" / "estateboard_web_sync_status.json"
 
 
 def _today() -> str:
@@ -43,7 +44,8 @@ def _today_permalinks(db: QueueDB) -> list[str]:
 
 def _fetch_public() -> str:
     req = urllib.request.Request(
-        PUBLIC_DATA_URL, headers={"User-Agent": "estateboard-web-slo/1.0"}
+        PUBLIC_DATA_URL,
+        headers={"User-Agent": "estateboard-web-slo/1.0"},
     )
     with urllib.request.urlopen(req, timeout=30) as response:  # noqa: S310
         return response.read().decode("utf-8", errors="replace")
@@ -56,7 +58,8 @@ def missing_permalinks(public_text: str, permalinks: list[str]) -> list[str]:
 def _write_status(payload: dict[str, Any]) -> None:
     STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
     STATUS_PATH.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
 
@@ -104,7 +107,7 @@ def main() -> int:
                 print(json.dumps(status, ensure_ascii=False))
                 return 0
             status["missing"] = missing
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             last_error = f"{type(exc).__name__}: {exc}"
         if attempt < 4:
             time.sleep(15)
