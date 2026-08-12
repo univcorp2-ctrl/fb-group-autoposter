@@ -202,11 +202,43 @@ async def run_cycle_grouped(
         db.reset_stale_posting_jobs()
         db.mark_heartbeat("orchestrator")
 
+        # Do not create more work than today's remaining posting capacity. This
+        # prevents a growing approved backlog as the community pool expands.
+        remaining_slots = max(0, settings.max_posts_per_day - db.count_posts_today())
+        existing_approved = db.approved_jobs()
+        backlog_targets = sum(len(db.unposted_targets(job["job_id"])) for job in existing_approved)
+        new_slots = max(0, remaining_slots - backlog_targets)
+
+        # Rotate fairly: never-posted groups first, then the least recently
+        # posted community. YAML order is only the deterministic final tie-break.
+        with db.connect() as conn:
+            last_rows = conn.execute(
+                """
+                SELECT t.group_id,
+                       MAX(COALESCE(t.posted_at, j.updated_at)) AS last_posted
+                FROM job_targets t JOIN jobs j ON j.job_id=t.job_id
+                WHERE t.status IN ('posted','uncertain')
+                GROUP BY t.group_id
+                """
+            ).fetchall()
+        last_posted = {str(row["group_id"]): row["last_posted"] for row in last_rows}
+        group_position = {str(group["id"]): index for index, group in enumerate(groups)}
+        groups = sorted(
+            groups,
+            key=lambda group: (
+                last_posted.get(str(group["id"])) is not None,
+                last_posted.get(str(group["id"])) or "",
+                group_position[str(group["id"])],
+            ),
+        )
+
         # Properties chosen for an earlier group THIS run, so no two groups ever
         # post the SAME listing on the same day — even when their selection_order
         # overlaps (which happens once there are more groups than distinct orders).
         selected_this_run: set[str] = set()
         for group in groups:
+            if new_slots <= 0:
+                break
             if db.posted_same_group_today(group["id"]):
                 summary["skipped_groups"] = int(summary["skipped_groups"]) + 1
                 continue
@@ -227,12 +259,13 @@ async def run_cycle_grouped(
             job_id = db.create_job(prop, batch.variants, degraded=batch.degraded)
             notifier.auto_or_send_preview(job_id)
             summary["created"] = int(summary["created"]) + 1
+            new_slots -= 1
 
         # Freshness gate built from the SAME source these groups selected from, so
         # a property deleted between selection and posting is skipped, not posted.
         checker = build_checker(source)
         poster = FacebookPoster(settings, db, groups, notifier, freshness_checker=checker)
-        approved = db.approved_jobs()
+        approved = db.approved_jobs()[:remaining_slots]
         for index, job in enumerate(approved):
             status = await poster.post_job(job)
             summary["approved_processed"] = int(summary["approved_processed"]) + 1

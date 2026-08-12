@@ -132,3 +132,29 @@ def test_grouped_cycle_skips_group_posted_today(tmp_path, monkeypatch):
     summary2 = asyncio.run(run_cycle_grouped(settings, source=source, sleeper=_no_sleep))
     assert summary2["created"] == 0
     assert summary2["skipped_groups"] == 2
+
+def test_grouped_cycle_respects_remaining_daily_capacity(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    Path("groups.yaml").write_text(_GROUPS_YAML, encoding="utf-8")
+    source = _write_source(tmp_path)
+
+    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setenv("AUTO_APPROVE", "true")
+    monkeypatch.setenv("AUTO_APPROVE_SKIP_DEGRADED", "false")
+    monkeypatch.setenv("MAX_POSTS_PER_DAY", "1")
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "jobs.db"))
+    monkeypatch.setenv("INBOX_DIR", str(tmp_path / "data" / "inbox"))
+    monkeypatch.setenv("PROFILE_DIR", str(tmp_path / "profiles" / "main"))
+    settings = Settings.load(env_file=tmp_path / ".env")
+
+    summary = asyncio.run(run_cycle_grouped(settings, source=source, sleeper=_no_sleep))
+    assert summary["created"] == 1
+    assert summary["approved_processed"] == 1
+
+    from src.queue_db import QueueDB
+
+    db = QueueDB(settings.db_path)
+    with db.connect() as conn:
+        target_count = conn.execute("SELECT COUNT(*) FROM job_targets").fetchone()[0]
+    assert target_count == 1
+    assert db.count_posts_today() == 1

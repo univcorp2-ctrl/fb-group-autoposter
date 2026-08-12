@@ -31,3 +31,13 @@ def test_one_shot_task_repair_keeps_tasks_hidden_and_long_running():
     assert "-MultipleInstances IgnoreNew" in source
     assert "-Hidden" in source
     assert ".venv\\Scripts\\pythonw.exe" in source
+
+def test_community_manager_task_is_hidden_and_bounded():
+    source = (ROOT / "scripts" / "install_windows_tasks.ps1").read_text(encoding="utf-8")
+    assert "FBAutoposter-CommunityManager" in source
+    assert "scripts\\community_manager.py" in source
+    assert "-At '06:20'" in source
+    assert "New-TimeSpan -Minutes 20" in source
+    assert "New-TimeSpan -Minutes 30" in source
+    assert "-MultipleInstances IgnoreNew" in source
+    assert "-Hidden" in source

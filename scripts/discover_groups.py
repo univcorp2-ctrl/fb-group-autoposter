@@ -7,10 +7,11 @@ writes:
   - data/group_candidates.json  (machine-readable, accumulates over time)
   - data/group_candidates.md     (human review list, newest first)
 
-It does NOT auto-join groups. Joining is left to the operator on purpose:
-auto-joining is a strong ban signal and most quality groups gate membership
-behind approval questions. Review the list and join the good ones manually;
-then add their URLs to groups.yaml to post into them.
+This script itself is read-only. Scheduled membership growth is handled by
+scripts/community_manager.py, which first consumes the already-joined strict
+real-estate pool and only when that unused pool falls below 3 may submit one
+simple no-question join request per day. It never answers membership questions
+or bypasses Facebook challenges.
 """
 
 from __future__ import annotations
@@ -196,7 +197,7 @@ async def main() -> None:
         "",
         f"更新: {now}　／　新規 {discovered_new} 件　／　総候補 {len(candidates)} 件",
         "",
-        "> 自動参加はしません（ban回避）。良いグループに手動で参加し、URLを groups.yaml に追加してください。",
+        "> 参加済みの良質グループを優先利用。未活用プールが3件未満の場合のみ CommunityManager が1日最大1件の単純参加申請を行います。",
         "",
         "| カテゴリ | 名前 | メンバー | 公開/非公開 | URL | 検出キーワード |",
         "|----------|------|----------|-------------|-----|----------------|",
@@ -212,8 +213,8 @@ async def main() -> None:
     print(f"written: {CANDIDATES_JSON}  and  {CANDIDATES_MD}")
 
     # Notify the operator about NEW postable communities so good groups are not
-    # buried in a file no one opens. We only flag candidates — joining stays a
-    # manual decision (auto-join is a strong ban signal).
+    # buried in a file no one opens. CommunityManager applies the separate,
+    # conservative membership-growth policy.
     if new_candidates:
         _notify_new_candidates(settings, new_candidates)
 
@@ -223,8 +224,8 @@ def _notify_new_candidates(settings: Settings, new_candidates: list[dict]) -> No
 
     Groups candidates by audience category, ranks each by member count, leads
     with the best 3 picks (with reasoning), and explains which kind of content
-    fits each category (property posts vs other distribution). Joining stays
-    manual on purpose (auto-join is a strong ban signal)."""
+    fits each category (property posts vs other distribution). Membership
+    growth itself is governed by CommunityManager's strict daily limits."""
     try:
         from src.approval import TelegramApproval
         from src.queue_db import QueueDB
@@ -236,7 +237,7 @@ def _notify_new_candidates(settings: Settings, new_candidates: list[dict]) -> No
         ranked = sorted(new_candidates, key=lambda c: _parse_member_count(c.get("members", "")), reverse=True)
         lines = [
             f"🔎 今日のコミュニティ提案：投稿できそうな新規グループ {len(new_candidates)}件",
-            "（自動参加はしません。良い所に手動参加→groups.yamlにURL追加で投稿対象に）",
+            "（参加済み候補を優先。未活用プールが3件未満の時だけ1日最大1件の単純参加申請）",
             "",
             "⭐ おすすめ参加先 TOP3:",
         ]

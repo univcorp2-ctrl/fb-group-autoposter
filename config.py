@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -160,10 +161,31 @@ class Settings:
 
 
 def load_groups(path: str | Path = "groups.yaml") -> list[dict[str, Any]]:
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    groups_path = Path(path)
+    data = yaml.safe_load(groups_path.read_text(encoding="utf-8")) or {}
     groups = data.get("groups", [])
     if not isinstance(groups, list):
         raise ValueError("groups.yaml must contain a top-level 'groups' list")
+
+    # Operationally promoted communities live outside the tracked YAML so the
+    # daily community manager never dirties the Git worktree. They inherit the
+    # same shared defaults and are merged at runtime.
+    auto_path = Path(os.getenv("AUTO_GROUPS_PATH", str(groups_path.parent / "data" / "auto_groups.json")))
+    if auto_path.exists():
+        try:
+            raw_auto = json.loads(auto_path.read_text(encoding="utf-8"))
+            auto_groups = raw_auto.get("groups", []) if isinstance(raw_auto, dict) else raw_auto
+            if isinstance(auto_groups, list):
+                shared = data.get("_shared", {}) if isinstance(data.get("_shared", {}), dict) else {}
+                known = {str(g.get("id")) for g in groups if isinstance(g, dict)}
+                for entry in auto_groups:
+                    if not isinstance(entry, dict) or not entry.get("id") or str(entry.get("id")) in known:
+                        continue
+                    groups.append({**shared, **entry})
+                    known.add(str(entry.get("id")))
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+
     enabled = [g for g in groups if g.get("enabled", True)]
     for group in enabled:
         validate_group(group)

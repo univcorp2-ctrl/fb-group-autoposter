@@ -37,6 +37,20 @@ function New-DailyRun {
     Register-ScheduledTask -TaskName $Name -Action $action -Trigger $triggers -Settings $settings -Description $Desc -Force | Out-Null
 }
 
+# Conservative community growth runs before browser keepalive/posting. It uses
+# a separate 30-minute ceiling and refuses to run while the posting pipeline
+# lock belongs to a live process.
+$communityAction = New-ScheduledTaskAction -Execute $TaskPython -Argument 'scripts\community_manager.py' -WorkingDirectory $Root
+$communityTrigger = New-ScheduledTaskTrigger -Daily -At '06:20' -RandomDelay (New-TimeSpan -Minutes 20)
+$communitySettings = New-ScheduledTaskSettingsSet `
+    -StartWhenAvailable `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -MultipleInstances IgnoreNew `
+    -Hidden `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+Register-ScheduledTask -TaskName 'FBAutoposter-CommunityManager' -Action $communityAction -Trigger $communityTrigger -Settings $communitySettings -Description 'Safely refresh/promote Facebook communities before posting' -Force | Out-Null
+
 New-DailyRun -Name 'FBAutoposter-Keepalive' -Script 'keepalive.py' -At '08:00' -RandomDelayMin 20 -Desc 'Keep FB session alive + back up healthy profile (+ logon)' -AlsoAtLogon
 New-DailyRun -Name 'FBAutoposter-Morning' -Script 'run_daily.py' -At '09:30' -RandomDelayMin 45 -Desc 'Post one fresh broker-OK property (morning + logon catch-up)' -AlsoAtLogon -ExecutionHours 8
 New-DailyRun -Name 'FBAutoposter-Midday' -Script 'run_daily.py' -At '13:00' -RandomDelayMin 30 -Desc 'Posting fallback (only posts if morning missed)' -ExecutionHours 8

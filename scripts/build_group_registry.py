@@ -51,7 +51,22 @@ def _now() -> str:
 
 def _load_yaml_groups() -> list[dict]:
     data = yaml.safe_load(GROUPS_YAML.read_text(encoding="utf-8")) or {}
-    return [g for g in data.get("groups", []) if isinstance(g, dict)]
+    groups = [g for g in data.get("groups", []) if isinstance(g, dict)]
+    auto_path = ROOT / "data" / "auto_groups.json"
+    if auto_path.exists():
+        try:
+            raw_auto = json.loads(auto_path.read_text(encoding="utf-8"))
+            auto_groups = raw_auto.get("groups", []) if isinstance(raw_auto, dict) else raw_auto
+            shared = data.get("_shared", {}) if isinstance(data.get("_shared", {}), dict) else {}
+            known = {str(g.get("id")) for g in groups if g.get("id")}
+            for entry in auto_groups if isinstance(auto_groups, list) else []:
+                if not isinstance(entry, dict) or not entry.get("id") or str(entry.get("id")) in known:
+                    continue
+                groups.append({**shared, **entry})
+                known.add(str(entry.get("id")))
+        except Exception:
+            pass
+    return groups
 
 
 def _load_joined() -> dict[str, dict]:
