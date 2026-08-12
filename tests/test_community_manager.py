@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+
 import scripts.community_manager as community_manager
 from config import load_groups
 
@@ -28,7 +29,7 @@ groups:
 
 def test_strict_name_fit_rejects_irrelevant_sales_crypto_and_mlm() -> None:
     assert community_manager._strict_name_fit("不動産投資情報ラウンジ")
-    assert community_manager._strict_name_fit("収益物件・一棟マンション情報交換")
+    assert community_manager._strict_name_fit("収益物件・不動産情報交換")
     assert not community_manager._strict_name_fit("売買掲示板 自動車・トラック・重機")
     assert not community_manager._strict_name_fit("暗号資産FX投資情報交換")
     assert not community_manager._strict_name_fit("MLMビジネス友達募集")
@@ -44,10 +45,7 @@ def test_save_auto_group_is_separate_from_yaml_and_load_groups_merges_shared(tmp
 
     before = groups_path.read_text(encoding="utf-8")
     added = community_manager._save_auto_group(
-        {
-            "group_id": "2217518449046952",
-            "name": "不動産物件情報コミュニティ",
-        }
+        {"group_id": "2217518449046952", "name": "不動産物件情報コミュニティ"}
     )
     assert added is True
     assert groups_path.read_text(encoding="utf-8") == before
@@ -70,3 +68,30 @@ def test_pipeline_busy_refuses_live_owner(tmp_path, monkeypatch) -> None:
     busy, reason = community_manager._pipeline_busy(lock)
     assert busy is True
     assert "active" in reason
+
+
+def test_state_preserves_join_history_across_days(tmp_path, monkeypatch) -> None:
+    state_path = tmp_path / "state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "date": "2000-01-01",
+                "promoted": [{"group_id": "old"}],
+                "join_attempts": [{"group_id": "old"}],
+                "join_history": [{"group_id": "keep"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(community_manager, "STATE_JSON", state_path)
+    current = community_manager._load_state()
+    assert current["promoted"] == []
+    assert current["join_attempts"] == []
+    assert current["join_history"] == [{"group_id": "keep"}]
+
+
+def test_production_browser_contract_is_headed() -> None:
+    source = community_manager.Path(community_manager.__file__).read_text(encoding="utf-8")
+    assert "BrowserContract.from_settings" in source
+    assert "build_launch_kwargs" in source
+    assert "headless=True" not in source

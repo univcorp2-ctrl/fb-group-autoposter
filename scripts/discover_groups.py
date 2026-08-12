@@ -7,11 +7,12 @@ writes:
   - data/group_candidates.json  (machine-readable, accumulates over time)
   - data/group_candidates.md     (human review list, newest first)
 
-This script itself is read-only. Scheduled membership growth is handled by
-scripts/community_manager.py, which first consumes the already-joined strict
-real-estate pool and only when that unused pool falls below 3 may submit one
-simple no-question join request per day. It never answers membership questions
-or bypasses Facebook challenges.
+This script itself is read-only. To minimize Facebook account risk it uses the
+same headed Chrome identity as production and searches only a small rotating
+subset of keywords each day. Scheduled membership growth is handled by
+scripts/community_manager.py, which may submit at most one simple no-question
+join request per JST day. Neither path answers membership questions nor bypasses
+Facebook challenges.
 """
 
 from __future__ import annotations
@@ -22,11 +23,17 @@ import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from config import Settings, load_groups
+from src.browser_runtime import BrowserContract, build_launch_kwargs
+from src.circuits import CircuitManager, FailureKind
+from src.orchestrator import _pid_is_running
+from src.queue_db import QueueDB
+from src.session import classify_challenge, is_logged_in
 
 # Keywords grouped by AUDIENCE CATEGORY, so each candidate carries a category we
 # can reason about when proposing it. Categories cover the core real-estate
@@ -57,6 +64,27 @@ CATEGORY_RATIONALE: dict[str, str] = {
 }
 _KEYWORD_TO_CATEGORY = {kw: cat for cat, kws in KEYWORD_CATEGORIES.items() for kw in kws}
 KEYWORDS = list(_KEYWORD_TO_CATEGORY.keys())
+DISCOVERY_KEYWORDS_PER_DAY = 3
+
+
+def _today_keywords() -> list[str]:
+    """Rotate a bounded subset so discovery grows without search bursts."""
+    if not KEYWORDS:
+        return []
+    ordinal = datetime.now(ZoneInfo("Asia/Tokyo")).date().toordinal()
+    count = min(DISCOVERY_KEYWORDS_PER_DAY, len(KEYWORDS))
+    start = (ordinal * count) % len(KEYWORDS)
+    return [KEYWORDS[(start + offset) % len(KEYWORDS)] for offset in range(count)]
+
+
+def _pipeline_busy(lock_path: Path) -> bool:
+    if not lock_path.exists():
+        return False
+    try:
+        pid = int(lock_path.read_text(encoding="utf-8").strip() or "0")
+    except (OSError, ValueError):
+        return True
+    return bool(pid and _pid_is_running(pid))
 
 CANDIDATES_JSON = ROOT / "data" / "group_candidates.json"
 CANDIDATES_MD = ROOT / "data" / "group_candidates.md"
@@ -108,6 +136,9 @@ async def _search_keyword(page, keyword: str) -> list[dict]:
     url = f"https://www.facebook.com/search/groups/?q={keyword}"
     await page.goto(url, wait_until="domcontentloaded")
     await page.wait_for_timeout(4000)
+    challenge = await classify_challenge(page)
+    if challenge:
+        raise RuntimeError(f"facebook_challenge:{challenge}")
     for _ in range(4):  # scroll to load more results
         await page.mouse.wheel(0, 2500)
         await page.wait_for_timeout(1500)
@@ -154,67 +185,130 @@ async def main() -> None:
     from playwright.async_api import async_playwright
 
     settings = Settings.load()
+    db = QueueDB(settings.db_path)
+    circuits = CircuitManager(db)
+    environment = str(getattr(settings, "runtime_environment", "default"))
+    blocking = circuits.blocking_circuit(environment=environment)
+    if blocking:
+        print(f"[skip] safety circuit open: {blocking.get('reason')}")
+        return
+    if _pipeline_busy(Path(settings.db_path).with_name("pipeline.lock")):
+        print("[skip] posting pipeline is active")
+        return
+
     existing = _load_existing()
     known = _known_group_ids()
     now = datetime.now(UTC).isoformat()
     discovered_new = 0
     new_candidates: list[dict] = []
+    keywords = _today_keywords()
 
     async with async_playwright() as p:
         ctx = await p.chromium.launch_persistent_context(
-            user_data_dir=str(settings.profile_dir), headless=True, viewport={"width": 1366, "height": 900}
+            **build_launch_kwargs(BrowserContract.from_settings(settings))
         )
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-        for kw in KEYWORDS:
+        await page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_timeout(2000)
+        challenge = await classify_challenge(page)
+        if challenge:
+            kind = {
+                "checkpoint": FailureKind.CHECKPOINT,
+                "captcha": FailureKind.CAPTCHA,
+                "two_factor": FailureKind.TWO_FACTOR,
+                "login": FailureKind.UNCLASSIFIED_LOGIN,
+            }.get(challenge, FailureKind.UNCLASSIFIED_LOGIN)
+            circuits.record_failure(kind, environment=environment, metadata={"source": "discover_groups"})
+            print(f"[stop] Facebook challenge: {challenge}")
+            await ctx.close()
+            return
+        if not await is_logged_in(page):
+            circuits.record_failure(
+                FailureKind.SESSION_EXPIRED,
+                environment=environment,
+                metadata={"source": "discover_groups"},
+            )
+            print("[stop] Facebook session is not logged in")
+            await ctx.close()
+            return
+
+        for kw in keywords:
             try:
                 results = await _search_keyword(page, kw)
-            except Exception as exc:  # keep going on a bad keyword
+            except Exception as exc:
+                text = str(exc)
+                if text.startswith("facebook_challenge:"):
+                    challenge = text.split(":", 1)[1]
+                    kind = {
+                        "checkpoint": FailureKind.CHECKPOINT,
+                        "captcha": FailureKind.CAPTCHA,
+                        "two_factor": FailureKind.TWO_FACTOR,
+                        "login": FailureKind.UNCLASSIFIED_LOGIN,
+                    }.get(challenge, FailureKind.UNCLASSIFIED_LOGIN)
+                    circuits.record_failure(
+                        kind,
+                        environment=environment,
+                        metadata={"source": "discover_groups"},
+                    )
+                    print(f"[stop] Facebook challenge during discovery: {challenge}")
+                    break
                 print(f"[warn] keyword '{kw}' failed: {exc}")
                 continue
-            for r in results:
-                gid = r["group_id"]
+            for row in results:
+                gid = row["group_id"]
                 if gid in known:
-                    continue  # already posting there
+                    continue
                 if gid in existing:
                     existing[gid]["last_seen"] = now
-                    if r.get("name") and not existing[gid].get("name"):
-                        existing[gid]["name"] = r["name"]
+                    if row.get("name") and not existing[gid].get("name"):
+                        existing[gid]["name"] = row["name"]
                     continue
-                r["first_seen"] = now
-                r["last_seen"] = now
-                existing[gid] = r
-                new_candidates.append(r)
+                row["first_seen"] = now
+                row["last_seen"] = now
+                existing[gid] = row
+                new_candidates.append(row)
                 discovered_new += 1
             print(f"keyword '{kw}': {len(results)} groups seen")
         await ctx.close()
 
-    candidates = sorted(existing.values(), key=lambda c: c.get("first_seen", ""), reverse=True)
+    candidates = sorted(
+        existing.values(),
+        key=lambda candidate: candidate.get("first_seen", ""),
+        reverse=True,
+    )
     CANDIDATES_JSON.parent.mkdir(parents=True, exist_ok=True)
-    CANDIDATES_JSON.write_text(json.dumps(candidates, ensure_ascii=False, indent=2), encoding="utf-8")
+    CANDIDATES_JSON.write_text(
+        json.dumps(candidates, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     lines = [
         "# Facebook グループ候補（不動産・投資・富裕層系）",
         "",
         f"更新: {now}　／　新規 {discovered_new} 件　／　総候補 {len(candidates)} 件",
         "",
-        "> 参加済みの良質グループを優先利用。未活用プールが3件未満の場合のみ CommunityManager が1日最大1件の単純参加申請を行います。",
+        "> 参加済みの良質グループを優先利用しつつ、CommunityManager が安全候補へ1日最大1件だけ単純参加申請を行います。参加質問やcheckpoint/CAPTCHA/2FAが出た場合は申請しません。",
         "",
         "| カテゴリ | 名前 | メンバー | 公開/非公開 | URL | 検出キーワード |",
         "|----------|------|----------|-------------|-----|----------------|",
     ]
-    ranked = sorted(candidates, key=lambda c: _parse_member_count(c.get("members", "")), reverse=True)
-    for c in ranked[:200]:
+    ranked = sorted(
+        candidates,
+        key=lambda candidate: _parse_member_count(candidate.get("members", "")),
+        reverse=True,
+    )
+    for candidate in ranked[:200]:
         lines.append(
-            f"| {c.get('category','')} | {c.get('name','')} | {c.get('members','')} | "
-            f"{c.get('privacy','')} | {c['url']} | {c.get('keyword','')} |"
+            f"| {candidate.get('category','')} | {candidate.get('name','')} | "
+            f"{candidate.get('members','')} | {candidate.get('privacy','')} | "
+            f"{candidate['url']} | {candidate.get('keyword','')} |"
         )
     CANDIDATES_MD.write_text("\n".join(lines), encoding="utf-8")
-    print(f"discovered {discovered_new} new candidates; total {len(candidates)}")
-    print(f"written: {CANDIDATES_JSON}  and  {CANDIDATES_MD}")
+    print(
+        f"discovered {discovered_new} new candidates from {len(keywords)} bounded searches; "
+        f"total {len(candidates)}"
+    )
 
-    # Notify the operator about NEW postable communities so good groups are not
-    # buried in a file no one opens. CommunityManager applies the separate,
-    # conservative membership-growth policy.
     if new_candidates:
         _notify_new_candidates(settings, new_candidates)
 
@@ -237,7 +331,7 @@ def _notify_new_candidates(settings: Settings, new_candidates: list[dict]) -> No
         ranked = sorted(new_candidates, key=lambda c: _parse_member_count(c.get("members", "")), reverse=True)
         lines = [
             f"🔎 今日のコミュニティ提案：投稿できそうな新規グループ {len(new_candidates)}件",
-            "（参加済み候補を優先。未活用プールが3件未満の時だけ1日最大1件の単純参加申請）",
+            "（参加済み候補を優先しつつ、安全候補へ1日最大1件だけ単純参加申請。質問・checkpoint等では停止）",
             "",
             "⭐ おすすめ参加先 TOP3:",
         ]

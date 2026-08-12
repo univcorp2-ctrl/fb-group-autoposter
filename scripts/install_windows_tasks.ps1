@@ -59,7 +59,7 @@ New-DailyRun -Name 'FBAutoposter-Evening' -Script 'run_daily.py' -At '20:30' -Ra
 New-DailyRun -Name 'FBAutoposter-Monitor-AM' -Script 'monitor.py' -At '12:00' -RandomDelayMin 0 -Desc 'Posting health check (after morning run)'
 New-DailyRun -Name 'FBAutoposter-Monitor-PM' -Script 'monitor.py' -At '23:00' -RandomDelayMin 0 -Desc 'Posting health check (after evening run)'
 New-DailyRun -Name 'FBAutoposter-StatusDB' -Script 'build_status_db.py' -At '09:15' -RandomDelayMin 10 -Desc 'Rebuild posting-status Excel/CSV (投稿済/未投稿 一覧)' -AlsoAtLogon
-New-DailyRun -Name 'FBAutoposter-Discover' -Script 'discover_groups.py' -At '07:00' -RandomDelayMin 30 -Desc 'Discover candidate FB groups (review list only, no auto-join)'
+New-DailyRun -Name 'FBAutoposter-Discover' -Script 'discover_groups.py' -At '05:20' -RandomDelayMin 20 -Desc 'Bounded headed discovery of safe real-estate FB group candidates'
 New-DailyRun -Name 'FBAutoposter-Verify' -Script 'verify_posts.py' -At '11:30' -RandomDelayMin 20 -Desc 'Re-verify posts live by permalink; promote approved posts'
 New-DailyRun -Name 'FBAutoposter-Verify-PM' -Script 'verify_posts.py' -At '21:30' -RandomDelayMin 20 -Desc 'Re-verify posts live by permalink (evening); promote approved posts'
 New-DailyRun -Name 'FBAutoposter-Engagement' -Script 'monitor_engagement.py' -At '12:30' -RandomDelayMin 20 -Desc 'Monitor reactions/comments on posts; report to Telegram'

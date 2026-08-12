@@ -1,19 +1,19 @@
 """Conservative Facebook community growth manager.
 
-This runs before the posting window and expands the usable community pool without
-weakening any Facebook safety controls:
+Runs before the normal posting window and expands the usable community pool
+without weakening any Facebook safety controls.
 
+Daily policy:
 - refresh already-joined groups;
-- promote at most N joined, clearly real-estate groups per JST day;
-- only promote when a normal post composer is visible and no obvious
-  no-promotion rule is visible on the group landing page;
-- only when the strict joined-but-unused pool falls below a floor, submit at
-  most one simple join request per day;
-- never answer membership questions, bypass checkpoint/CAPTCHA/2FA, or run while
-  the posting pipeline lock belongs to a live process.
+- promote at most two already-joined, clearly real-estate groups;
+- submit at most one *simple* join request to a high-fit group;
+- never answer membership questions or bypass checkpoint/CAPTCHA/2FA;
+- never touch Facebook while the posting pipeline owns the profile;
+- respect the same durable CircuitManager used by the production poster;
+- use the same headed Chrome BrowserContract as production posting.
 
-Auto-promoted groups are stored in data/auto_groups.json and merged by
-config.load_groups(), so the scheduled process never dirties groups.yaml/Git.
+Auto-promoted groups live in data/auto_groups.json and are merged by
+config.load_groups(), so scheduled operation never dirties groups.yaml/Git.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -36,15 +37,18 @@ if str(ROOT) not in sys.path:
 from config import Settings, load_groups  # noqa: E402
 from scripts.discover_groups import CANDIDATES_JSON, _parse_member_count  # noqa: E402
 from scripts.discover_joined_groups import OUT_JSON as JOINED_JSON, _scrape_joined  # noqa: E402
+from src.browser_runtime import BrowserContract, build_launch_kwargs  # noqa: E402
+from src.circuits import CircuitManager, FailureKind  # noqa: E402
 from src.orchestrator import _pid_is_running  # noqa: E402
+from src.queue_db import QueueDB  # noqa: E402
 from src.session import classify_challenge, is_logged_in  # noqa: E402
 
 GROUPS_YAML = ROOT / "groups.yaml"
 AUTO_GROUPS_JSON = ROOT / "data" / "auto_groups.json"
 STATE_JSON = ROOT / "data" / "community_manager_state.json"
+REGISTER_SLO_TASKS = ROOT / "scripts" / "register_slo_tasks.ps1"
 
 DEFAULT_PROMOTIONS_PER_DAY = 2
-DEFAULT_JOIN_POOL_FLOOR = 3
 DEFAULT_JOIN_REQUESTS_PER_DAY = 1
 
 _REAL_ESTATE_TERMS = (
@@ -135,6 +139,12 @@ _PENDING_TEXTS = (
 )
 _QUESTION_HINTS = ("参加に関する質問", "メンバーシップの質問", "質問に回答", "Membership questions")
 _SELECTION_ORDERS = ("newest", "price_asc", "yield_desc", "price_desc")
+_CHALLENGE_KINDS = {
+    "checkpoint": FailureKind.CHECKPOINT,
+    "captcha": FailureKind.CAPTCHA,
+    "two_factor": FailureKind.TWO_FACTOR,
+    "login": FailureKind.UNCLASSIFIED_LOGIN,
+}
 
 
 def _today_jst() -> str:
@@ -142,13 +152,26 @@ def _today_jst() -> str:
 
 
 def _load_state() -> dict[str, Any]:
-    if not STATE_JSON.exists():
-        return {}
-    try:
-        data = json.loads(STATE_JSON.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
+    data: dict[str, Any] = {}
+    if STATE_JSON.exists():
+        try:
+            raw = json.loads(STATE_JSON.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                data = raw
+        except Exception:
+            data = {}
+    history = data.get("join_history", []) if isinstance(data.get("join_history", []), list) else []
+    if data.get("date") != _today_jst():
+        return {
+            "date": _today_jst(),
+            "promoted": [],
+            "join_attempts": [],
+            "join_history": history[-500:],
+        }
+    data.setdefault("promoted", [])
+    data.setdefault("join_attempts", [])
+    data.setdefault("join_history", history[-500:])
+    return data
 
 
 def _save_state(state: dict[str, Any]) -> None:
@@ -156,12 +179,11 @@ def _save_state(state: dict[str, Any]) -> None:
     STATE_JSON.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _pipeline_busy(lock_path: Path | None = None) -> tuple[bool, str]:
-    lock = lock_path or (ROOT / "data" / "pipeline.lock")
-    if not lock.exists():
+def _pipeline_busy(lock_path: Path) -> tuple[bool, str]:
+    if not lock_path.exists():
         return False, ""
     try:
-        pid = int(lock.read_text(encoding="utf-8").strip() or "0")
+        pid = int(lock_path.read_text(encoding="utf-8").strip() or "0")
     except (OSError, ValueError):
         return True, "pipeline lock unreadable"
     if pid and _pid_is_running(pid):
@@ -173,9 +195,9 @@ def _manual_group_ids() -> set[str]:
     try:
         data = yaml.safe_load(GROUPS_YAML.read_text(encoding="utf-8")) or {}
         return {
-            str(g.get("id"))
-            for g in data.get("groups", [])
-            if isinstance(g, dict) and g.get("id")
+            str(group.get("id"))
+            for group in data.get("groups", [])
+            if isinstance(group, dict) and group.get("id")
         }
     except Exception:
         return set()
@@ -193,14 +215,14 @@ def _load_auto_groups() -> list[dict[str, Any]]:
 
 
 def _known_group_ids() -> set[str]:
-    return _manual_group_ids() | {str(g.get("id")) for g in _load_auto_groups() if g.get("id")}
+    return _manual_group_ids() | {str(group.get("id")) for group in _load_auto_groups() if group.get("id")}
 
 
 def _strict_name_fit(name: str) -> bool:
     text = (name or "").strip()
-    return bool(text) and any(term in text for term in _REAL_ESTATE_TERMS) and not any(bad in text for bad in _NAME_EXCLUDES)
-
-
+    return bool(text) and any(term in text for term in _REAL_ESTATE_TERMS) and not any(
+        blocked in text for blocked in _NAME_EXCLUDES
+    )
 
 
 def _promotion_score(name: str) -> int:
@@ -215,6 +237,7 @@ def _promotion_score(name: str) -> int:
     if "不動産投資" in text:
         score += 10
     return score
+
 
 def _joined_strict_candidates(joined: list[dict[str, Any]], known: set[str]) -> list[dict[str, Any]]:
     rows = [
@@ -259,7 +282,14 @@ def _save_auto_group(group: dict[str, Any]) -> bool:
     )
     AUTO_GROUPS_JSON.parent.mkdir(parents=True, exist_ok=True)
     AUTO_GROUPS_JSON.write_text(
-        json.dumps({"updated_at": datetime.now(ZoneInfo("Asia/Tokyo")).isoformat(), "groups": rows}, ensure_ascii=False, indent=2),
+        json.dumps(
+            {
+                "updated_at": datetime.now(ZoneInfo("Asia/Tokyo")).isoformat(),
+                "groups": rows,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
     return True
@@ -285,11 +315,48 @@ def _load_search_candidates(known: set[str], joined_ids: set[str], attempted_ids
     return sorted(
         candidates,
         key=lambda row: (
+            0 if str(row.get("privacy", "")).lower() in {"公開", "public"} else 1,
             -_promotion_score(str(row.get("name", ""))),
             -_parse_member_count(str(row.get("members", ""))),
             str(row.get("name", "")),
         ),
     )
+
+
+def _record_challenge(circuits: CircuitManager, challenge: str | None, environment: str) -> None:
+    if not challenge:
+        return
+    kind = _CHALLENGE_KINDS.get(challenge, FailureKind.UNCLASSIFIED_LOGIN)
+    circuits.record_failure(kind, environment=environment, metadata={"source": "community_manager"})
+
+
+def _ensure_slo_tasks() -> dict[str, Any]:
+    if not REGISTER_SLO_TASKS.exists() or sys.platform != "win32":
+        return {"configured": False, "reason": "registration script unavailable"}
+    powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    try:
+        proc = subprocess.run(
+            [
+                str(powershell),
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(REGISTER_SLO_TASKS),
+            ],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        )
+        return {"configured": proc.returncode == 0, "returncode": proc.returncode}
+    except Exception as exc:
+        return {"configured": False, "reason": f"{type(exc).__name__}: {exc}"}
 
 
 async def _page_text(page: Any) -> str:
@@ -393,44 +460,57 @@ async def _submit_one_simple_join(page: Any, candidate: dict[str, Any]) -> tuple
 
 async def main_async() -> dict[str, Any]:
     settings = Settings.load()
+    db = QueueDB(settings.db_path)
+    circuits = CircuitManager(db)
+    environment = str(getattr(settings, "runtime_environment", "default"))
+    result: dict[str, Any] = {
+        "ok": True,
+        "date": _today_jst(),
+        "promoted": [],
+        "join": None,
+        "task_bootstrap": _ensure_slo_tasks(),
+    }
+
+    blocking = circuits.blocking_circuit(environment=environment)
+    if blocking:
+        result.update({"skipped": True, "reason": f"safety circuit: {blocking.get('reason')}"})
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
     busy, reason = _pipeline_busy(Path(settings.db_path).with_name("pipeline.lock"))
     if busy:
-        result = {"ok": True, "skipped": True, "reason": reason}
+        result.update({"skipped": True, "reason": reason})
         print(json.dumps(result, ensure_ascii=False))
         return result
 
     promotions_per_day = max(0, int(os.getenv("COMMUNITY_PROMOTIONS_PER_DAY", str(DEFAULT_PROMOTIONS_PER_DAY))))
-    pool_floor = max(0, int(os.getenv("COMMUNITY_JOIN_POOL_FLOOR", str(DEFAULT_JOIN_POOL_FLOOR))))
     joins_per_day = max(0, int(os.getenv("COMMUNITY_JOIN_REQUESTS_PER_DAY", str(DEFAULT_JOIN_REQUESTS_PER_DAY))))
-    today = _today_jst()
     state = _load_state()
-    if state.get("date") != today:
-        state = {"date": today, "promoted": [], "join_attempts": []}
-
     known = _known_group_ids()
 
     from playwright.async_api import async_playwright
 
-    result: dict[str, Any] = {"ok": True, "date": today, "promoted": [], "join": None}
     async with async_playwright() as playwright:
-        context = await playwright.chromium.launch_persistent_context(
-            user_data_dir=str(settings.profile_dir),
-            headless=True,
-            viewport={"width": 1366, "height": 900},
-            user_agent=settings.browser_user_agent,
-        )
+        launch_kwargs = build_launch_kwargs(BrowserContract.from_settings(settings))
+        context = await playwright.chromium.launch_persistent_context(**launch_kwargs)
         page = context.pages[0] if context.pages else await context.new_page()
         await page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_timeout(2000)
-        if not await is_logged_in(page):
-            result.update({"ok": False, "reason": "facebook session not logged in"})
+        challenge = await classify_challenge(page)
+        if challenge:
+            _record_challenge(circuits, challenge, environment)
+            result.update({"ok": False, "reason": f"challenge:{challenge}"})
             await context.close()
             _save_state(state)
             print(json.dumps(result, ensure_ascii=False))
             return result
-        challenge = await classify_challenge(page)
-        if challenge:
-            result.update({"ok": False, "reason": f"challenge:{challenge}"})
+        if not await is_logged_in(page):
+            circuits.record_failure(
+                FailureKind.SESSION_EXPIRED,
+                environment=environment,
+                metadata={"source": "community_manager"},
+            )
+            result.update({"ok": False, "reason": "facebook session not logged in"})
             await context.close()
             _save_state(state)
             print(json.dumps(result, ensure_ascii=False))
@@ -443,10 +523,12 @@ async def main_async() -> dict[str, Any]:
             if remaining_promotions <= 0:
                 break
             promotable, why = await _probe_promotable(page, group)
+            if why.startswith("challenge:"):
+                challenge = why.split(":", 1)[1]
+                _record_challenge(circuits, challenge, environment)
+                result.update({"ok": False, "reason": why})
+                break
             if not promotable:
-                if why.startswith("challenge:"):
-                    result.update({"ok": False, "reason": why})
-                    break
                 continue
             if _save_auto_group(group):
                 gid = str(group["group_id"])
@@ -456,25 +538,46 @@ async def main_async() -> dict[str, Any]:
                 known.add(gid)
                 remaining_promotions -= 1
 
-        unused_after = _joined_strict_candidates(joined, known)
+        # One conservative membership action per day. Acceptance itself is a
+        # Facebook/group-admin decision, so the automation guarantees the bounded
+        # attempt, not external approval.
         attempts_today = state.get("join_attempts", [])
-        if result["ok"] and len(unused_after) < pool_floor and len(attempts_today) < joins_per_day:
-            attempted_ids = {str(item.get("group_id", "")) for item in attempts_today}
+        history = state.get("join_history", [])
+        if result["ok"] and len(attempts_today) < joins_per_day:
+            attempted_ids = {
+                str(item.get("group_id", ""))
+                for item in [*attempts_today, *history]
+                if isinstance(item, dict)
+            }
             joined_ids = {str(group.get("group_id", "")) for group in joined}
             candidates = _load_search_candidates(known, joined_ids, attempted_ids)
             if candidates:
                 candidate = candidates[0]
                 submitted, why = await _submit_one_simple_join(page, candidate)
                 entry = {
+                    "at": datetime.now(ZoneInfo("Asia/Tokyo")).isoformat(),
                     "group_id": str(candidate.get("group_id", "")),
                     "name": candidate.get("name", ""),
                     "submitted": submitted,
                     "reason": why,
                 }
                 state.setdefault("join_attempts", []).append(entry)
+                state.setdefault("join_history", []).append(entry)
+                state["join_history"] = state["join_history"][-500:]
                 result["join"] = entry
                 if why.startswith("challenge:"):
+                    challenge = why.split(":", 1)[1]
+                    _record_challenge(circuits, challenge, environment)
                     result.update({"ok": False, "reason": why})
+                elif submitted and why == "joined immediately":
+                    promoted = {
+                        "group_id": str(candidate.get("group_id", "")),
+                        "name": candidate.get("name", ""),
+                    }
+                    if _save_auto_group(promoted):
+                        result["promoted"].append({**promoted, "reason": "joined immediately"})
+            else:
+                result["join"] = {"submitted": False, "reason": "no unused safe candidate"}
 
         await context.close()
 

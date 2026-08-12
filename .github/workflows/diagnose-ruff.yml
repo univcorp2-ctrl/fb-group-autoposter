@@ -1,0 +1,31 @@
+name: Diagnose Ruff
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ruff
+      - name: Capture Ruff output
+        shell: bash
+        run: |
+          set +e
+          ruff check . --config pyproject.toml > ruff-output.txt 2>&1
+          {
+            echo '# Ruff diagnostic'
+            echo
+            echo '```text'
+            cat ruff-output.txt
+            echo '```'
+          } > RUFF_DIAGNOSTIC.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add RUFF_DIAGNOSTIC.md
+          git commit -m 'Update Ruff diagnostic' || true
+          git push origin HEAD:main
