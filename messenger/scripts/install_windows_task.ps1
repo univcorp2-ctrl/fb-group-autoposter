@@ -19,10 +19,14 @@ $Action = New-ScheduledTaskAction `
     -Argument 'messenger\scripts\run_once.py' `
     -WorkingDirectory $RepoRoot
 
-# Three low-frequency scans, deliberately away from the major posting starts.
-$Morning = New-ScheduledTaskTrigger -Daily -At '07:40' -RandomDelay (New-TimeSpan -Minutes 10)
-$Afternoon = New-ScheduledTaskTrigger -Daily -At '15:10' -RandomDelay (New-TimeSpan -Minutes 10)
-$Night = New-ScheduledTaskTrigger -Daily -At '23:40' -RandomDelay (New-TimeSpan -Minutes 10)
+$Daily = New-ScheduledTaskTrigger -Daily -At '07:30'
+$Repeat = New-ScheduledTaskTrigger -Once -At '07:30' `
+    -RepetitionInterval (New-TimeSpan -Hours 1) `
+    -RepetitionDuration (New-TimeSpan -Hours 16)
+$Daily.Repetition = $Repeat.Repetition
+
+$Logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$Logon.Delay = 'PT5M'
 
 $Settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
@@ -35,9 +39,9 @@ $Settings = New-ScheduledTaskSettingsSet `
 Register-ScheduledTask `
     -TaskName 'FBAutoposter-MessengerDrafts' `
     -Action $Action `
-    -Trigger @($Morning, $Afternoon, $Night) `
+    -Trigger @($Daily, $Logon) `
     -Settings $Settings `
-    -Description 'Read-only Facebook Messenger scan and reply-draft generation; never sends messages' `
+    -Description 'Hourly read-only Facebook Messenger scan and reply-draft generation; never sends messages' `
     -Force | Out-Null
 
 $Task = Get-ScheduledTask -TaskName 'FBAutoposter-MessengerDrafts'
