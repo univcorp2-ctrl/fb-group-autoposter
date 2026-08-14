@@ -28,7 +28,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config import Settings  # noqa: E402
-from src.classifier import select_threads_needing_reply  # noqa: E402
+from src.classifier import classify_thread, select_threads_needing_reply  # noqa: E402
 from src.drafter import build_draft  # noqa: E402
 from src.notifier import TelegramNotifier  # noqa: E402
 from src.scraper import scrape_inbox  # noqa: E402
@@ -94,7 +94,16 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
 
     notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
     store = ThreadStateStore(settings.data_dir / "threads_state.json")
-    drafts_out: list[dict] = []
+    drafts_path = settings.data_dir / "drafts.json"
+    active_drafts: dict[str, dict] = {}
+    if drafts_path.exists():
+        try:
+            prior = json.loads(drafts_path.read_text(encoding="utf-8"))
+            for row in prior.get("drafts", []) if isinstance(prior, dict) else []:
+                if isinstance(row, dict) and row.get("thread_id"):
+                    active_drafts[str(row["thread_id"])] = row
+        except Exception:
+            active_drafts = {}
     summary = {"scanned": 0, "need_reply": 0, "drafted": 0, "placed_in_fb": 0, "logged_in": True}
 
     async with async_playwright() as p:
@@ -114,6 +123,13 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                     notifier.send_message(f"🔴🔁 {login_required_message()}")
                 log.warning("not logged in; aborting scan")
                 return summary
+
+            # Remove active drafts only when the scanned thread is now clearly
+            # replied/closed. Unseen older drafts are retained until the thread
+            # reappears, preventing hourly scans from erasing useful drafts.
+            for thread in threads:
+                if not classify_thread(thread).needs_reply:
+                    active_drafts.pop(str(thread.get("thread_id", "")), None)
 
             needing = select_threads_needing_reply(threads)
             summary["need_reply"] = len(needing)
@@ -142,7 +158,7 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                     "draft": draft,
                     "priority": thread["classification"]["priority"],
                 }
-                drafts_out.append(row)
+                active_drafts[str(thread["thread_id"])] = row
                 summary["drafted"] += 1
 
                 if settings.write_draft_to_fb and not settings.read_only:
@@ -161,7 +177,9 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
             await ctx.close()
 
     store.save()
-    (settings.data_dir / "drafts.json").write_text(
+    drafts_out = list(active_drafts.values())
+    summary["active_drafts"] = len(drafts_out)
+    drafts_path.write_text(
         json.dumps({"checked_at": _now_jst(), "drafts": drafts_out}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
