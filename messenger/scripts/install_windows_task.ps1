@@ -1,7 +1,7 @@
 # Register the Messenger reply-draft assistant as a conservative read-only task.
 # It NEVER sends Facebook messages. messenger/.env must keep:
-#   READ_ONLY=true
-#   WRITE_DRAFT_TO_FB=false
+#   READ_ONLY=false
+#   WRITE_DRAFT_TO_FB=true
 #   HEADLESS=false
 $ErrorActionPreference = 'Stop'
 
@@ -16,7 +16,7 @@ if (!(Test-Path $Python)) {
 
 $Action = New-ScheduledTaskAction `
     -Execute $Python `
-    -Argument 'messenger\scripts\run_once.py' `
+    -Argument 'messenger\scripts\run_visible_drafts.py' `
     -WorkingDirectory $RepoRoot
 
 $Daily = New-ScheduledTaskTrigger -Daily -At '07:30'
@@ -34,14 +34,14 @@ $Settings = New-ScheduledTaskSettingsSet `
     -DontStopIfGoingOnBatteries `
     -MultipleInstances IgnoreNew `
     -Hidden `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 55)
 
 Register-ScheduledTask `
     -TaskName 'FBAutoposter-MessengerDrafts' `
     -Action $Action `
     -Trigger @($Daily, $Logon) `
     -Settings $Settings `
-    -Description 'Hourly read-only Facebook Messenger scan and reply-draft generation; never sends messages' `
+    -Description 'Hourly Messenger reply-draft scan; keeps unsent drafts visibly open; never sends messages' `
     -Force | Out-Null
 
 $Task = Get-ScheduledTask -TaskName 'FBAutoposter-MessengerDrafts'

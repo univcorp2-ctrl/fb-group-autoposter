@@ -128,7 +128,8 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
             # replied/closed. Unseen older drafts are retained until the thread
             # reappears, preventing hourly scans from erasing useful drafts.
             for thread in threads:
-                if not classify_thread(thread).needs_reply:
+                classification = classify_thread(thread)
+                if classification.reason in {"already_replied", "closing_ack"}:
                     active_drafts.pop(str(thread.get("thread_id", "")), None)
 
             needing = select_threads_needing_reply(threads)
@@ -137,6 +138,37 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
             for thread in needing:
                 preview = thread.get("preview", "")
                 if not store.is_new_state(thread["thread_id"], preview):
+                    # The state DB can outlive drafts.json. Rehydrate the saved
+                    # draft from the current inbound preview if necessary, then
+                    # idempotently place/verify it in Messenger's composer.
+                    saved = active_drafts.get(str(thread["thread_id"]))
+                    if not saved:
+                        draft = build_draft(
+                            thread["name"],
+                            preview,
+                            line_url=settings.line_url,
+                            community_url=settings.community_url,
+                            api_key=settings.anthropic_api_key,
+                            model=settings.claude_model,
+                        )
+                        saved = {
+                            "thread_id": thread["thread_id"],
+                            "url": thread["url"],
+                            "name": thread["name"],
+                            "last_message": preview,
+                            "draft": draft,
+                            "priority": thread["classification"]["priority"],
+                        }
+                        active_drafts[str(thread["thread_id"])] = saved
+                        summary["drafted"] += 1
+                        _archive_draft(settings, saved, _now_jst())
+                    if settings.write_draft_to_fb and not settings.read_only:
+                        from src.fb_draft_writer import write_draft_no_send
+
+                        if await write_draft_no_send(
+                            page, thread["url"], str(saved["draft"])
+                        ):
+                            summary["placed_in_fb"] += 1
                     continue  # already drafted for this exact message state
                 # Use the inbox preview as the last message. We deliberately do NOT
                 # open the thread: opening marks it "seen" and sends a read receipt,
