@@ -1,6 +1,7 @@
 """Tests for the EstateBoard posting-status bridge (scripts/sync_estateboard_status.py)."""
 import json
 import sqlite3
+import subprocess
 
 import scripts.sync_estateboard_status as bridge
 from scripts.sync_estateboard_status import (
@@ -150,3 +151,42 @@ def test_sync_absent_repo_is_noop(tmp_path):
     summary = sync_estateboard_status(db_path, eb_root=tmp_path / "does_not_exist")
     assert summary["skipped"] is True
     assert summary["master_marked"] == 0
+
+
+def test_git_sync_subprocesses_are_windowless_on_windows(tmp_path, monkeypatch):
+    eb_root = tmp_path / "EstateBoard"
+    master = eb_root / "output" / "received" / "master_properties.jsonl"
+    data = eb_root / "docs" / "data.json"
+    master.parent.mkdir(parents=True)
+    data.parent.mkdir(parents=True)
+    master.write_text("{}\n", encoding="utf-8")
+    data.write_text("{}\n", encoding="utf-8")
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        stdout = " M docs/data.json\n" if "status" in command else ""
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(bridge, "_wrangler_deploy_eb", lambda _root: True)
+
+    assert bridge._git_sync_eb(eb_root, master, data) is True
+    assert calls
+    assert all(
+        kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
+        for _command, kwargs in calls
+    )
+
+
+def test_wrangler_deploy_is_windowless_on_windows(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert bridge._wrangler_deploy_eb(tmp_path) is True
+    assert calls[0][1]["creationflags"] & subprocess.CREATE_NO_WINDOW

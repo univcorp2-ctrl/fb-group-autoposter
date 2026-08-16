@@ -1,0 +1,6 @@
+{
+  "date": "2026-08-15",
+  "attempts": 0,
+  "status": "blocked_by_safety_circuit",
+  "reason": "session_expired"
+}

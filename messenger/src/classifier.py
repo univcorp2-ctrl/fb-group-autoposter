@@ -15,10 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Preview prefixes Facebook uses when *I* sent the last message.
 _SELF_PREFIXES = ("あなた:", "あなた：", "自分:", "自分：", "You:", "You sent", "Vous :")
 
-# Names / preview fragments that indicate a non-personal, automated thread.
 _AUTOMATED_HINTS = (
     "facebook",
     "meta",
@@ -32,9 +30,6 @@ _AUTOMATED_HINTS = (
     "noreply",
 )
 
-# Preview fragments that mean there is NO real inbound message to reply to:
-# the end-to-end-encryption banner (empty/new conversation) or a system event.
-# A thread whose latest preview is one of these has nothing to answer.
 _SYSTEM_PREVIEW_HINTS = (
     "エンドツーエンド暗号化",
     "end-to-end encrypted",
@@ -49,17 +44,35 @@ _SYSTEM_PREVIEW_HINTS = (
     "added you to the group",
 )
 
+# Short acknowledgements that normally close the conversation and do not need
+# another reply. Keep this list intentionally narrow so genuine questions such
+# as "ありがとうございます。○○はありますか？" are still drafted.
+_NO_REPLY_ACKS = (
+    "承知しました",
+    "承知いたしました",
+    "了解しました",
+    "了解いたしました",
+    "わかりました",
+    "分かりました",
+    "かしこまりました",
+)
+
 
 def _is_system_preview(preview: str) -> bool:
-    p = (preview or "")
+    p = preview or ""
     return any(hint in p for hint in _SYSTEM_PREVIEW_HINTS)
+
+
+def _is_closing_ack(preview: str) -> bool:
+    normalized = (preview or "").strip().rstrip("。.!！?？ ")
+    return normalized in _NO_REPLY_ACKS
 
 
 @dataclass(frozen=True)
 class Classification:
     needs_reply: bool
     reason: str
-    priority: str  # "high" | "normal" | "none"
+    priority: str
 
 
 def _looks_self_sent(preview: str) -> bool:
@@ -73,27 +86,17 @@ def _looks_automated(name: str, preview: str) -> bool:
 
 
 def classify_thread(thread: dict) -> Classification:
-    """Classify one scraped thread dict.
-
-    Expected keys (all best-effort; missing ones are treated conservatively):
-      name: str           — the other party / thread title
-      preview: str        — last message preview text
-      is_unread: bool     — thread shows an unread indicator
-      last_from_me: bool  — I sent the last message (overrides preview parsing)
-      is_group: bool      — known group thread
-      participant_count: int | None — number of *other* participants if known
-    """
+    """Classify one scraped thread dict conservatively."""
     name = str(thread.get("name", "") or "")
     preview = str(thread.get("preview", "") or "")
 
     if thread.get("is_group"):
         return Classification(False, "group_thread", "none")
 
-    pc = thread.get("participant_count")
-    if isinstance(pc, int) and pc > 1:
+    participant_count = thread.get("participant_count")
+    if isinstance(participant_count, int) and participant_count > 1:
         return Classification(False, "group_thread", "none")
 
-    # Explicit signal wins; otherwise infer from the preview prefix.
     last_from_me = thread.get("last_from_me")
     if last_from_me is None:
         last_from_me = _looks_self_sent(preview)
@@ -104,11 +107,12 @@ def classify_thread(thread: dict) -> Classification:
         return Classification(False, "automated_thread", "none")
 
     if _is_system_preview(preview):
-        # E2E banner / system event — there is no actual message to reply to.
         return Classification(False, "no_message", "none")
 
+    if _is_closing_ack(preview):
+        return Classification(False, "closing_ack", "none")
+
     if not preview.strip():
-        # No readable last message — flag for human eyes but low priority.
         return Classification(True, "needs_review_empty_preview", "normal")
 
     priority = "high" if thread.get("is_unread") else "normal"
@@ -116,13 +120,19 @@ def classify_thread(thread: dict) -> Classification:
 
 
 def select_threads_needing_reply(threads: list[dict]) -> list[dict]:
-    """Return the subset of threads that need a reply, each annotated with its
-    classification under the 'classification' key (priority/reason)."""
+    """Return reply-needed threads annotated with priority/reason."""
     out: list[dict] = []
     for thread in threads:
-        c = classify_thread(thread)
-        if c.needs_reply:
-            out.append({**thread, "classification": {"reason": c.reason, "priority": c.priority}})
-    # High-priority (unread) first, stable otherwise.
-    out.sort(key=lambda t: 0 if t["classification"]["priority"] == "high" else 1)
+        classification = classify_thread(thread)
+        if classification.needs_reply:
+            out.append(
+                {
+                    **thread,
+                    "classification": {
+                        "reason": classification.reason,
+                        "priority": classification.priority,
+                    },
+                }
+            )
+    out.sort(key=lambda item: 0 if item["classification"]["priority"] == "high" else 1)
     return out

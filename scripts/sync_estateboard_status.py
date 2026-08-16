@@ -347,7 +347,8 @@ def _git_sync_eb(eb_root: Path, master_path: Path, data_path: Path) -> bool:
 
     def _git(*args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["git", *args], cwd=str(eb_root), capture_output=True, text=True, timeout=60, check=False
+            ["git", *args], cwd=str(eb_root), capture_output=True, text=True,
+            timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False
         )
 
     try:
@@ -385,6 +386,7 @@ def _wrangler_deploy_eb(eb_root: Path) -> bool:
             ["npx", "wrangler", "pages", "deploy", "docs",
              "--project-name=estateboard", "--commit-dirty=true"],
             cwd=str(eb_root), capture_output=True, text=True, timeout=600, shell=True, check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if cp.returncode != 0:
             log.warning("wrangler deploy skipped/failed: %s", (cp.stderr or cp.stdout)[-200:])
