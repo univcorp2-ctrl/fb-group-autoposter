@@ -1,6 +1,6 @@
 {
   "running": true,
-  "started_at": "2026-08-20 12:30:12 JST",
+  "started_at": "2026-08-20 12:51:49 JST",
   "interval_minutes": 30,
   "send_enabled": false,
   "profile_dir": "G:\\マイドライブ\\AI_Agents\\github\\repos\\fb-group-autoposter\\messenger\\profiles\\messenger",
@@ -18,7 +18,5 @@
     "name": "Hiroaki Kobayashi",
     "url": "https://www.messenger.com/t/1390317282929328"
   },
-  "last_success_at": "2026-08-20 12:31:19 JST",
-  "last_error_at": "2026-08-20 12:46:49 JST",
-  "error": "TargetClosedError: Page.wait_for_timeout: Target page, context or browser has been closed"
+  "last_success_at": "2026-08-20 12:52:58 JST"
 }
