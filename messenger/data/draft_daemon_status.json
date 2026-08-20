@@ -1,16 +1,19 @@
 {
   "running": true,
-  "started_at": "2026-08-20 12:51:49 JST",
+  "started_at": "2026-08-20 13:22:49 JST",
   "interval_minutes": 30,
   "send_enabled": false,
-  "profile_dir": "G:\\マイドライブ\\AI_Agents\\github\\repos\\fb-group-autoposter\\messenger\\profiles\\messenger",
+  "profile_dir": "C:\\AI-Agent\\chrome-profile-authenticated",
+  "profile_directory": "Default",
+  "browser_display_mode": "auto",
+  "browser_owner": "central_executor",
+  "draft_placement_enabled": true,
   "scan": {
-    "scanned": 20,
-    "need_reply": 3,
+    "scanned": 0,
+    "need_reply": 0,
     "drafted": 0,
-    "placed_in_fb": 3,
-    "logged_in": true,
-    "active_drafts": 3
+    "placed_in_fb": 0,
+    "logged_in": false
   },
   "active_drafts": 3,
   "focus": {
@@ -18,5 +21,6 @@
     "name": "Hiroaki Kobayashi",
     "url": "https://www.messenger.com/t/1390317282929328"
   },
-  "last_success_at": "2026-08-20 12:52:58 JST"
+  "last_success_at": "2026-08-20 13:23:56 JST",
+  "browser_status": "attached_authenticated_default"
 }
