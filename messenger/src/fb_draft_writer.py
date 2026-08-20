@@ -34,7 +34,10 @@ async def _find_composer(page: Any) -> Any | None:
     for selector in _COMPOSER_SELECTORS:
         try:
             loc = page.locator(selector).first
-            if await loc.count() > 0 and await loc.is_visible():
+            if await loc.count() < 1:
+                continue
+            await loc.scroll_into_view_if_needed(timeout=10_000)
+            if await loc.is_visible():
                 return loc
         except Exception:
             continue
@@ -96,3 +99,4 @@ async def write_draft_no_send(page: Any, thread_url: str, draft: str) -> bool:
             exc,
         )
         return False
+

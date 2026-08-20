@@ -4,21 +4,22 @@ Facebook **Messenger の1対1メッセージ**を読み取り、**返信が必�
 **返信下書き**を Notion と Telegram に保存するアシスタント。
 
 > 🤝 これは自動投稿リポジトリ `fb-group-autoposter` とは**完全に独立**しています。
-> 別プロファイル・別 `.env`・別スケジュールで動き、**自動投稿には一切干渉しません**。
+> ブラウザは中央Executorが所有する認証済み `Default` を再利用し、Messenger側は起動・終了しません。
 
 ---
 
-## 🛡️ アカウント停止(BAN)回避の設計
+## 🛡️ 安定稼働とプラットフォーム保護の設計
 
 最優先は「**絶対にアカウントを止めないこと**」。そのため：
 
 | 方針 | 内容 |
 |---|---|
-| **送信しない** | 下書きを作るだけ。**実際の送信は必ず人間**が行う。コードに送信パスは存在しない。 |
+| **daemonは送信しない** | 定期処理は下書き作成・入力欄配置まで。明示的な1件送信CLIは別経路で、対象・preview・重複・`--send`を検証する。 |
 | **デフォルト読むだけ** | `READ_ONLY=true`。FBへの書き込みゼロ＝最も安全。 |
-| **別プロファイル** | `profiles/messenger`。自動投稿の `profiles/main` とは別。同時起動でも互いに壊さない。 |
-| **控えめな頻度** | 1回あたりのスキャン上限・人間らしい間隔/マウス操作。1日数回の実行を想定。 |
-| **固定UA** | 自動投稿と同じ固定User-Agent（変えると本人確認を誘発しやすい）。 |
+| **認証済みDefault固定** | `C:\AI-Agent\chrome-profile-authenticated` / `Default`へCDP接続。Guest・一時profile・別アカウントへfallbackしない。 |
+| **通常Chromeを維持** | bundled Chromium、固定UA、`--no-sandbox`等を使わず、中央Executorの実Chromeへ接続する。 |
+| **控えめな頻度** | 1回のスキャン上限、直列処理、条件待ち、bounded backoffを使う。 |
+| **本人確認を回避しない** | CAPTCHA、checkpoint、2FAは同じDefaultの正規画面で人が完了する。 |
 
 ### 2段階の下書き保存
 
@@ -35,7 +36,6 @@ Facebook **Messenger の1対1メッセージ**を読み取り、**返信が必�
 cd fb-messenger-assistant
 python -m venv .venv && .venv\Scripts\activate   # Windows
 pip install -r requirements.txt
-playwright install chromium
 
 cp .env.example .env   # 値を設定（Telegram / Notion / LINE URL 等）
 ```
@@ -46,8 +46,9 @@ cp .env.example .env   # 値を設定（Telegram / Notion / LINE URL 等）
 python scripts/login.py
 ```
 
-ブラウザが開くので Facebook/Messenger にログイン（2FA・本人確認も対応）。
-受信箱が出たらターミナルで Enter。セッションが `profiles/messenger` に保存されます。
+先に中央Executorを `display_mode=visible` で起動し、このスクリプトを実行します。
+既存の認証済み `C:\AI-Agent\chrome-profile-authenticated` / `Default` に接続するので、
+Facebook/Messengerの2FA・本人確認はその正規Chrome画面で完了します。
 
 ### 2) スキャン実行（読み取り→下書き保存）
 
@@ -64,8 +65,8 @@ python scripts/run_once.py
 ## 仕組み（パイプライン）
 
 ```
-受信箱を開く（専用プロファイル）
-  └─ 未ログインなら Telegram 通知して終了（無理なリトライはしない）
+中央Executor所有の認証済みDefaultへCDP接続
+  └─ 未起動・未ログイン・mode不一致ならfallbackせず状態記録＋bounded retry
 スレッド一覧を取得 → 要返信を判定（src/classifier.py）
   └─ 1対1のみ / 相手が最後 / 自動応答やグループは除外
 新着のものだけ:
@@ -79,7 +80,8 @@ python scripts/run_once.py
 
 | ファイル | 役割 |
 |---|---|
-| `config.py` | 設定（別プロファイル・Telegram・Notion・URL） |
+| `config.py` | 認証済みDefault固定、表示mode、Telegram・Notion・URL設定 |
+| `src/authenticated_chrome.py` | DevToolsActivePort検証、外部ChromeへのCDP接続、所有権保護 |
 | `src/session.py` | ログイン状態の検知 |
 | `src/scraper.py` | Messenger 受信箱・会話の**読み取り専用**取得 |
 | `src/classifier.py` | 要返信の判定（純粋関数・テスト済） |
@@ -106,5 +108,6 @@ ruff check .
 
 ## スケジュール実行（任意）
 
-Windows タスクスケジューラで `python scripts/run_once.py` を1日数回。
-自動投稿のタスクとは**別時刻**に設定し、ブラウザ同時起動を避けるのが無難です。
+`scripts/install_windows_task.ps1` はwindowless daemonを登録します。daemonは中央Chromeへ接続するだけで、
+別の可視ブラウザやGuest profileを起動しません。接続不能時もプロセスを維持して再試行します。
+

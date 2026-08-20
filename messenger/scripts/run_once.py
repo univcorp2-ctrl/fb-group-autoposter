@@ -28,6 +28,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config import Settings  # noqa: E402
+from src.authenticated_chrome import (  # noqa: E402
+    attach_authenticated_context,
+    select_messenger_page,
+)
 from src.classifier import classify_thread, select_threads_needing_reply  # noqa: E402
 from src.drafter import build_draft  # noqa: E402
 from src.notifier import TelegramNotifier  # noqa: E402
@@ -107,13 +111,8 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
     summary = {"scanned": 0, "need_reply": 0, "drafted": 0, "placed_in_fb": 0, "logged_in": True}
 
     async with async_playwright() as p:
-        ctx = await p.chromium.launch_persistent_context(
-            user_data_dir=str(settings.profile_dir),
-            headless=settings.headless,
-            viewport={"width": 1366, "height": 900},
-            user_agent=settings.browser_user_agent,
-        )
-        page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+        attachment = await attach_authenticated_context(p, settings)
+        page = await select_messenger_page(attachment.context)
         try:
             threads = await scrape_inbox(page, settings.max_threads_per_run)
             summary["scanned"] = len(threads)
@@ -206,7 +205,9 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                 store.mark_drafted(thread["thread_id"], preview, drafted_at=_now_jst())
                 await page.wait_for_timeout(random.randint(2000, 5000))  # gentle pacing
         finally:
-            await ctx.close()
+            # The Chrome process, context, and page are externally owned by the
+            # central Executor. Exiting Playwright disconnects only this client.
+            pass
 
     store.save()
     drafts_out = list(active_drafts.values())
@@ -230,3 +231,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
