@@ -1,9 +1,8 @@
-"""One-time manual login into the Messenger profile.
+"""Open Facebook login in the central authenticated Chrome Default profile.
 
-Opens a real browser window using THIS repo's dedicated profile (never the
-autoposter's). Log in by hand (handle any 2FA / checkpoint). The script AUTO-
-DETECTS when the inbox appears, waits a few seconds for cookies to flush, then
-saves and closes — no terminal interaction needed (works in the background too).
+The central Executor must already be running its visible Chrome session. Log in
+by hand and handle any 2FA/checkpoint. This client never launches or closes the
+browser and never falls back to a repository-local or Guest profile.
 
 If you prefer to close it yourself, press Enter in the terminal at any time.
 
@@ -15,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +22,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config import Settings  # noqa: E402
+from src.authenticated_chrome import (  # noqa: E402
+    attach_authenticated_context,
+    select_messenger_page,
+)
 
 # How long to keep the window open waiting for a human to finish logging in.
 LOGIN_WAIT_TIMEOUT_S = 600
@@ -57,16 +61,12 @@ async def _wait_for_login(ctx) -> str | None:
 async def _run() -> None:
     from playwright.async_api import async_playwright
 
-    settings = Settings.load()
+    settings = replace(Settings.load(), browser_display_mode="visible")
     print(f"Messenger プロファイル: {settings.profile_dir.resolve()}")
     async with async_playwright() as p:
-        ctx = await p.chromium.launch_persistent_context(
-            user_data_dir=str(settings.profile_dir),
-            headless=False,
-            viewport={"width": 1366, "height": 900},
-            user_agent=settings.browser_user_agent,
-        )
-        page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+        attachment = await attach_authenticated_context(p, settings)
+        ctx = attachment.context
+        page = await select_messenger_page(ctx)
         # Log in on facebook.com — it issues PERSISTENT c_user/xs cookies (unlike
         # messenger.com's "keep me logged in" which defaulted to a session cookie
         # and was lost on close). Messenger then authenticates from these via SSO.
@@ -76,7 +76,7 @@ async def _run() -> None:
         print("  ログインを検知したら自動で保存して閉じます（最大10分待機）…")
         uid = await _wait_for_login(ctx)
         if uid:
-            print(f"✅ ログインを検知しました（user_id={uid}）。Messengerセッションを確立中…")
+            print("✅ ログインを検知しました。Messengerセッションを確立中…")
             # Warm messenger.com so its own cookies are set from the FB session.
             try:
                 await page.goto("https://www.messenger.com/", wait_until="domcontentloaded", timeout=60000)
@@ -88,7 +88,6 @@ async def _run() -> None:
         else:
             persisted = None
             print("⌛ タイムアウト（ログイン未検知）。")
-        await ctx.close()
     if persisted:
         print("セッションを保存しました。`python scripts/run_once.py` で読み取りを実行できます。")
     else:

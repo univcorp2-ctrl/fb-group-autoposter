@@ -1,8 +1,9 @@
-# Register the Messenger reply-draft assistant as a conservative read-only task.
-# It NEVER sends Facebook messages. messenger/.env must keep:
-#   READ_ONLY=false
-#   WRITE_DRAFT_TO_FB=true
-#   HEADLESS=false
+# Register the Messenger reply-draft daemon for the current Windows user.
+# Safety: the daemon NEVER sends Facebook messages. It only scans, drafts,
+# writes unsent text into the Messenger composer, and keeps a reply screen open.
+#
+# Optional interval override in messenger/.env or user environment:
+#   MESSENGER_DRAFT_INTERVAL_MINUTES=30
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -16,17 +17,14 @@ if (!(Test-Path $Python)) {
 
 $Action = New-ScheduledTaskAction `
     -Execute $Python `
-    -Argument 'messenger\scripts\run_visible_drafts.py' `
+    -Argument 'messenger\scripts\run_draft_daemon.py' `
     -WorkingDirectory $RepoRoot
 
-$Daily = New-ScheduledTaskTrigger -Daily -At '07:30'
-$Repeat = New-ScheduledTaskTrigger -Once -At '07:30' `
-    -RepetitionInterval (New-TimeSpan -Hours 1) `
-    -RepetitionDuration (New-TimeSpan -Hours 16)
-$Daily.Repetition = $Repeat.Repetition
-
+# The daemon owns the 30-minute loop. Logon starts it; the daily trigger is a
+# self-healing fallback if the process was stopped while the PC stayed logged in.
 $Logon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$Logon.Delay = 'PT5M'
+$Logon.Delay = 'PT2M'
+$Daily = New-ScheduledTaskTrigger -Daily -At '07:30'
 
 $Settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
@@ -34,14 +32,14 @@ $Settings = New-ScheduledTaskSettingsSet `
     -DontStopIfGoingOnBatteries `
     -MultipleInstances IgnoreNew `
     -Hidden `
-    -ExecutionTimeLimit (New-TimeSpan -Minutes 55)
+    -ExecutionTimeLimit ([TimeSpan]::Zero)
 
 Register-ScheduledTask `
     -TaskName 'FBAutoposter-MessengerDrafts' `
     -Action $Action `
-    -Trigger @($Daily, $Logon) `
+    -Trigger @($Logon, $Daily) `
     -Settings $Settings `
-    -Description 'Hourly Messenger reply-draft scan; keeps unsent drafts visibly open; never sends messages' `
+    -Description 'Persistent Messenger reply-draft assistant: periodic scan, draft generation, composer placement, never sends' `
     -Force | Out-Null
 
 $Task = Get-ScheduledTask -TaskName 'FBAutoposter-MessengerDrafts'
