@@ -148,7 +148,7 @@ async def main_async() -> int:
                 "draft_placement_enabled": settings.write_draft_to_fb and not settings.read_only,
             }
             try:
-                # The existing scan pipeline owns its browser briefly, classifies
+                # The scan pipeline attaches to the central browser, classifies
                 # inbox rows, builds drafts, persists state, and may write drafts.
                 scan = await _scan(settings, use_telegram=True)
                 status["scan"] = scan

@@ -63,6 +63,13 @@ def test_sendkeys_profile_helper_is_removed() -> None:
     assert not (MESSENGER_ROOT / "scripts" / "place_work_profile_drafts.ps1").exists()
 
 
+def test_scheduled_task_requires_windowless_python_runtime() -> None:
+    source = _source("scripts/install_windows_task.ps1")
+    assert r".venv\Scripts\pythonw.exe" in source
+    assert r".venv\Scripts\python.exe" not in source
+    assert "Windowless Python runtime not found" in source
+
+
 def test_example_config_documents_only_authenticated_default_profile() -> None:
     source = _source(".env.example")
     assert r"MESSENGER_PROFILE_DIR=C:\AI-Agent\chrome-profile-authenticated" in source

@@ -1,6 +1,6 @@
 # Register the Messenger reply-draft daemon for the current Windows user.
 # Safety: the daemon NEVER sends Facebook messages. It only scans, drafts,
-# writes unsent text into the Messenger composer, and keeps a reply screen open.
+# and may write unsent text into the Messenger composer in the central Chrome.
 #
 # Optional interval override in messenger/.env or user environment:
 #   MESSENGER_DRAFT_INTERVAL_MINUTES=30
@@ -9,10 +9,7 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Python = Join-Path $RepoRoot '.venv\Scripts\pythonw.exe'
 if (!(Test-Path $Python)) {
-    $Python = Join-Path $RepoRoot '.venv\Scripts\python.exe'
-}
-if (!(Test-Path $Python)) {
-    throw "Python runtime not found: $Python"
+    throw "Windowless Python runtime not found: $Python"
 }
 
 $Action = New-ScheduledTaskAction `
