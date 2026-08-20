@@ -207,6 +207,26 @@ def main() -> None:
     groups = load_groups()
     db = QueueDB(settings.db_path)
 
+    # A recoverable environment circuit (for example a plain session expiry)
+    # must not become a permanent outage.  When such a circuit is active, run a
+    # read-only Facebook session preflight.  A healthy preflight clears only the
+    # circuits whose policy explicitly allows preflight clearance; checkpoint,
+    # captcha, 2FA and operator-only circuits remain fail-closed.
+    from src.circuits import CircuitManager
+
+    environment = str(getattr(settings, "runtime_environment", "default") or "default")
+    blocking = CircuitManager(db).blocking_circuit(environment=environment)
+    preflight_result = None
+    if blocking and blocking.get("clearance_mode") in {
+        "preflight",
+        "minimum_preflight",
+        "operator_preflight",
+    }:
+        from src.session_preflight import run_session_preflight
+
+        preflight_result = asyncio.run(run_session_preflight(settings, db))
+        log.info("session preflight result: %s", json.dumps(preflight_result, ensure_ascii=False))
+
     async def run_once() -> None:
         # One full grouped cycle: each group independently selects its OWN next
         # unposted property (by its configured selection_order), then posts.
@@ -219,9 +239,19 @@ def main() -> None:
         log.error("manual_profile_recovery_required: run read-only preflight and manual login_once.py")
         return False
 
-    result = asyncio.run(
-        ensure_posted_today(settings, groups, db, run_once=run_once, restore_session=restore_session)
-    )
+    if preflight_result is not None and not preflight_result.get("ok"):
+        challenge = preflight_result.get("challenge")
+        result = {
+            "attempts": 0,
+            "posted": False,
+            "reason": "manual_profile_recovery_required",
+            "restored": False,
+            "challenge": challenge,
+        }
+    else:
+        result = asyncio.run(
+            ensure_posted_today(settings, groups, db, run_once=run_once, restore_session=restore_session)
+        )
     if result.get("reason") == "no_backup_to_restore":
         result["reason"] = "manual_profile_recovery_required"
         result["circuit_open"] = True

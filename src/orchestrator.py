@@ -267,12 +267,25 @@ async def run_cycle_grouped(
         poster = FacebookPoster(settings, db, groups, notifier, freshness_checker=checker)
         approved = db.approved_jobs()[:remaining_slots]
         for index, job in enumerate(approved):
+            # Only space genuine Facebook submission attempts. Pure pre-submit
+            # skips (open circuit, stale listing, inactive group, selector guard,
+            # etc.) must advance immediately; sleeping 15-35 minutes after a skip
+            # previously held the pipeline lock for hours without posting.
+            with db.connect() as conn:
+                attempts_before = conn.execute(
+                    "SELECT COUNT(*) AS n FROM submission_attempts"
+                ).fetchone()["n"]
             status = await poster.post_job(job)
+            with db.connect() as conn:
+                attempts_after = conn.execute(
+                    "SELECT COUNT(*) AS n FROM submission_attempts"
+                ).fetchone()["n"]
             summary["approved_processed"] = int(summary["approved_processed"]) + 1
             summary["statuses"].append({"job_id": job["job_id"], "status": status})
-            # Randomized spacing BETWEEN posts (not after the last) to avoid
-            # robotic cadence that trips block detection.
-            if index < len(approved) - 1:
+            # Keep the conservative randomized cadence after any actual submit
+            # attempt, including an unverified/uncertain one. Never accelerate
+            # after a Facebook click just because permalink verification failed.
+            if attempts_after > attempts_before and index < len(approved) - 1:
                 await sleeper(random.randint(settings.min_interval_min * 60, settings.max_interval_min * 60))
         db.mark_heartbeat("orchestrator")
 

@@ -1,0 +1,10 @@
+{
+  "ok": false,
+  "sent": false,
+  "send_requested": false,
+  "checked_at": "2026-08-19T21:40:42.303223+09:00",
+  "target_name": "松井宏貴",
+  "thread_id": "2460965441081673",
+  "reason": "exception",
+  "error": "Current inbox preview changed; refusing to send a potentially stale reply."
+}

@@ -1,0 +1,24 @@
+{
+  "active_drafts": 3,
+  "visible_tabs": 3,
+  "hold_minutes": 50,
+  "threads": [
+    {
+      "thread_id": "2460965441081673",
+      "name": "松井宏貴",
+      "visible": true
+    },
+    {
+      "thread_id": "1390317282929328",
+      "name": "Hiroaki Kobayashi",
+      "visible": true
+    },
+    {
+      "thread_id": "3620590898117253",
+      "name": "Yoshi Kato",
+      "visible": true
+    }
+  ],
+  "status": "closed",
+  "closed_at": "2026-08-18T01:56:08.756326+00:00"
+}
