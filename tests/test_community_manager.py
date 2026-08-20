@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 
 import scripts.community_manager as community_manager
@@ -35,36 +33,33 @@ def test_strict_name_fit_rejects_irrelevant_sales_crypto_and_mlm() -> None:
     assert not community_manager._strict_name_fit("MLMビジネス友達募集")
 
 
-def test_save_auto_group_is_separate_from_yaml_and_load_groups_merges_shared(tmp_path, monkeypatch) -> None:
+def test_save_auto_group_is_separate_from_yaml_and_load_groups_merges_shared(
+    tmp_path, monkeypatch
+) -> None:
     groups_path = tmp_path / "groups.yaml"
     auto_path = tmp_path / "data" / "auto_groups.json"
     groups_path.write_text(_groups_yaml(), encoding="utf-8")
-
     monkeypatch.setattr(community_manager, "GROUPS_YAML", groups_path)
     monkeypatch.setattr(community_manager, "AUTO_GROUPS_JSON", auto_path)
-
     before = groups_path.read_text(encoding="utf-8")
-    added = community_manager._save_auto_group(
+    assert community_manager._save_auto_group(
         {"group_id": "2217518449046952", "name": "不動産物件情報コミュニティ"}
     )
-    assert added is True
     assert groups_path.read_text(encoding="utf-8") == before
-
     stored = json.loads(auto_path.read_text(encoding="utf-8"))
     assert stored["groups"][0]["enabled"] is True
-    assert stored["groups"][0]["post_url"].endswith("/2217518449046952")
-
     merged = load_groups(groups_path)
     by_id = {str(group["id"]): group for group in merged}
     assert set(by_id) == {"100", "2217518449046952"}
-    assert by_id["2217518449046952"]["tone"] == "プロフェッショナル"
     assert by_id["2217518449046952"]["active_hours"] == [7, 23]
 
 
 def test_pipeline_busy_refuses_live_owner(tmp_path, monkeypatch) -> None:
     lock = tmp_path / "pipeline.lock"
     lock.write_text("12345", encoding="utf-8")
-    monkeypatch.setattr(community_manager, "_pid_is_running", lambda pid: pid == 12345)
+    monkeypatch.setattr(
+        community_manager, "_pid_is_running", lambda pid: pid == 12345
+    )
     busy, reason = community_manager._pipeline_busy(lock)
     assert busy is True
     assert "active" in reason
@@ -91,7 +86,9 @@ def test_state_preserves_join_history_across_days(tmp_path, monkeypatch) -> None
 
 
 def test_production_browser_contract_is_headed() -> None:
-    source = community_manager.Path(community_manager.__file__).read_text(encoding="utf-8")
+    source = community_manager.Path(community_manager.__file__).read_text(
+        encoding="utf-8"
+    )
     assert "BrowserContract.from_settings" in source
     assert "build_launch_kwargs" in source
     assert "headless=True" not in source

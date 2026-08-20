@@ -1,10 +1,4 @@
-"""Verify that today's confirmed Facebook permalinks are visible on EstateBoard.
-
-This task never posts to Facebook. It re-runs the existing EstateBoard bridge,
-then confirms the public Cloudflare Pages data contains every permalink-confirmed
-post from the current JST day. A failure is queued to the existing Telegram
-outbox so the operator sees a dashboard/SLO problem without causing a repost.
-"""
+"""Verify today's confirmed Facebook permalinks are visible on EstateBoard."""
 
 from __future__ import annotations
 
@@ -26,7 +20,7 @@ from scripts.sync_estateboard_status import sync_estateboard_status  # noqa: E40
 from src.queue_db import QueueDB  # noqa: E402
 
 PUBLIC_DATA_URL = "https://estateboard.pages.dev/data.json"
-STATUS_PATH = Path(__file__).resolve().parents[1] / "logs" / "estateboard_web_sync_status.json"
+STATUS_PATH = ROOT / "logs" / "estateboard_web_sync_status.json"
 
 
 def _today() -> str:
@@ -49,8 +43,11 @@ def _today_permalinks(db: QueueDB) -> list[str]:
 
 
 def _fetch_public() -> str:
-    req = urllib.request.Request(PUBLIC_DATA_URL, headers={"User-Agent": "estateboard-web-slo/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as response:  # noqa: S310 - fixed trusted HTTPS URL
+    req = urllib.request.Request(
+        PUBLIC_DATA_URL,
+        headers={"User-Agent": "estateboard-web-slo/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:  # noqa: S310
         return response.read().decode("utf-8", errors="replace")
 
 
@@ -60,7 +57,10 @@ def missing_permalinks(public_text: str, permalinks: list[str]) -> list[str]:
 
 def _write_status(payload: dict[str, Any]) -> None:
     STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATUS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    STATUS_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def _alert(db: QueueDB, text: str, suffix: str) -> None:
@@ -84,9 +84,15 @@ def main() -> int:
     }
 
     if not permalinks:
-        status.update({"ok": False, "reason": "no permalink-confirmed Facebook post today"})
+        status.update(
+            {"ok": False, "reason": "no permalink-confirmed Facebook post today"}
+        )
         _write_status(status)
-        _alert(db, "⚠️ 本日のFacebook確認済み投稿が0件です。安全回路/セッション/PC稼働状況を確認してください。", "no-post")
+        _alert(
+            db,
+            "⚠️ 本日のFacebook確認済み投稿が0件です。安全回路/セッション/PC稼働状況を確認してください。",
+            "no-post",
+        )
         print(json.dumps(status, ensure_ascii=False))
         return 1
 
@@ -94,22 +100,31 @@ def main() -> int:
     last_error = ""
     for attempt in range(1, 5):
         try:
-            public_text = _fetch_public()
-            missing = missing_permalinks(public_text, permalinks)
+            missing = missing_permalinks(_fetch_public(), permalinks)
             if not missing:
                 status.update({"ok": True, "attempt": attempt, "missing": []})
                 _write_status(status)
                 print(json.dumps(status, ensure_ascii=False))
                 return 0
             status["missing"] = missing
-        except Exception as exc:  # noqa: BLE001 - retry bounded, never triggers Facebook action
+        except Exception as exc:
             last_error = f"{type(exc).__name__}: {exc}"
         if attempt < 4:
             time.sleep(15)
 
-    status.update({"ok": False, "error": last_error, "missing": status.get("missing", permalinks)})
+    status.update(
+        {
+            "ok": False,
+            "error": last_error,
+            "missing": status.get("missing", permalinks),
+        }
+    )
     _write_status(status)
-    _alert(db, "⚠️ Facebook投稿は確認済みですがEstateBoard公開Webへの反映を確認できませんでした。Bridge/Pages deployを確認してください。", "not-reflected")
+    _alert(
+        db,
+        "⚠️ Facebook投稿は確認済みですがEstateBoard公開Webへの反映を確認できませんでした。Bridge/Pages deployを確認してください。",
+        "not-reflected",
+    )
     print(json.dumps(status, ensure_ascii=False))
     return 1
 

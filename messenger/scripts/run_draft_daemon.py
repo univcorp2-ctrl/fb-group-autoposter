@@ -2,7 +2,7 @@
 
 Safety properties:
 - NEVER sends a Facebook/Messenger message.
-- Reuses the dedicated Messenger Playwright profile only.
+- Reuses the central authenticated Chrome Default profile only.
 - Generates drafts through the existing run_once scan pipeline.
 - Uses fb_draft_writer, which preserves non-matching human composer text.
 - Keeps only one daemon instance active using a local lock file.
@@ -26,7 +26,10 @@ if str(ROOT) not in sys.path:
 
 from config import Settings  # noqa: E402
 from scripts.run_once import _scan  # noqa: E402
-from src.fb_draft_writer import write_draft_no_send  # noqa: E402
+from src.authenticated_chrome import (  # noqa: E402
+    AuthenticatedProfileModeMismatch,
+    AuthenticatedProfileUnavailable,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("draft_daemon")
@@ -47,6 +50,12 @@ def _interval_minutes() -> int:
     except ValueError:
         value = DEFAULT_INTERVAL_MINUTES
     return max(MIN_INTERVAL_MINUTES, min(MAX_INTERVAL_MINUTES, value))
+
+
+def _retry_delay_seconds(attempt: int, interval_seconds: int) -> int:
+    """Retry quickly without a hot loop; never wait beyond the normal interval."""
+    bounded_attempt = max(1, min(5, int(attempt)))
+    return min(max(1, int(interval_seconds)), 30 * (2 ** (bounded_attempt - 1)), 300)
 
 
 def _load_active_drafts(data_dir: Path) -> list[dict[str, Any]]:
@@ -108,40 +117,6 @@ class _SingleInstanceLock:
         self._fh = None
 
 
-async def _hold_reply_screen(settings: Settings, row: dict[str, Any], seconds: int) -> dict[str, Any]:
-    """Open one target thread visibly, verify/place its draft, then keep it open."""
-    from playwright.async_api import async_playwright
-
-    result: dict[str, Any] = {
-        "opened": False,
-        "draft_visible": False,
-        "thread_id": str(row.get("thread_id", "")),
-        "name": str(row.get("name", "")),
-        "url": str(row.get("url", "")),
-    }
-    async with async_playwright() as p:
-        ctx = await p.chromium.launch_persistent_context(
-            user_data_dir=str(settings.profile_dir),
-            headless=False,
-            viewport={"width": 1366, "height": 900},
-            user_agent=settings.browser_user_agent,
-        )
-        page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-        try:
-            result["draft_visible"] = await write_draft_no_send(page, str(row["url"]), str(row["draft"]))
-            result["opened"] = True
-            # Keep the actual Messenger reply screen visible until the next scan.
-            # The task never presses Enter or clicks Send.
-            remaining = max(1, seconds)
-            while remaining > 0:
-                step = min(30, remaining)
-                await page.wait_for_timeout(step * 1000)
-                remaining -= step
-        finally:
-            await ctx.close()
-    return result
-
-
 def _write_status(settings: Settings, payload: dict[str, Any]) -> None:
     path = settings.data_dir / "draft_daemon_status.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,6 +133,7 @@ async def main_async() -> int:
         return 0
 
     try:
+        failure_attempt = 0
         while True:
             started = _now_jst()
             status: dict[str, Any] = {
@@ -166,6 +142,10 @@ async def main_async() -> int:
                 "interval_minutes": interval_minutes,
                 "send_enabled": False,
                 "profile_dir": str(settings.profile_dir),
+                "profile_directory": settings.chrome_profile_directory,
+                "browser_display_mode": settings.browser_display_mode,
+                "browser_owner": "central_executor",
+                "draft_placement_enabled": settings.write_draft_to_fb and not settings.read_only,
             }
             try:
                 # The existing scan pipeline owns its browser briefly, classifies
@@ -181,24 +161,28 @@ async def main_async() -> int:
                     "url": str(focus.get("url", "")),
                 } if focus else None
                 status["last_success_at"] = _now_jst()
+                status["browser_status"] = "attached_authenticated_default"
                 _write_status(settings, status)
-
-                if focus:
-                    hold = await _hold_reply_screen(settings, focus, interval_seconds)
-                    status["hold"] = hold
-                    _write_status(settings, status)
-                else:
-                    # No active reply needed: avoid opening a meaningless thread,
-                    # but keep periodic scans alive.
-                    await asyncio.sleep(interval_seconds)
+                failure_attempt = 0
+                # Never open or hold a second visible browser. Explicit visible
+                # work is handled by the central Executor using the same profile.
+                await asyncio.sleep(interval_seconds)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # one failed cycle must not kill the daemon
                 log.exception("Messenger draft cycle failed")
+                failure_attempt += 1
                 status["last_error_at"] = _now_jst()
-                status["error"] = f"{type(exc).__name__}: {exc}"
+                if isinstance(exc, AuthenticatedProfileModeMismatch):
+                    status["error"] = "authenticated_profile_mode_mismatch"
+                elif isinstance(exc, AuthenticatedProfileUnavailable):
+                    status["error"] = "authenticated_profile_unavailable"
+                else:
+                    status["error"] = f"{type(exc).__name__}: {exc}"
+                status["browser_status"] = "retrying_without_fallback"
+                status["retry_attempt"] = failure_attempt
                 _write_status(settings, status)
-                await asyncio.sleep(min(interval_seconds, 5 * 60))
+                await asyncio.sleep(_retry_delay_seconds(failure_attempt, interval_seconds))
     finally:
         lock.release()
 

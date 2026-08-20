@@ -24,6 +24,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config import Settings  # noqa: E402
+from src.authenticated_chrome import (  # noqa: E402
+    attach_authenticated_context,
+    select_messenger_page,
+)
 from src.classifier import classify_thread  # noqa: E402
 from src.scraper import scrape_inbox  # noqa: E402
 from src.targeted_reply import (  # noqa: E402
@@ -205,13 +209,8 @@ async def _run_browser(
     editor: Any | None = None
 
     async with async_playwright() as playwright:
-        context = await playwright.chromium.launch_persistent_context(
-            user_data_dir=str(settings.profile_dir),
-            headless=not args.headful,
-            viewport={"width": 1366, "height": 900},
-            user_agent=settings.browser_user_agent,
-        )
-        page = context.pages[0] if context.pages else await context.new_page()
+        attachment = await attach_authenticated_context(playwright, settings)
+        page = await select_messenger_page(attachment.context)
         try:
             current, classification, scanned = await _scan_exact_thread(
                 page,
@@ -248,7 +247,7 @@ async def _run_browser(
             )
             await page.wait_for_timeout(5_000)
             if "login.php" in page.url or f"/t/{args.thread_id}" not in page.url:
-                raise RuntimeError("dedicated Messenger profile is not on the exact target thread")
+                raise RuntimeError("authenticated Chrome profile is not on the exact target thread")
             if not await _any_exact_text_visible(page, args.target_name):
                 raise RuntimeError("target recipient name is not visible in the opened thread")
 
@@ -346,7 +345,8 @@ async def _run_browser(
                 await _restore_editor(page, editor, original_editor_text)
             raise
         finally:
-            await context.close()
+            # External Chrome ownership stays with the central Executor.
+            pass
 
 
 def _remove_exact_draft(path: Path, *, target_name: str, thread_id: str) -> bool:
@@ -392,7 +392,11 @@ def main() -> int:
     if args.scan_limit < 1 or args.scan_limit > 100:
         raise SystemExit("--scan-limit must be between 1 and 100")
 
-    settings = replace(Settings.load(), headless=not args.headful)
+    settings = replace(
+        Settings.load(),
+        headless=not args.headful,
+        browser_display_mode="visible" if args.headful else "headless",
+    )
     drafts_path = settings.data_dir / "drafts.json"
     status_path = settings.data_dir / "send_one_reply_status.json"
 

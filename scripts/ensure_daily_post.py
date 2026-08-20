@@ -54,7 +54,9 @@ def _load_state() -> dict[str, Any]:
 
 def _save_state(state: dict[str, Any]) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    STATE_PATH.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def _live_pipeline_owner(lock_path: Path) -> int | None:
@@ -96,8 +98,12 @@ def main() -> int:
     state = _load_state()
 
     if db.count_posts_today() >= 1:
-        sync = sync_estateboard_status(settings.db_path)
-        state.update({"status": "already_posted", "last_sync": sync})
+        state.update(
+            {
+                "status": "already_posted",
+                "last_sync": sync_estateboard_status(settings.db_path),
+            }
+        )
         _save_state(state)
         print(json.dumps(state, ensure_ascii=False))
         return 0
@@ -106,7 +112,12 @@ def main() -> int:
         environment=str(getattr(settings, "runtime_environment", "default"))
     )
     if circuit:
-        state.update({"status": "blocked_by_safety_circuit", "reason": circuit.get("reason")})
+        state.update(
+            {
+                "status": "blocked_by_safety_circuit",
+                "reason": circuit.get("reason"),
+            }
+        )
         _save_state(state)
         print(json.dumps(state, ensure_ascii=False))
         return 0
@@ -117,8 +128,7 @@ def main() -> int:
         print(json.dumps(state, ensure_ascii=False))
         return 0
 
-    lock_path = Path(settings.db_path).with_name("pipeline.lock")
-    owner = _live_pipeline_owner(lock_path)
+    owner = _live_pipeline_owner(Path(settings.db_path).with_name("pipeline.lock"))
     if owner is not None:
         state.update({"status": "pipeline_busy", "owner_pid": owner})
         _save_state(state)

@@ -15,21 +15,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
+AUTHENTICATED_CHROME_USER_DATA_DIR = Path(r"C:\AI-Agent\chrome-profile-authenticated")
+AUTHENTICATED_CHROME_PROFILE_DIRECTORY = "Default"
+ALLOWED_BROWSER_DISPLAY_MODES = {"auto", "headless", "visible"}
 
 
 def _anchor(path: Path) -> Path:
     """Resolve a relative path against THIS package dir (not the CWD), so the role
     behaves the same whether launched from the repo root or its own folder."""
     return path if path.is_absolute() else (ROOT / path)
-
-# A stable, realistic UA reduces checkpoint triggers. Keep it CONSTANT across
-# runs (a changing UA is a top trigger) — and identical to the autoposter so the
-# account's two sessions look like the same device family.
-DEFAULT_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-)
-
 
 def _bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
@@ -54,7 +48,8 @@ class Settings:
     write_draft_to_fb: bool
     headless: bool
     profile_dir: Path
-    browser_user_agent: str
+    chrome_profile_directory: str
+    browser_display_mode: str
     max_threads_per_run: int
     telegram_bot_token: str
     telegram_chat_id: str
@@ -75,8 +70,13 @@ class Settings:
             read_only=_bool("READ_ONLY", True),
             write_draft_to_fb=_bool("WRITE_DRAFT_TO_FB", False),
             headless=_bool("HEADLESS", False),
-            profile_dir=Path(os.getenv("MESSENGER_PROFILE_DIR", "profiles/messenger")),
-            browser_user_agent=os.getenv("BROWSER_USER_AGENT", DEFAULT_UA),
+            profile_dir=Path(
+                os.getenv("MESSENGER_PROFILE_DIR", str(AUTHENTICATED_CHROME_USER_DATA_DIR))
+            ),
+            chrome_profile_directory=os.getenv(
+                "CHROME_PROFILE_DIRECTORY", AUTHENTICATED_CHROME_PROFILE_DIRECTORY
+            ).strip(),
+            browser_display_mode=os.getenv("MESSENGER_DISPLAY_MODE", "auto").strip().lower(),
             max_threads_per_run=_int("MAX_THREADS_PER_RUN", 20),
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
@@ -91,11 +91,24 @@ class Settings:
         # Anchor the profile dir to THIS package so the role works regardless of
         # the current working directory (it lives under the parent project now).
         settings = replace(settings, profile_dir=_anchor(settings.profile_dir))
+        settings.validate_browser_policy()
         settings.ensure_dirs()
         return settings
 
+    def validate_browser_policy(self) -> None:
+        configured = os.path.normcase(os.path.abspath(self.profile_dir))
+        required = os.path.normcase(os.path.abspath(AUTHENTICATED_CHROME_USER_DATA_DIR))
+        if configured != required or self.chrome_profile_directory != AUTHENTICATED_CHROME_PROFILE_DIRECTORY:
+            raise ValueError("authenticated_profile_unavailable")
+        if self.browser_display_mode not in ALLOWED_BROWSER_DISPLAY_MODES:
+            raise ValueError(
+                "MESSENGER_DISPLAY_MODE must be one of: auto, headless, visible"
+            )
+
     def ensure_dirs(self) -> None:
-        for path in [self.profile_dir, self.data_dir, ROOT / "logs"]:
+        # The browser profile is externally owned by the central Executor. Never
+        # create, copy, or mutate it as a side effect of loading Messenger config.
+        for path in [self.data_dir, ROOT / "logs"]:
             path.mkdir(parents=True, exist_ok=True)
 
     @property

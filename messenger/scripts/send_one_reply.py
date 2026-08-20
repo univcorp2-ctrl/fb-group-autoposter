@@ -8,7 +8,7 @@ import os
 import re
 import sys
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,10 @@ if str(MESSENGER_ROOT) not in sys.path:
     sys.path.insert(0, str(MESSENGER_ROOT))
 
 from config import Settings  # noqa: E402
+from src.authenticated_chrome import (  # noqa: E402
+    attach_authenticated_context,
+    select_messenger_page,
+)
 from src.classifier import classify_thread  # noqa: E402
 from src.scraper import scrape_inbox  # noqa: E402
 
@@ -163,7 +167,7 @@ async def run(args: argparse.Namespace) -> int:
         "ok": False,
         "sent": False,
         "send_requested": bool(args.send),
-        "checked_at": datetime.now(timezone.utc).astimezone().isoformat(),
+        "checked_at": datetime.now(UTC).astimezone().isoformat(),
         "target_name": args.target_name,
         "thread_id": args.thread_id,
         "message_sha256": reply_digest,
@@ -189,17 +193,13 @@ async def run(args: argparse.Namespace) -> int:
     settings = replace(
         Settings.load(),
         headless=True,
+        browser_display_mode="auto",
         max_threads_per_run=max(args.max_threads, 50),
     )
 
     async with async_playwright() as playwright:
-        context = await playwright.chromium.launch_persistent_context(
-            user_data_dir=str(settings.profile_dir),
-            headless=True,
-            viewport={"width": 1366, "height": 900},
-            user_agent=settings.browser_user_agent,
-        )
-        page = context.pages[0] if context.pages else await context.new_page()
+        attachment = await attach_authenticated_context(playwright, settings)
+        page = await select_messenger_page(attachment.context)
         try:
             current, classification = await verify_current_inbox(
                 page,
@@ -324,7 +324,8 @@ async def run(args: argparse.Namespace) -> int:
             write_status(base_status)
             return 0
         finally:
-            await context.close()
+            # External Chrome ownership stays with the central Executor.
+            pass
 
 
 def parse_args() -> argparse.Namespace:
@@ -350,7 +351,7 @@ def main() -> int:
             "ok": False,
             "sent": False,
             "send_requested": bool(args.send),
-            "checked_at": datetime.now(timezone.utc).astimezone().isoformat(),
+            "checked_at": datetime.now(UTC).astimezone().isoformat(),
             "target_name": args.target_name,
             "thread_id": args.thread_id,
             "reason": "exception",
