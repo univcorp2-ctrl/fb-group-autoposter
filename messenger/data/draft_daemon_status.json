@@ -1,6 +1,6 @@
 {
   "running": true,
-  "started_at": "2026-08-20 13:28:39 JST",
+  "started_at": "2026-08-20 13:59:45 JST",
   "interval_minutes": 30,
   "send_enabled": false,
   "profile_dir": "C:\\AI-Agent\\chrome-profile-authenticated",
@@ -21,6 +21,6 @@
     "name": "Hiroaki Kobayashi",
     "url": "https://www.messenger.com/t/1390317282929328"
   },
-  "last_success_at": "2026-08-20 13:29:45 JST",
+  "last_success_at": "2026-08-20 14:00:53 JST",
   "browser_status": "attached_authenticated_default"
 }
