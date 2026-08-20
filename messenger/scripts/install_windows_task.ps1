@@ -54,4 +54,3 @@ $Info = Get-ScheduledTaskInfo -TaskName 'FBAutoposter-MessengerDrafts'
     Arguments = [string]$Task.Actions[0].Arguments
     WorkingDirectory = [string]$Task.Actions[0].WorkingDirectory
 } | ConvertTo-Json -Compress
-

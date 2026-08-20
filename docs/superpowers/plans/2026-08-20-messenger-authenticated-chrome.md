@@ -93,4 +93,3 @@
 - [ ] Stop only the exact `FBAutoposter-MessengerDrafts` task/process tree after an idle check, update the task from merged `main`, and restart it windowlessly.
 - [ ] Verify the live process tree contains no `ms-playwright\chromium-*` Messenger process, no local Messenger profile argument, and no visible off-screen Messenger window.
 - [ ] Verify the daemon status shows the `Default` authenticated policy, a successful scan or a structured retry, and `send_enabled=false` unless the existing approved draft-only setting is active.
-

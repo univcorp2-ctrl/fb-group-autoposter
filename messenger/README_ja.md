@@ -110,4 +110,3 @@ ruff check .
 
 `scripts/install_windows_task.ps1` はwindowless daemonを登録します。daemonは中央Chromeへ接続するだけで、
 別の可視ブラウザやGuest profileを起動しません。接続不能時もプロセスを維持して再試行します。
-

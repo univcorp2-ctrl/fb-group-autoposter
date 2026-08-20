@@ -124,4 +124,3 @@ async def select_messenger_page(context: Any) -> Any:
         if host == "messenger.com" or host.endswith(".messenger.com"):
             return page
     return await context.new_page()
-

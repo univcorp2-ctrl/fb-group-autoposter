@@ -47,4 +47,3 @@ Use the installed stable Chrome, the real signed-in profile, normal browser defa
 - Launch system Chrome directly from each Messenger script: profile locking and ownership would race the central Executor.
 - Keep the repository-local profile but improve its name or viewport: it remains the wrong authenticated identity and still permits Guest-like behavior.
 - Add stealth plugins or fingerprint spoofing: brittle, unsafe, and outside the permitted platform-control boundary.
-

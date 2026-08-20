@@ -118,4 +118,3 @@ class Settings:
     @property
     def notion_enabled(self) -> bool:
         return bool(self.notion_token and self.notion_replies_database_id)
-

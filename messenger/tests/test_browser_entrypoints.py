@@ -77,4 +77,3 @@ def test_readme_has_no_legacy_local_profile_login_instructions() -> None:
     assert "profiles/messenger" not in source
     assert "専用 Playwright" not in source
     assert "C:\\AI-Agent\\chrome-profile-authenticated" in source
-

@@ -51,4 +51,3 @@ def test_message_fingerprint_is_stable_sha256() -> None:
 
     assert message_fingerprint(value) == message_fingerprint(value)
     assert len(message_fingerprint(value)) == 64
-

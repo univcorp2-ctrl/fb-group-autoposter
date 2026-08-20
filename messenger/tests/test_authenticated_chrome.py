@@ -202,4 +202,3 @@ def test_select_messenger_page_creates_tab_without_replacing_user_page() -> None
 
     assert selected is created
     context.new_page.assert_awaited_once_with()
-

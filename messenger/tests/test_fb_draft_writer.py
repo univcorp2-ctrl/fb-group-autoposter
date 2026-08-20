@@ -26,4 +26,3 @@ def test_draft_writer_has_no_send_or_enter_path() -> None:
     assert "keyboard.press" not in source
     assert "send_button" not in source
     assert ".press(" not in source
-

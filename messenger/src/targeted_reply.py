@@ -63,4 +63,3 @@ def message_fingerprint(value: str) -> str:
     """Stable SHA-256 fingerprint used to block accidental duplicate sends."""
 
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
-

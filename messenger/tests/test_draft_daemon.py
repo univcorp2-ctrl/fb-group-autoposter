@@ -50,4 +50,3 @@ def test_load_active_drafts_filters_incomplete_rows(tmp_path: Path):
     )
     rows = _load_active_drafts(tmp_path)
     assert [row["thread_id"] for row in rows] == ["1"]
-

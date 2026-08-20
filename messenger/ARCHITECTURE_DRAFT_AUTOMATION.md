@@ -62,4 +62,3 @@ Guest、Incognito、`Profile 1`、repository-local profile、Playwright bundled 
 自動化の責務は「読む・分類する・文章を生成する・返信欄へ未送信テキストを置く」まで。自動送信、購入、契約、認証変更、秘密情報の抽出は行わない。送信は人が Messenger 画面で確認後に手動で行う。
 
 実Chrome、通常profile、直列処理、条件待ち、低頻度実行で不要なcheckpoint要因を減らす。fingerprint偽装、stealth plugin、CAPTCHA/checkpoint/2FA回避、security機能無効化は行わない。プラットフォームが本人確認を要求した場合は処理を止め、同じDefault profileの正規画面で人が完了する。
-

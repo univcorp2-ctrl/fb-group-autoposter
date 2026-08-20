@@ -99,4 +99,3 @@ async def write_draft_no_send(page: Any, thread_url: str, draft: str) -> bool:
             exc,
         )
         return False
-
