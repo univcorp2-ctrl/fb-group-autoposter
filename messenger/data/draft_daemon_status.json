@@ -18,5 +18,7 @@
     "name": "Hiroaki Kobayashi",
     "url": "https://www.messenger.com/t/1390317282929328"
   },
-  "last_success_at": "2026-08-20 12:31:19 JST"
+  "last_success_at": "2026-08-20 12:31:19 JST",
+  "last_error_at": "2026-08-20 12:46:49 JST",
+  "error": "TargetClosedError: Page.wait_for_timeout: Target page, context or browser has been closed"
 }
