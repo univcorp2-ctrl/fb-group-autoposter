@@ -1,12 +1,11 @@
 """Decide which Messenger threads need a human reply.
 
 Pure functions, no I/O — fully unit-testable. The scraper produces thread dicts;
-this module classifies each one. Drafts are NEVER auto-sent, so a wrong call is
-harmless (a human reviews every draft) — but we still bias toward only flagging
-genuine 1:1 inbound messages to keep the operator's queue clean.
+this module classifies each one. Drafts are NEVER auto-sent. Thread type is
+fail-closed: only an explicitly verified 1:1 thread can produce a draft.
 
 Rule of thumb ("要返信" = needs reply):
-  - 1:1 only (skip group threads)
+  - positively verified 1:1 only (skip group and ambiguous threads)
   - the OTHER person sent the last message (skip if I replied last)
   - skip obvious automated / page / marketplace system threads
 """
@@ -44,9 +43,6 @@ _SYSTEM_PREVIEW_HINTS = (
     "added you to the group",
 )
 
-# Short acknowledgements that normally close the conversation and do not need
-# another reply. Keep this list intentionally narrow so genuine questions such
-# as "ありがとうございます。○○はありますか？" are still drafted.
 _NO_REPLY_ACKS = (
     "承知しました",
     "承知いたしました",
@@ -90,12 +86,17 @@ def classify_thread(thread: dict) -> Classification:
     name = str(thread.get("name", "") or "")
     preview = str(thread.get("preview", "") or "")
 
-    if thread.get("is_group"):
+    if thread.get("is_group") is True:
         return Classification(False, "group_thread", "none")
 
     participant_count = thread.get("participant_count")
     if isinstance(participant_count, int) and participant_count > 1:
         return Classification(False, "group_thread", "none")
+
+    # A missing/weak group signal is NOT proof of 1:1.  Require the scraper's
+    # positive one-to-one evidence and an explicit single counterpart count.
+    if thread.get("one_to_one_verified") is not True or participant_count != 1:
+        return Classification(False, "ambiguous_thread_type", "none")
 
     last_from_me = thread.get("last_from_me")
     if last_from_me is None:
@@ -113,7 +114,7 @@ def classify_thread(thread: dict) -> Classification:
         return Classification(False, "closing_ack", "none")
 
     if not preview.strip():
-        return Classification(True, "needs_review_empty_preview", "normal")
+        return Classification(False, "empty_preview_no_draft", "none")
 
     priority = "high" if thread.get("is_unread") else "normal"
     return Classification(True, "inbound_1to1", priority)
