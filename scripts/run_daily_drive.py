@@ -16,9 +16,13 @@ load_dotenv(ROOT / ".env")
 import src.estateboard_adapter as adapter
 import src.orchestrator as orchestrator
 from src.drive_assets import attach_drive_images
+from src.multi_source import build_posting_source
 
 _ORIGINAL_SELECT = adapter.select_postable
 DEFAULT_DRIVE_ROOT = Path(r"G:\マイドライブ\0.物件資料_お客様紹介用\Estateboard")
+
+DEFAULT_GMAIL_SOURCE = Path("G:/\u30de\u30a4\u30c9\u30e9\u30a4\u30d6/AI_Agents/github/repos/Bukken-DB/data/fb_postable.json")
+COMBINED_SOURCE = ROOT / "data" / "posting_source.json"
 
 
 def _drive_aware_select(
@@ -43,8 +47,14 @@ def main() -> None:
 
     original_argv = sys.argv[:]
     source = os.getenv("ESTATEBOARD_SOURCE", "").strip()
-    if len(sys.argv) == 1 and source:
-        sys.argv.append(source)
+    if len(sys.argv) == 1:
+        estateboard_source = Path(source) if source else Path(
+            "G:/\u30de\u30a4\u30c9\u30e9\u30a4\u30d6/AI_Agents/github/repos/EstateBoard/output/received/properties.json"
+        )
+        gmail_source = Path(os.getenv("GMAIL_POSTABLE_SOURCE", str(DEFAULT_GMAIL_SOURCE)))
+        built = build_posting_source(estateboard_source, gmail_source, COMBINED_SOURCE)
+        print(f"posting source: EB={built['estateboard']} Gmail={built['gmail']} combined={built['combined']}")
+        sys.argv.append(str(COMBINED_SOURCE))
     try:
         existing_main()
     finally:
