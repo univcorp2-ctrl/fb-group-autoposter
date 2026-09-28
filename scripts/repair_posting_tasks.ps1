@@ -17,7 +17,7 @@ function Register-PostingTask {
         [string]$Desc,
         [switch]$AlsoAtLogon
     )
-    $action = New-ScheduledTaskAction -Execute $Python -Argument 'scripts\run_daily.py' -WorkingDirectory $Root
+    $action = New-ScheduledTaskAction -Execute $Python -Argument 'scripts\run_daily_drive.py' -WorkingDirectory $Root
     $daily = New-ScheduledTaskTrigger -Daily -At $At
     if ($RandomDelayMin -gt 0) { $daily.RandomDelay = "PT${RandomDelayMin}M" }
     $triggers = @($daily)

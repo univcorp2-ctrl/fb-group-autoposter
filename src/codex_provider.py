@@ -53,7 +53,9 @@ def _call_codex(prompt: str, timeout_seconds: int = 120) -> str:
     executable = shutil.which(os.getenv("CODEX_CLI", "codex"))
     if not executable:
         raise FileNotFoundError("Codex CLI was not found on PATH")
-    output_path = Path(tempfile.mkstemp(prefix="fb-codex-", suffix=".txt")[1])
+    fd, raw_path = tempfile.mkstemp(prefix="fb-codex-", suffix=".txt")
+    os.close(fd)
+    output_path = Path(raw_path)
     try:
         command = [
             executable,
@@ -74,7 +76,10 @@ def _call_codex(prompt: str, timeout_seconds: int = 120) -> str:
         )
         return output_path.read_text(encoding="utf-8").strip()
     finally:
-        output_path.unlink(missing_ok=True)
+        try:
+            output_path.unlink(missing_ok=True)
+        except OSError as exc:
+            log.warning("temporary Codex output cleanup failed: %s", exc)
 
 
 def generate_variants_with_codex(

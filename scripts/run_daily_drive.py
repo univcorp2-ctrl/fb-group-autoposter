@@ -9,6 +9,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from dotenv import load_dotenv
+
+load_dotenv(ROOT / ".env")
+
 import src.estateboard_adapter as adapter
 import src.orchestrator as orchestrator
 from src.drive_assets import attach_drive_images
