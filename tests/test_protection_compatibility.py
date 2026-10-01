@@ -176,10 +176,27 @@ def test_posting_block_records_failure_without_screenshot_evidence():
 def test_scheduler_keeps_randomized_posting_windows():
     source = (ROOT / "scripts" / "install_windows_tasks.ps1").read_text(encoding="utf-8")
 
-    assert "FBAutoposter-Morning' -Script 'run_daily.py' -At '09:30' -RandomDelayMin 45" in source
-    assert "FBAutoposter-Midday' -Script 'run_daily.py' -At '13:00' -RandomDelayMin 30" in source
-    assert "FBAutoposter-Afternoon' -Script 'run_daily.py' -At '16:30' -RandomDelayMin 30" in source
-    assert "FBAutoposter-Evening' -Script 'run_daily.py' -At '20:30' -RandomDelayMin 45" in source
+    assert "FBAutoposter-Morning' -Script 'run_daily_drive.py' -At '09:30' -RandomDelayMin 45" in source
+    assert "FBAutoposter-Midday' -Script 'run_daily_drive.py' -At '13:00' -RandomDelayMin 30" in source
+    assert "FBAutoposter-Afternoon' -Script 'run_daily_drive.py' -At '16:30' -RandomDelayMin 30" in source
+    assert "FBAutoposter-Evening' -Script 'run_daily_drive.py' -At '20:30' -RandomDelayMin 45" in source
+
+
+def test_drive_safe_repair_registers_shared_local_runtime_tasks():
+    repair = (ROOT / "scripts" / "repair_windows_runtime.ps1").read_text(encoding="utf-8")
+    registry = (ROOT / "scripts" / "register_local_runtime_tasks.ps1").read_text(encoding="utf-8")
+
+    assert "register_local_runtime_tasks.ps1" in repair
+    for task in (
+        "FBAutoposter-Morning",
+        "FBAutoposter-Bridge",
+        "FBAutoposter-StatusDB",
+        "FBAutoposter-DailyGuarantee",
+        "FBAutoposter-WebSLO",
+    ):
+        assert task in registry
+    assert "FBAutoposter-MessengerDrafts" not in registry
+    assert "run-task.ps1" in registry
 
 
 def test_membership_check_is_report_only_without_explicit_enable_flag():
