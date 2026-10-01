@@ -1,9 +1,516 @@
 {
-  "generated_at": "2026-07-17T00:00:00+00:00",
-  "health": "not_initialized",
-  "message": "ローカルWindowsランタイムの初回同期待ちです。",
-  "counts": {},
+  "generated_at": "2026-10-01T07:32:00.770099+00:00",
+  "health": "stalled",
+  "message": "確認済み投稿がありません。",
+  "counts": {
+    "approved": 6,
+    "skipped": 44
+  },
   "last_post_at": null,
-  "heartbeat": {},
-  "recent": []
+  "heartbeat": {
+    "orchestrator": "2026-08-19T00:52:55.856645+00:00",
+    "session": "2026-08-18T23:11:06.600187+00:00"
+  },
+  "recent": [
+    {
+      "property_id": "eb-11836",
+      "group_id": "1261566862455883",
+      "status": "approved",
+      "attempts": 0,
+      "last_error": null,
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-19T00:53:20.110829+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-19T00:53:20.054142+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-19T00:53:12.288529+00:00"
+    },
+    {
+      "property_id": "eb-8804",
+      "group_id": "1006724479360528",
+      "status": "approved",
+      "attempts": 0,
+      "last_error": null,
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-19T00:53:02.003375+00:00"
+    },
+    {
+      "property_id": "eb-24271",
+      "group_id": "1911961896257757",
+      "status": "approved",
+      "attempts": 0,
+      "last_error": null,
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-19T00:53:01.294698+00:00"
+    },
+    {
+      "property_id": "eb-24805",
+      "group_id": "2478498062317428",
+      "status": "approved",
+      "attempts": 0,
+      "last_error": null,
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-19T00:53:00.571696+00:00"
+    },
+    {
+      "property_id": "eb-9971",
+      "group_id": "792499964217824",
+      "status": "approved",
+      "attempts": 0,
+      "last_error": null,
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-19T00:52:59.918479+00:00"
+    },
+    {
+      "property_id": "eb-7503",
+      "group_id": "630451722001309",
+      "status": "approved",
+      "attempts": 0,
+      "last_error": null,
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-19T00:52:59.224208+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T13:09:31.106828+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T13:09:21.500714+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:54:02.148618+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:53:55.822145+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:38:42.949025+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:38:21.337326+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:22:59.413401+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:22:51.307475+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:14:39.862767+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:14:31.525270+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:10:19.086909+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:10:10.391964+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:07:50.420400+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:07:40.087506+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:06:23.524402+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T12:06:12.704532+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T08:55:56.373680+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T08:55:49.548121+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T08:40:37.330938+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T08:40:30.411861+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T08:25:19.646429+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T08:25:10.799277+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T08:01:35.759713+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T08:01:29.359118+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T07:57:18.508411+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T07:57:11.174043+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T07:54:54.790154+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T07:54:44.943871+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T07:40:15.256563+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T07:40:07.195974+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T07:38:47.304739+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T07:38:40.835059+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T05:06:55.418783+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T05:06:46.328979+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T04:51:29.515362+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T04:51:21.250196+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T04:36:09.399652+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T04:36:01.385243+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T04:20:30.831333+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T04:20:21.431708+00:00"
+    },
+    {
+      "property_id": "eb-23683",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T04:12:04.781502+00:00"
+    },
+    {
+      "property_id": "eb-24804",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-08-18T04:11:52.983616+00:00"
+    }
+  ]
 }
