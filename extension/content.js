@@ -40,13 +40,13 @@
       "投稿を作成",
       "Create post",
     ];
-    const nodes = document.querySelectorAll('div[role="button"], [aria-label]');
+    const nodes = document.querySelectorAll('button, [role="button"], [aria-label]');
     for (const n of nodes) {
       const txt = ((n.getAttribute("aria-label") || "") + " " + (n.textContent || "")).trim();
       if (!txt || txt.length > 80) continue;
       if (!labels.some((label) => txt.includes(label))) continue;
 
-      const clickable = n.closest('div[role="button"], button') || n;
+      const clickable = n.closest('button, [role="button"]') || n;
       if (!clickable || clickable.offsetParent === null) continue;
       if (isInsideExistingPost(clickable)) continue;
 
