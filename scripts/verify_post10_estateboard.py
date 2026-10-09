@@ -91,15 +91,19 @@ def main() -> int:
         "property_web_url": SITE + "/data.json",
     }
     try:
+        payload["web_check_stage"] = "health"
         health = get_json(SITE + "/api/analytics/health")
         payload["analytics_healthy"] = bool(health.get("ok"))
+        payload["web_check_stage"] = "authenticated_posts"
         token = str(json.loads(PRIVATE_TOKENS.read_text(encoding="utf-8"))["ANALYTICS_DASHBOARD_TOKEN"])
         api = get_json(SITE + f"/api/analytics/posts?status=posted&start={BASELINE_JST}&limit=500", token)
         api_urls = {str(row.get("post_url")) for row in api.get("posts", []) if row.get("post_url")}
         payload["analytics_reflected"] = len(set(local) & api_urls)
+        payload["web_check_stage"] = "property_data"
         with urllib.request.urlopen(SITE + "/data.json", timeout=20) as response:
             published = response.read().decode("utf-8")
         payload["property_web_reflected"] = sum(url in published for url in local)
+        payload["web_check_stage"] = "dashboard"
         with urllib.request.urlopen(SITE + "/facebook-analytics/", timeout=20) as response:
             payload["dashboard_http_status"] = response.status
         payload["complete"] = bool(
