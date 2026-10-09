@@ -1,17 +1,28 @@
 {
-  "generated_at": "2026-10-07T00:49:03.461399+00:00",
+  "generated_at": "2026-10-09T04:55:49.432706+00:00",
   "health": "stalled",
-  "message": "確認済み投稿がありません。",
+  "message": "最終投稿から39.3時間経過しています。",
   "counts": {
-    "approved": 6,
+    "uncertain": 1,
+    "approved": 5,
     "skipped": 44
   },
-  "last_post_at": null,
+  "last_post_at": "2026-10-07T13:36:40.971044+00:00",
   "heartbeat": {
     "orchestrator": "2026-08-19T00:52:55.856645+00:00",
     "session": "2026-08-18T23:11:06.600187+00:00"
   },
   "recent": [
+    {
+      "property_id": "eb-7503",
+      "group_id": "630451722001309",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-07T13:36:40.971044+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-07T13:36:18.760192+00:00"
+    },
     {
       "property_id": "eb-11836",
       "group_id": "1261566862455883",
@@ -81,16 +92,6 @@
       "posted_at": null,
       "permalink": null,
       "updated_at": "2026-08-19T00:52:59.918479+00:00"
-    },
-    {
-      "property_id": "eb-7503",
-      "group_id": "630451722001309",
-      "status": "approved",
-      "attempts": 0,
-      "last_error": null,
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-08-19T00:52:59.224208+00:00"
     },
     {
       "property_id": "eb-23683",
