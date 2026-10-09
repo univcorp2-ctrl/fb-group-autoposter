@@ -22,7 +22,7 @@ const makeMatcher = (...articles) =>
 
 const body = "【物件情報】川崎市・広い空間・駅から徒歩圏内・新築戸建です。詳細はお問い合わせください。";
 const permalink = "https://www.facebook.com/groups/123/posts/456/";
-const longMetadata = "テストユーザーがグループに投稿しました。お知らせ等の説明文が非常に長く続いています。";
+const longMetadata = "テストユーザーがグループに投稿しました。お知らせ等の説明文が非常に長く続いています。".repeat(3);
 assert(longMetadata.length > 48, "metadata is long enough");
 assert.equal(makeMatcher(article(longMetadata + body, [permalink]))(body), permalink);
 assert.equal(makeMatcher(article("別の物件についての投稿", [permalink]))(body), null);
