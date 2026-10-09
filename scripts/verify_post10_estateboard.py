@@ -11,6 +11,8 @@ import re
 import sqlite3
 import sys
 import urllib.request
+
+import requests
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -100,12 +102,14 @@ def main() -> int:
         api_urls = {str(row.get("post_url")) for row in api.get("posts", []) if row.get("post_url")}
         payload["analytics_reflected"] = len(set(local) & api_urls)
         payload["web_check_stage"] = "property_data"
-        with urllib.request.urlopen(SITE + "/data.json", timeout=20) as response:
-            published = response.read().decode("utf-8")
+        property_response = requests.get(SITE + "/data.json", timeout=20)
+        property_response.raise_for_status()
+        published = property_response.text
         payload["property_web_reflected"] = sum(url in published for url in local)
         payload["web_check_stage"] = "dashboard"
-        with urllib.request.urlopen(SITE + "/facebook-analytics/", timeout=20) as response:
-            payload["dashboard_http_status"] = response.status
+        dashboard_response = requests.get(SITE + "/facebook-analytics/", timeout=20)
+        payload["dashboard_http_status"] = dashboard_response.status_code
+        dashboard_response.raise_for_status()
         payload["complete"] = bool(
             len(local) >= TARGET
             and payload["analytics_reflected"] >= TARGET
