@@ -115,7 +115,11 @@ def build_post_payload(
             "name": str(group.get("name") or group_id),
             "url": str(group.get("post_url") or f"https://www.facebook.com/groups/{group_id}"),
         },
-        "status": str(row["status"]),
+        # Map local queue lifecycle states to the existing analytics API schema.
+        # These are NOT published and must never be represented as "posted".
+        "status": {"pending_approval": "pending", "approved": "pending", "submitting": "pending"}.get(
+            str(row["status"]), str(row["status"])
+        ),
         "posted_at": event_time,
         "post_url": str(row.get("permalink") or ""),
         "body_excerpt": str(row.get("body") or "")[:2000],
