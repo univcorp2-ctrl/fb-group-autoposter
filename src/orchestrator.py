@@ -273,12 +273,12 @@ async def run_cycle_grouped(
             # previously held the pipeline lock for hours without posting.
             with db.connect() as conn:
                 attempts_before = conn.execute(
-                    "SELECT COUNT(*) AS n FROM submission_attempts"
+                    "SELECT COUNT(*) AS n FROM submission_attempts WHERE click_started_at IS NOT NULL"
                 ).fetchone()["n"]
             status = await poster.post_job(job)
             with db.connect() as conn:
                 attempts_after = conn.execute(
-                    "SELECT COUNT(*) AS n FROM submission_attempts"
+                    "SELECT COUNT(*) AS n FROM submission_attempts WHERE click_started_at IS NOT NULL"
                 ).fetchone()["n"]
             summary["approved_processed"] = int(summary["approved_processed"]) + 1
             summary["statuses"].append({"job_id": job["job_id"], "status": status})
