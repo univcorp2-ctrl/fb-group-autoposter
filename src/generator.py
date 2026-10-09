@@ -374,7 +374,9 @@ def generate_variants(
             body = _inject_pitch(body, build_pitch(property_data))
             body = apply_group_rules(body, group).body
         # Guarantee the investment simulation (想定融資/CF/売却益) is present.
-        invest = build_investment_pitch(property_data)
+        # Financing/exit projections are speculative; omit unless explicitly enabled.
+        import os
+        invest = build_investment_pitch(property_data) if os.getenv('POST_INCLUDE_INVESTMENT_SIMULATION', 'false').lower() in {'1', 'true', 'yes'} else ''
         if invest and INVEST_PREFIX not in body:
             body = f"{body.rstrip()}\n\n{invest}"
             body = apply_group_rules(body, group).body
