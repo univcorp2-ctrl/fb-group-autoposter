@@ -44,7 +44,9 @@ from src.logging_setup import setup_logging  # noqa: E402
 
 log = logging.getLogger("sync_estateboard_status")
 
-DEFAULT_EB_ROOT = Path(r"G:\マイドライブ\AI_Agents\github\repos\EstateBoard")
+# EstateBoard_DailyPipeline writes the canonical current data here.
+# Never redeploy the stale Google Drive repository mirror.
+DEFAULT_EB_ROOT = Path(os.getenv("ESTATEBOARD_REPO_ROOT", r"C:\AI-Agent\EstateBoard"))
 POSTED_COLUMN = "投稿済"
 POSTED_LABEL = "✅ 投稿済"
 POSTED_TO_COLUMN = "投稿先"
