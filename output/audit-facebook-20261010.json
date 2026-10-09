@@ -1,0 +1,166 @@
+﻿{
+  "db_found": true,
+  "table_count": 11,
+  "delivery_tables": [
+    {
+      "table": "job_targets",
+      "rows": 3248,
+      "columns": [
+        "id",
+        "job_id",
+        "group_id",
+        "body",
+        "status",
+        "attempts",
+        "last_error",
+        "posted_at",
+        "screenshot",
+        "permalink",
+        "source_hash",
+        "normalized_body_hash",
+        "generation_fingerprint",
+        "approval_id",
+        "reconcile_only"
+      ],
+      "status_counts": [
+        {
+          "status": "failed",
+          "count": 85
+        },
+        {
+          "status": "pending",
+          "count": 100
+        },
+        {
+          "status": "pending_approval",
+          "count": 1026
+        },
+        {
+          "status": "posted",
+          "count": 129
+        },
+        {
+          "status": "skipped",
+          "count": 1841
+        },
+        {
+          "status": "uncertain",
+          "count": 67
+        }
+      ]
+    },
+    {
+      "table": "jobs",
+      "rows": 3208,
+      "columns": [
+        "job_id",
+        "property_id",
+        "status",
+        "created_at",
+        "updated_at",
+        "degraded",
+        "payload_json"
+      ],
+      "status_counts": [
+        {
+          "status": "done",
+          "count": 2085
+        },
+        {
+          "status": "failed",
+          "count": 86
+        },
+        {
+          "status": "finished",
+          "count": 1
+        },
+        {
+          "status": "pending",
+          "count": 1036
+        }
+      ]
+    },
+    {
+      "table": "submission_attempts",
+      "rows": 51,
+      "columns": [
+        "attempt_id",
+        "job_id",
+        "property_id",
+        "group_id",
+        "approval_id",
+        "state",
+        "created_at",
+        "click_started_at",
+        "response_received_at",
+        "verification_started_at",
+        "completed_at",
+        "last_error",
+        "permalink",
+        "reopen_count",
+        "last_reopened_at"
+      ]
+    },
+    {
+      "table": "delivery_outbox",
+      "rows": 4025,
+      "columns": [
+        "event_id",
+        "event_key",
+        "destination",
+        "event_type",
+        "origin_run_id",
+        "attempt_id",
+        "subject_id",
+        "payload_json",
+        "state",
+        "lease_owner",
+        "lease_expires_at",
+        "attempt_count",
+        "remote_message_id",
+        "created_at",
+        "updated_at",
+        "last_error"
+      ]
+    },
+    {
+      "table": "delivery_outbox_resolutions",
+      "rows": 0,
+      "columns": [
+        "resolution_id",
+        "event_id",
+        "resolution",
+        "operator",
+        "resolved_at"
+      ]
+    }
+  ],
+  "new_posts_since_oct_4": 0,
+  "last_five_posted": [
+    {
+      "at": "2026-08-18T03:17:55.060966+00:00",
+      "has_permalink": true
+    },
+    {
+      "at": "2026-08-18T02:22:22.755796+00:00",
+      "has_permalink": true
+    },
+    {
+      "at": "2026-08-18T01:57:14.133922+00:00",
+      "has_permalink": true
+    },
+    {
+      "at": "2026-08-18T01:24:50.918909+00:00",
+      "has_permalink": true
+    },
+    {
+      "at": "2026-08-18T00:54:55.965257+00:00",
+      "has_permalink": true
+    }
+  ],
+  "attempt_states": {
+    "aborted_preclick": 12,
+    "posted": 30,
+    "reconcile_only": 9
+  }
+}
