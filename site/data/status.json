@@ -1,19 +1,179 @@
 {
-  "generated_at": "2026-10-10T02:12:20.549578+00:00",
+  "generated_at": "2026-10-10T05:17:44.861852+00:00",
   "health": "healthy",
   "message": "投稿ランタイムは正常範囲です。",
   "counts": {
-    "skipped": 24,
+    "skipped": 40,
     "uncertain": 6,
     "failed": 2,
-    "pending_approval": 18
+    "pending_approval": 2
   },
   "last_post_at": "2026-10-10T01:11:25.802492+00:00",
   "heartbeat": {
-    "orchestrator": "2026-10-10T02:11:51.619857+00:00",
+    "orchestrator": "2026-10-10T05:17:23.621966+00:00",
     "session": "2026-08-18T23:11:06.600187+00:00"
   },
   "recent": [
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T05:17:23.616423+00:00"
+    },
+    {
+      "property_id": "eb-29351",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T05:17:23.573797+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T05:02:23.028789+00:00"
+    },
+    {
+      "property_id": "eb-29351",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T05:02:22.990790+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:47:22.497206+00:00"
+    },
+    {
+      "property_id": "eb-29351",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:47:22.453417+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:32:21.974561+00:00"
+    },
+    {
+      "property_id": "eb-29351",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:32:21.937561+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:24:21.459411+00:00"
+    },
+    {
+      "property_id": "eb-29351",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:24:21.422412+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:20:20.933396+00:00"
+    },
+    {
+      "property_id": "eb-29351",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:20:20.889968+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:18:20.250019+00:00"
+    },
+    {
+      "property_id": "eb-29351",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:18:19.970523+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:17:18.749415+00:00"
+    },
+    {
+      "property_id": "eb-29351",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-10T04:17:18.710416+00:00"
+    },
     {
       "property_id": "eb-28032",
       "group_id": "628818327463444",
@@ -353,166 +513,6 @@
       "posted_at": null,
       "permalink": null,
       "updated_at": "2026-10-09T22:13:42.722455+00:00"
-    },
-    {
-      "property_id": "eb-17496",
-      "group_id": "674802419312579",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:13:34.421778+00:00"
-    },
-    {
-      "property_id": "eb-23685",
-      "group_id": "1092188554162022",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:13:24.775794+00:00"
-    },
-    {
-      "property_id": "eb-26251",
-      "group_id": "774212775739164",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:13:16.257602+00:00"
-    },
-    {
-      "property_id": "eb-11836",
-      "group_id": "1261566862455883",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:13:07.893893+00:00"
-    },
-    {
-      "property_id": "eb-23683",
-      "group_id": "628818327463444",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:12:59.553080+00:00"
-    },
-    {
-      "property_id": "eb-10170",
-      "group_id": "462766603810852",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:12:50.940910+00:00"
-    },
-    {
-      "property_id": "eb-7735",
-      "group_id": "350006781786522",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:10:42.440762+00:00"
-    },
-    {
-      "property_id": "eb-26249",
-      "group_id": "2217518449046952",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:10:33.161651+00:00"
-    },
-    {
-      "property_id": "eb-17496",
-      "group_id": "674802419312579",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:10:24.068217+00:00"
-    },
-    {
-      "property_id": "eb-23685",
-      "group_id": "1092188554162022",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:10:14.866125+00:00"
-    },
-    {
-      "property_id": "eb-26251",
-      "group_id": "774212775739164",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:10:04.750275+00:00"
-    },
-    {
-      "property_id": "eb-11836",
-      "group_id": "1261566862455883",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:09:55.630778+00:00"
-    },
-    {
-      "property_id": "eb-23683",
-      "group_id": "628818327463444",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:09:44.952098+00:00"
-    },
-    {
-      "property_id": "eb-10170",
-      "group_id": "462766603810852",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:09:35.229867+00:00"
-    },
-    {
-      "property_id": "eb-7735",
-      "group_id": "350006781786522",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:08:24.513097+00:00"
-    },
-    {
-      "property_id": "eb-26249",
-      "group_id": "2217518449046952",
-      "status": "pending_approval",
-      "attempts": 0,
-      "last_error": "manual_reapproval_required",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-09T22:08:15.705705+00:00"
     }
   ]
 }
