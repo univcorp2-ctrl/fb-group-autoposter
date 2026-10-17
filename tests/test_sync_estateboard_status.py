@@ -2,9 +2,6 @@
 import json
 import sqlite3
 import subprocess
-import sys
-
-import pytest
 
 import scripts.sync_estateboard_status as bridge
 from scripts.sync_estateboard_status import (
@@ -14,6 +11,14 @@ from scripts.sync_estateboard_status import (
     POSTED_TO_COLUMN,
     sync_estateboard_status,
 )
+
+
+# subprocess.CREATE_NO_WINDOW exists only on Windows; the bridge passes 0 elsewhere.
+CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def _is_windowless(flags):
+    return bool(flags & CREATE_NO_WINDOW) if CREATE_NO_WINDOW else flags == 0
 
 
 def _make_jobs_db(path):
@@ -156,7 +161,6 @@ def test_sync_absent_repo_is_noop(tmp_path):
     assert summary["master_marked"] == 0
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="CREATE_NO_WINDOW exists only on Windows")
 def test_git_sync_subprocesses_are_windowless_on_windows(tmp_path, monkeypatch):
     eb_root = tmp_path / "EstateBoard"
     master = eb_root / "output" / "received" / "master_properties.jsonl"
@@ -177,13 +181,9 @@ def test_git_sync_subprocesses_are_windowless_on_windows(tmp_path, monkeypatch):
 
     assert bridge._git_sync_eb(eb_root, master, data) is True
     assert calls
-    assert all(
-        kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
-        for _command, kwargs in calls
-    )
+    assert all(_is_windowless(kwargs["creationflags"]) for _command, kwargs in calls)
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="CREATE_NO_WINDOW exists only on Windows")
 def test_wrangler_deploy_is_windowless_on_windows(tmp_path, monkeypatch):
     calls = []
 
@@ -194,4 +194,4 @@ def test_wrangler_deploy_is_windowless_on_windows(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     assert bridge._wrangler_deploy_eb(tmp_path) is True
-    assert calls[0][1]["creationflags"] & subprocess.CREATE_NO_WINDOW
+    assert _is_windowless(calls[0][1]["creationflags"])
