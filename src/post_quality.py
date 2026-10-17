@@ -37,7 +37,7 @@ class QualityReport:
 def evaluate(body: str) -> QualityReport:
     text = (body or "").replace("\r\n", "\n")
     lines = text.split("\n")
-    content = [l.strip() for l in lines if l.strip()]
+    content = [ln.strip() for ln in lines if ln.strip()]
     issues: list[str] = []
     critical: list[str] = []
     points = 0
@@ -49,7 +49,7 @@ def evaluate(body: str) -> QualityReport:
         critical.append(f"too_few_lines:{len(content)}")
 
     # 2. No wall-of-text line.
-    long_lines = [l for l in content if len(l) > 95]
+    long_lines = [ln for ln in content if len(ln) > 95]
     if not long_lines:
         points += 1
     else:
@@ -96,14 +96,14 @@ def evaluate(body: str) -> QualityReport:
         issues.append(f"length:{len(text)}")
 
     # 8. Hashtags: at most 6, grouped on one line.
-    tag_lines = [l for l in content if _HASHTAG.search(l)]
+    tag_lines = [ln for ln in content if _HASHTAG.search(ln)]
     if len(_HASHTAG.findall(text)) <= 6 and len(tag_lines) <= 1:
         points += 1
     else:
         issues.append("hashtags")
 
     # 9. No duplicated lines.
-    dupes = {l for l in content if content.count(l) > 1 and len(l) > 4}
+    dupes = {ln for ln in content if content.count(ln) > 1 and len(ln) > 4}
     if not dupes:
         points += 1
     else:
