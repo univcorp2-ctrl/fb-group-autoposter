@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from src.estateboard_adapter import _get, is_broker_ok
+from src.estateboard_adapter import _get, is_broker_ok, property_key
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class FreshnessResult:
 
 def _eb_key(item: dict[str, Any]) -> str:
     """Rebuild the same property_id the adapter assigns: eb-<propertyId|id>."""
-    return f"eb-{item.get('propertyId') or item.get('id')}"
+    return property_key(item)
 
 
 def _eb_stale_reason(item: dict[str, Any]) -> str:
@@ -131,7 +131,7 @@ class FreshnessChecker:
 
     def check(self, property_id: str) -> FreshnessResult:
         pid = str(property_id or "")
-        if pid.startswith("eb-"):
+        if pid.startswith("eb-") or pid.startswith("gmail-"):
             return self._check_eb(pid)
         if pid.startswith("daiwa-"):
             return self._check_daiwa(pid)

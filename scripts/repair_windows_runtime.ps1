@@ -68,7 +68,7 @@ $env:ESTATEBOARD_SOURCE = '__ESTATEBOARD_SOURCE__'
 $env:STATUS_REPO_ROOT = '__REPO_ROOT__'
 $env:RUNTIME_STATUS_WEB_PATH = Join-Path '__REPO_ROOT__' 'site\data\status.json'
 $env:PUBLISH_STATUS_GIT = '1'
-$env:POST_TEXT_PROVIDER = '__PROVIDER__'
+if ('__PROVIDER__') { $env:POST_TEXT_PROVIDER = '__PROVIDER__' }
 Set-Location $AppRoot
 & $Python $Script
 exit $LASTEXITCODE
@@ -103,7 +103,8 @@ Register-FBTask 'FBAutoposter-Verify' 'scripts\verify_posts.py' '11:30' 20
 Register-FBTask 'FBAutoposter-Verify-PM' 'scripts\verify_posts.py' '21:30' 20
 Register-FBTask 'FBAutoposter-Monitor-AM' 'scripts\monitor.py' '12:00'
 Register-FBTask 'FBAutoposter-Monitor-PM' 'scripts\monitor.py' '23:00'
-& $Python (Join-Path $AppRoot 'scripts\preflight_drive.py')
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot 'scripts\register_local_runtime_tasks.ps1') -RuntimeRoot $RuntimeRoot
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $LauncherPath -Script 'scripts\preflight_drive.py'
 & $Python -m pytest -q (Join-Path $AppRoot 'tests\test_drive_assets.py') (Join-Path $AppRoot 'tests\test_runtime_status.py') (Join-Path $AppRoot 'tests\test_codex_provider.py')
 Write-Host 'Repair completed.' -ForegroundColor Green
 Write-Host "Runtime: $RuntimeRoot"

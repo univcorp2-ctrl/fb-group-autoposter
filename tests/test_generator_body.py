@@ -55,7 +55,9 @@ def test_fallback_body_has_contact_and_hashtags_and_no_link():
     assert "bukken511+ag@gmail.com" in body  # contact appended
     assert "#不動産投資" in body  # hashtags appended
     assert "https://" not in body  # allow_links=False strips URLs
-    assert "🏢" in body and "💰" in body  # emoji formatting
+    assert body.startswith("【")  # scannable headline
+    assert "■ 物件概要" in body and "・価格：" in body  # one fact per line
+    assert len([ln for ln in body.split("\n") if ln.strip()]) >= 10  # real line breaks
     assert len(body) <= GROUP["max_chars"]
 
 
@@ -80,10 +82,30 @@ def test_investment_pitch_empty_without_price_or_yield():
     assert build_investment_pitch(dict(PROP, price="", yield_pct="")) == ""
 
 
-def test_fallback_body_includes_investment_simulation():
+def test_fallback_body_omits_speculative_simulation_and_passes_quality_gate():
+    from src.post_quality import evaluate
     body = fallback_body(PROP, GROUP)
-    assert INVEST_PREFIX in body
-    assert "想定融資" in body
+    assert INVEST_PREFIX not in body  # opt-in only (POST_INCLUDE_INVESTMENT_SIMULATION)
+    report = evaluate(body)
+    assert report.passes, report.summary()
+
+
+def test_fallback_body_hides_lot_number_and_keeps_yield_text():
+    body = fallback_body(PROP, GROUP)
+    assert "3-24-4" not in body  # exact lot shared on inquiry only
+    assert "6.50%" in body
+
+
+def test_negative_cashflow_projection_is_never_rendered():
+    low = dict(PROP, price="5億7,000万円", yield_pct="4.28%")
+    assert build_investment_pitch(low) == ""
+
+
+def test_quality_gate_rejects_one_block_and_rule_spam():
+    from src.post_quality import evaluate
+    one_block = "以下、物件概要です。 価格：1億円 利回り：8% 所在地：東京都 交通：駅徒歩5分 " * 3
+    assert not evaluate(one_block).passes
+    assert "rule_lines" in evaluate(fallback_body(PROP, GROUP) + "\n━━━━━━━━━━").issues
 
 
 def test_generated_post_always_includes_line_and_community_links():

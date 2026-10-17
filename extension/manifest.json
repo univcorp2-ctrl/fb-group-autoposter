@@ -1,8 +1,11 @@
 {
   "manifest_version": 3,
   "name": "FB Group 物件投稿ヘルパー",
-  "version": "1.0.0",
-  "description": "Facebookグループへ物件情報をワンクリックで下書き／投稿する自作ヘルパー（実セッション内で動作・検知/許可ダイアログなし）。",
+  "version": "1.1.5",
+  "description": "Default Chromeプロフィールの実ログインセッション内でFacebookグループへ物件投稿するヘルパー。",
+  "permissions": ["tabs", "alarms", "storage", "scripting"],
+  "host_permissions": ["https://www.facebook.com/*", "http://127.0.0.1:8766/*"],
+  "background": {"service_worker": "background.js"},
   "content_scripts": [
     {
       "matches": ["https://www.facebook.com/groups/*"],

@@ -52,6 +52,12 @@ def _get(item: dict[str, Any], key: str) -> Any:
     return None
 
 
+def property_key(item: dict[str, Any]) -> str:
+    raw = str(item.get("propertyId") or item.get("id") or "")
+    prefix = "gmail" if str(item.get("_source_kind") or "").casefold() == "gmail" else "eb"
+    return f"{prefix}-{raw}"
+
+
 def is_broker_ok(item: dict[str, Any]) -> bool:
     return str(_get(item, "allowBrokerSharing")).upper() == "TRUE"
 
@@ -173,7 +179,7 @@ def build_highlights(item: dict[str, Any]) -> list[str]:
 def to_property(item: dict[str, Any]) -> dict[str, Any]:
     """Map one EstateBoard item to a fb-group-autoposter property dict."""
     return {
-        "property_id": f"eb-{item.get('propertyId') or item.get('id')}",
+        "property_id": property_key(item),
         "title": str(_get(item, "label") or item.get("label") or _MISSING),
         "price": format_price_yen(_get(item, "price")),
         "yield_pct": format_yield(_get(item, "yieldAssumedFullOccupancy")),
