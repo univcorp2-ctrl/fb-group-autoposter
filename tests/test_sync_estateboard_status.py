@@ -13,6 +13,14 @@ from scripts.sync_estateboard_status import (
 )
 
 
+# subprocess.CREATE_NO_WINDOW exists only on Windows; the bridge passes 0 elsewhere.
+CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def _is_windowless(flags):
+    return bool(flags & CREATE_NO_WINDOW) if CREATE_NO_WINDOW else flags == 0
+
+
 def _make_jobs_db(path):
     """Tiny jobs.db with one posted property eb-2362 (group g1, screenshot s.png)."""
     conn = sqlite3.connect(path)
@@ -173,10 +181,7 @@ def test_git_sync_subprocesses_are_windowless_on_windows(tmp_path, monkeypatch):
 
     assert bridge._git_sync_eb(eb_root, master, data) is True
     assert calls
-    assert all(
-        kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
-        for _command, kwargs in calls
-    )
+    assert all(_is_windowless(kwargs["creationflags"]) for _command, kwargs in calls)
 
 
 def test_wrangler_deploy_is_windowless_on_windows(tmp_path, monkeypatch):
@@ -189,4 +194,4 @@ def test_wrangler_deploy_is_windowless_on_windows(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     assert bridge._wrangler_deploy_eb(tmp_path) is True
-    assert calls[0][1]["creationflags"] & subprocess.CREATE_NO_WINDOW
+    assert _is_windowless(calls[0][1]["creationflags"])
