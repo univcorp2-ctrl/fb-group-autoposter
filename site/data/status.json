@@ -1,16 +1,287 @@
 {
-  "generated_at": "2026-10-17T04:31:28.782298+00:00",
-  "health": "stalled",
-  "message": "確認済み投稿がありません。",
+  "generated_at": "2026-10-17T08:52:51.906706+00:00",
+  "health": "healthy",
+  "message": "投稿ランタイムは正常範囲です。",
   "counts": {
-    "skipped": 50
+    "skipped": 44,
+    "uncertain": 6
   },
-  "last_post_at": null,
+  "last_post_at": "2026-10-17T07:49:42.179415+00:00",
   "heartbeat": {
-    "orchestrator": "2026-10-10T12:52:59.576116+00:00",
+    "orchestrator": "2026-10-17T08:52:32.689576+00:00",
     "session": "2026-08-18T23:11:06.600187+00:00"
   },
   "recent": [
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T08:52:32.686577+00:00"
+    },
+    {
+      "property_id": "eb-29937",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T08:52:32.631576+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T08:37:32.072601+00:00"
+    },
+    {
+      "property_id": "eb-29937",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T08:37:32.030602+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T08:29:31.479425+00:00"
+    },
+    {
+      "property_id": "eb-29937",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T08:29:31.436425+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T08:25:30.744128+00:00"
+    },
+    {
+      "property_id": "eb-29937",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T08:25:30.699128+00:00"
+    },
+    {
+      "property_id": "eb-29937",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T08:23:30.165845+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T08:23:30.124325+00:00"
+    },
+    {
+      "property_id": "eb-29937",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T08:22:29.541721+00:00"
+    },
+    {
+      "property_id": "eb-29625",
+      "group_id": "1006724479360528",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-17T07:49:42.179415+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-17T07:50:18.498432+00:00"
+    },
+    {
+      "property_id": "eb-18414",
+      "group_id": "1911961896257757",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found [my_posted_content:200:911486:miss my_pending_content:200:933150:miss]",
+      "posted_at": "2026-10-17T06:34:22.919053+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-17T07:48:51.822886+00:00"
+    },
+    {
+      "property_id": "eb-29935",
+      "group_id": "2478498062317428",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-17T06:31:12.842115+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-17T06:33:48.601533+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "792499964217824",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-17T06:29:11.863015+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-17T06:30:45.610003+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T06:28:35.543604+00:00"
+    },
+    {
+      "property_id": "eb-29937",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T06:28:35.494605+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "superseded_quality_rework_20261017:score=6/10 critical=[] issues=['no_headline', 'rule_lines', 'duplicate_lines', 'too_many_emoji']",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T06:28:29.810532+00:00"
+    },
+    {
+      "property_id": "eb-29937",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "superseded_quality_rework_20261017:score=5/10 critical=['negative_money_figure'] issues=['no_headline', 'rule_lines', 'duplicate_lines', 'too_many_emoji']",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T06:28:29.800532+00:00"
+    },
+    {
+      "property_id": "eb-29625",
+      "group_id": "1006724479360528",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "superseded_quality_rework_20261017:score=5/10 critical=['negative_money_figure'] issues=['no_headline', 'rule_lines', 'duplicate_lines', 'too_many_emoji']",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T06:28:29.788531+00:00"
+    },
+    {
+      "property_id": "eb-11836",
+      "group_id": "1911961896257757",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "superseded_quality_rework_20261017:score=5/10 critical=['missing_facts:記載なし'] issues=['no_headline', 'rule_lines', 'duplicate_lines', 'too_many_emoji']",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T06:28:29.777530+00:00"
+    },
+    {
+      "property_id": "eb-29932",
+      "group_id": "2478498062317428",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "superseded_quality_rework_20261017:score=5/10 critical=['negative_money_figure'] issues=['no_headline', 'rule_lines', 'duplicate_lines', 'too_many_emoji']",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T06:28:29.766531+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "792499964217824",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "superseded_quality_rework_20261017:score=5/10 critical=['missing_facts:記載なし'] issues=['no_headline', 'rule_lines', 'duplicate_lines', 'too_many_emoji']",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T06:28:29.755015+00:00"
+    },
+    {
+      "property_id": "eb-23626",
+      "group_id": "630451722001309",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-17T06:16:39.576183+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-17T06:28:35.453873+00:00"
+    },
+    {
+      "property_id": "eb-29935",
+      "group_id": "1281008662437696",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-17T06:14:40.580436+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-17T06:16:05.293328+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T06:13:57.223028+00:00"
+    },
+    {
+      "property_id": "eb-29937",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-17T06:13:57.182029+00:00"
+    },
     {
       "property_id": "eb-28032",
       "group_id": "628818327463444",
@@ -240,276 +511,6 @@
       "posted_at": null,
       "permalink": null,
       "updated_at": "2026-10-10T07:53:45.779288+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T07:53:45.713212+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T07:45:45.207349+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T07:45:45.170025+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T07:41:44.683357+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T07:41:44.645403+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T07:39:44.167324+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T07:39:44.126009+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T07:38:43.586972+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T07:38:43.546973+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T05:17:23.616423+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T05:17:23.573797+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T05:02:23.028789+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T05:02:22.990790+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:47:22.497206+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:47:22.453417+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:32:21.974561+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:32:21.937561+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:24:21.459411+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:24:21.422412+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:20:20.933396+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:20:20.889968+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:18:20.250019+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:18:19.970523+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:17:18.749415+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T04:17:18.710416+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T02:11:51.616343+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T02:11:51.579316+00:00"
     }
   ]
 }
