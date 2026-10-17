@@ -2,6 +2,9 @@
 import json
 import sqlite3
 import subprocess
+import sys
+
+import pytest
 
 import scripts.sync_estateboard_status as bridge
 from scripts.sync_estateboard_status import (
@@ -153,6 +156,7 @@ def test_sync_absent_repo_is_noop(tmp_path):
     assert summary["master_marked"] == 0
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="CREATE_NO_WINDOW exists only on Windows")
 def test_git_sync_subprocesses_are_windowless_on_windows(tmp_path, monkeypatch):
     eb_root = tmp_path / "EstateBoard"
     master = eb_root / "output" / "received" / "master_properties.jsonl"
@@ -179,6 +183,7 @@ def test_git_sync_subprocesses_are_windowless_on_windows(tmp_path, monkeypatch):
     )
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="CREATE_NO_WINDOW exists only on Windows")
 def test_wrangler_deploy_is_windowless_on_windows(tmp_path, monkeypatch):
     calls = []
 
