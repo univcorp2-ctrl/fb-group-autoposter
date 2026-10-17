@@ -26,6 +26,13 @@ from src.queue_db import QueueDB
 log = logging.getLogger(__name__)
 
 
+def build_poster(settings, db, groups, notifier, *, freshness_checker=None):
+    if getattr(settings, "browser_backend", "playwright") == "extension":
+        from src.extension_poster import ExtensionFacebookPoster
+        return ExtensionFacebookPoster(settings, db, groups, notifier, freshness_checker=freshness_checker)
+    return FacebookPoster(settings, db, groups, notifier, freshness_checker=freshness_checker)
+
+
 def _enqueue_pipeline_summary(db: QueueDB, summary: dict[str, Any], *, flow: str, run_id: str) -> None:
     """Record the summary for downstream delivery; this producer never sends it."""
     db.enqueue_outbox_event(
@@ -151,7 +158,7 @@ async def run_cycle(settings: Settings, *, selftest: bool = False, run_id: str |
         # export at post time so deleted/unpublished listings are never posted.
         # Selftest uses a synthetic property with no source -> checker is skipped.
         checker = None if selftest else build_checker(settings.estateboard_source)
-        poster = FacebookPoster(settings, db, groups, notifier, freshness_checker=checker)
+        poster = build_poster(settings, db, groups, notifier, freshness_checker=checker)
         for job in db.approved_jobs():
             status = await poster.post_job(job)
             summary["approved_processed"] = int(summary["approved_processed"]) + 1
@@ -246,16 +253,28 @@ async def run_cycle_grouped(
             exclude = db.posted_property_ids_for_group(group["id"]) | selected_this_run
             picks = select_postable(
                 items,
-                limit=1,
+                limit=12,
                 exclude_ids=exclude,
                 order=order,
             )
             if not picks:
                 log.warning("no fresh property for group %s (order=%s)", group["id"], order)
                 continue
-            prop = picks[0]
+            # Quality gate: take the first candidate whose rendered post passes
+            # (core facts present, readable layout, no implausible numbers).
+            chosen = None
+            for prop in picks:
+                batch = generate_variants(prop, [group], settings)
+                if all(v.get("quality_passes", True) for v in batch.variants):
+                    chosen = (prop, batch)
+                    break
+                log.info("quality gate skipped %s for group %s: %s", prop.get("property_id"), group["id"],
+                         [v.get("quality_issues") for v in batch.variants])
+            if chosen is None:
+                log.warning("no candidate passed the quality gate for group %s", group["id"])
+                continue
+            prop, batch = chosen
             selected_this_run.add(prop["property_id"])
-            batch = generate_variants(prop, [group], settings)
             job_id = db.create_job(prop, batch.variants, degraded=batch.degraded)
             notifier.auto_or_send_preview(job_id)
             summary["created"] = int(summary["created"]) + 1
@@ -264,7 +283,7 @@ async def run_cycle_grouped(
         # Freshness gate built from the SAME source these groups selected from, so
         # a property deleted between selection and posting is skipped, not posted.
         checker = build_checker(source)
-        poster = FacebookPoster(settings, db, groups, notifier, freshness_checker=checker)
+        poster = build_poster(settings, db, groups, notifier, freshness_checker=checker)
         approved = db.approved_jobs()[:remaining_slots]
         for index, job in enumerate(approved):
             # Only space genuine Facebook submission attempts. Pure pre-submit
@@ -273,12 +292,12 @@ async def run_cycle_grouped(
             # previously held the pipeline lock for hours without posting.
             with db.connect() as conn:
                 attempts_before = conn.execute(
-                    "SELECT COUNT(*) AS n FROM submission_attempts"
+                    "SELECT COUNT(*) AS n FROM submission_attempts WHERE click_started_at IS NOT NULL"
                 ).fetchone()["n"]
             status = await poster.post_job(job)
             with db.connect() as conn:
                 attempts_after = conn.execute(
-                    "SELECT COUNT(*) AS n FROM submission_attempts"
+                    "SELECT COUNT(*) AS n FROM submission_attempts WHERE click_started_at IS NOT NULL"
                 ).fetchone()["n"]
             summary["approved_processed"] = int(summary["approved_processed"]) + 1
             summary["statuses"].append({"job_id": job["job_id"], "status": status})

@@ -1,15 +1,45 @@
 const BRIDGE = "http://127.0.0.1:8766";
 const ACTIVE_KEY = "fbAutoposterActiveTask";
 
+const BRIDGE_TIMEOUT_MS = 15000;
+const ACTIVE_MAX_AGE_MS = 20 * 60 * 1000;
+const POLL_LOCK_MAX_MS = 90000;
+
+class BridgeHttpError extends Error {
+  constructor(path, status) {
+    super(`bridge ${path} HTTP ${status}`);
+    this.status = status;
+  }
+}
+
 async function bridgeJson(path, options = {}) {
-  const res = await fetch(BRIDGE + path, {
-    cache: "no-store",
-    ...options,
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-  });
-  if (res.status === 204) return null;
-  if (!res.ok) throw new Error(`bridge ${path} HTTP ${res.status}`);
-  return await res.json();
+  // A hung localhost request used to keep `polling` true forever, silently
+  // stopping every later alarm tick. Every bridge call is now bounded.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
+  try {
+    const res = await fetch(BRIDGE + path, {
+      cache: "no-store",
+      ...options,
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    });
+    if (res.status === 204) return null;
+    if (!res.ok) throw new BridgeHttpError(path, res.status);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function heartbeat(reason) {
+  try {
+    const v = chrome.runtime.getManifest().version;
+    await fetch(`${BRIDGE}/hello?v=${encodeURIComponent(v)}&reason=${encodeURIComponent(reason)}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch (_) {}
 }
 
 async function postEvent(taskId, stage) {
@@ -116,7 +146,22 @@ async function resumeActive() {
     status = await bridgeJson(`/status/${encodeURIComponent(state.taskId)}`);
   } catch (error) {
     await chrome.storage.local.set({ fbAutoposterBridgeError: String(error?.message || error) });
+    if (error?.status === 404) {
+      // The bridge no longer knows this task (archived/cleaned). Holding it
+      // forever blocked /next permanently; the bridge never replays it.
+      await cleanupActive(state);
+      return false;
+    }
+    if (Date.now() - Number(state.openedAt || 0) > ACTIVE_MAX_AGE_MS) {
+      await cleanupActive(state);
+      return false;
+    }
     return true; // Keep ownership while offline; never orphan or replay an unknown task.
+  }
+  if (status?.status !== "finished" && Date.now() - Number(state.openedAt || 0) > ACTIVE_MAX_AGE_MS) {
+    // Bridge lease (15 min) has already expired this task; free the slot.
+    await cleanupActive(state);
+    return false;
   }
   try {
     if (status?.status === "finished") {
@@ -143,6 +188,7 @@ async function markTask(tabId) {
 }
 
 let polling = false;
+let pollingSince = 0;
 let nextPollAt = 0;
 let bridgeFailures = 0;
 
@@ -153,8 +199,10 @@ async function recordBackgroundError(error) {
 }
 
 async function runOneTask() {
+  if (polling && Date.now() - pollingSince > POLL_LOCK_MAX_MS) polling = false;
   if (polling || Date.now() < nextPollAt) return;
   polling = true;
+  pollingSince = Date.now();
   try {
     await dispatchOneTask();
     bridgeFailures = 0;
@@ -204,15 +252,21 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   })().catch(recordBackgroundError);
 });
 
-async function arm() {
-  await chrome.alarms.clear("fb-autoposter-poll");
-  chrome.alarms.create("fb-autoposter-poll", { periodInMinutes: 1 });
+async function arm(reason = "wake") {
+  void heartbeat(reason);
+  const existing = await chrome.alarms.get("fb-autoposter-poll");
+  if (!existing || reason === "installed" || reason === "startup") {
+    await chrome.alarms.clear("fb-autoposter-poll");
+    await chrome.alarms.create("fb-autoposter-poll", { periodInMinutes: 1, delayInMinutes: 0.5 });
+  }
   await runOneTask();
 }
 
-chrome.runtime.onInstalled.addListener(() => { void arm().catch(recordBackgroundError); });
-chrome.runtime.onStartup.addListener(() => { void arm().catch(recordBackgroundError); });
+chrome.runtime.onInstalled.addListener(() => { void arm("installed").catch(recordBackgroundError); });
+chrome.runtime.onStartup.addListener(() => { void arm("startup").catch(recordBackgroundError); });
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "fb-autoposter-poll") void runOneTask();
+  if (alarm.name !== "fb-autoposter-poll") return;
+  void heartbeat(polling ? "alarm-busy" : "alarm");
+  void runOneTask();
 });
-void arm().catch(recordBackgroundError);
+void arm("wake").catch(recordBackgroundError);
