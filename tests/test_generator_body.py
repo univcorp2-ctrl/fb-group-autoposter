@@ -57,7 +57,7 @@ def test_fallback_body_has_contact_and_hashtags_and_no_link():
     assert "https://" not in body  # allow_links=False strips URLs
     assert body.startswith("【")  # scannable headline
     assert "■ 物件概要" in body and "・価格：" in body  # one fact per line
-    assert len([l for l in body.split("\n") if l.strip()]) >= 10  # real line breaks
+    assert len([ln for ln in body.split("\n") if ln.strip()]) >= 10  # real line breaks
     assert len(body) <= GROUP["max_chars"]
 
 
