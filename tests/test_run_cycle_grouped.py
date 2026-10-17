@@ -65,8 +65,6 @@ def _eb_item(pid, *, price, created):
         "property.propertyType": "WHOLE_BUILDING_MANSION",
         "property.buildingStructureType": "REINFORCED_CONCRETE",
         "property.floorsAboveGround": "4",
-        "property.nearestStation1": "JR山手線 新宿駅",
-        "property.distanceFromNearestStation1": "5",
     }
 
 

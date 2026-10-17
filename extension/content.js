@@ -40,13 +40,13 @@
       "投稿を作成",
       "Create post",
     ];
-    const nodes = document.querySelectorAll('button, [role="button"], [aria-label]');
+    const nodes = document.querySelectorAll('div[role="button"], [aria-label]');
     for (const n of nodes) {
       const txt = ((n.getAttribute("aria-label") || "") + " " + (n.textContent || "")).trim();
       if (!txt || txt.length > 80) continue;
       if (!labels.some((label) => txt.includes(label))) continue;
 
-      const clickable = n.closest('button, [role="button"]') || n;
+      const clickable = n.closest('div[role="button"], button') || n;
       if (!clickable || clickable.offsetParent === null) continue;
       if (isInsideExistingPost(clickable)) continue;
 
@@ -150,56 +150,20 @@
   }
 
   // ---- 本文流し込み（Reactが拾う形）---------------------------------------
-  function contentLines(value) {
-    return String(value || "").split("\n").map((l) => l.trim()).filter(Boolean);
-  }
-
-  function clearEditable(editable) {
+  function insertTextReactSafe(editable, text) {
     editable.focus();
+    // 既存内容をクリア
     document.execCommand("selectAll", false, null);
     document.execCommand("delete", false, null);
-  }
-
-  // Facebook's composer is a Lexical editor: execCommand("insertText") with
-  // "\n" silently drops every line break, which produced unreadable one-block
-  // posts. A synthetic paste carries text/plain with newlines, and Lexical
-  // turns each line into its own paragraph.
-  function insertByPaste(editable, text) {
-    clearEditable(editable);
-    const dt = new DataTransfer();
-    dt.setData("text/plain", text);
-    const ev = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
-    editable.dispatchEvent(ev);
-  }
-
-  function insertByParagraphs(editable, text) {
-    clearEditable(editable);
-    const lines = String(text).split("\n");
-    lines.forEach((line, i) => {
-      if (line) document.execCommand("insertText", false, line);
-      if (i < lines.length - 1) document.execCommand("insertParagraph", false, null);
-    });
-  }
-
-  function layoutPreserved(editable, text) {
-    const want = contentLines(text);
-    const got = contentLines(editable.innerText);
-    const flat = (v) => String(v || "").replace(/\s+/g, "");
-    // Every non-empty source line must survive as its own line, and the
-    // characters must match (Facebook may wrap hashtags/links in spans).
-    return got.length >= want.length && flat(editable.innerText).includes(flat(text).slice(0, 40));
-  }
-
-  async function insertTextReactSafe(editable, text) {
-    insertByPaste(editable, text);
-    await sleep(600);
-    if (layoutPreserved(editable, text)) return "paste";
-    insertByParagraphs(editable, text);
-    await sleep(600);
-    if (layoutPreserved(editable, text)) return "paragraphs";
-    clearEditable(editable);
-    // Never publish a post whose line breaks were lost.
-    throw new Error("LAYOUT_LOST: 改行を保持したまま本文を入力できませんでした");
+    // execCommand insertText は beforeinput/input を発火させ、Reactが値を認識する
+    const ok = document.execCommand("insertText", false, text);
+    if (!ok) {
+      // フォールバック: 1行ずつ。改行は Enter ではなく <br> 相当で入れる
+      for (const ch of text) {
+        document.execCommand("insertText", false, ch === "\n" ? "\n" : ch);
+      }
+    }
+    editable.dispatchEvent(new InputEvent("input", { bubbles: true }));
   }
 
   async function reportStage(taskId, stage) {
@@ -273,96 +237,29 @@
     return (value || "").replace(/\s+/g, "");
   }
 
-  const PERMALINK_RE = /facebook\.com\/(groups\/[^/]+\/(posts|permalink)\/|permalink\.php|story\.php)/i;
-
-  function articlesForBody(body) {
-    const needle = normalizeText(body).slice(0, 48);
-    if (!needle) return [];
-    const articles = document.querySelectorAll('[role="article"], div[data-pagelet*="FeedUnit"]');
-    return [...articles].filter((a) => normalizeText(a.textContent).includes(needle));
-  }
-
-  function permalinkIn(article) {
-    for (const link of article.querySelectorAll("a[href]")) {
-      const href = link.href || "";
-      if (PERMALINK_RE.test(href)) return href.split("?")[0];
-    }
-    return null;
-  }
-
-  // Facebook fills the timestamp link's real href only on hover/focus, so the
-  // post was often live while we reported "permalink_not_found".
-  function revealLinks(article) {
-    for (const link of article.querySelectorAll("a")) {
-      for (const type of ["mouseover", "mouseenter", "focus", "focusin"]) {
-        try {
-          link.dispatchEvent(new MouseEvent(type, { bubbles: type !== "mouseenter", cancelable: true, view: window }));
-        } catch (_) {}
-      }
-    }
-  }
-
   function findPermalinkForBody(body) {
-    for (const article of articlesForBody(body)) {
-      const direct = permalinkIn(article);
-      if (direct) return direct;
-      revealLinks(article);
+    const needle = normalizeText(body).slice(0, 64);
+    if (!needle) return null;
+    const articles = document.querySelectorAll('[role="article"], div[data-pagelet*="FeedUnit"]');
+    for (const article of articles) {
+      if (!normalizeText(article.textContent).includes(needle)) continue;
+      const links = article.querySelectorAll('a[href]');
+      for (const link of links) {
+        const href = link.href || "";
+        if (/facebook\.com\/(groups\/[^/]+\/posts\/|permalink\.php|story\.php)/i.test(href)) return href;
+      }
     }
     return null;
   }
 
-  function pendingApprovalVisible() {
-    const text = document.body?.innerText || "";
-    return /(管理者の承認|承認待ち|承認されると|pending approval|submitted for approval)/i.test(text);
-  }
-
-  function jsonEscapeAscii(value) {
-    return JSON.stringify(value).slice(1, -1).replace(/[\u007f-\uffff]/g,
-      (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
-  }
-
-  // Server-side lookup that does not depend on the (lazy, ranked) feed: the
-  // group's "your posts" pages embed each post's text and id in page data.
-  async function lookupOwnPost(body, groupId) {
-    const lines = String(body || "").split("\n").map((l) => l.trim()).filter((l) => l.length >= 8);
-    const probes = lines.slice(1, 4).map((l) => l.slice(0, 18));
-    const diag = [];
-    for (const kind of ["my_posted_content", "my_pending_content"]) {
-      try {
-        const res = await fetch(`/groups/${groupId}/${kind}`, { credentials: "include" });
-        const html = await res.text();
-        let idx = -1;
-        for (const probe of probes) {
-          for (const form of [probe, jsonEscapeAscii(probe)]) {
-            idx = html.indexOf(form);
-            if (idx >= 0) break;
-          }
-          if (idx >= 0) break;
-        }
-        diag.push(`${kind}:${res.status}:${html.length}:${idx >= 0 ? "hit" : "miss"}`);
-        if (idx < 0) continue;
-        if (kind === "my_pending_content") return { pendingApproval: true, diag };
-        const windowText = html.slice(Math.max(0, idx - 20000), idx + 20000);
-        const m = windowText.match(new RegExp(`groups(?:\\\\)?/${groupId}(?:\\\\)?/(?:posts|permalink)(?:\\\\)?/(\\d{6,})`))
-          || windowText.match(/"post_id":"(\d{6,})"/) || windowText.match(/"story_fbid":"?(\d{6,})/);
-        if (m) return { permalink: `https://www.facebook.com/groups/${groupId}/posts/${m[1]}/`, diag };
-        return { foundArticle: true, diag };
-      } catch (error) {
-        diag.push(`${kind}:error:${String(error).slice(0, 60)}`);
-      }
-    }
-    return { diag };
-  }
-
-  async function verifyPublished(body, timeout = 30000) {
+  async function verifyPublished(body, timeout = 18000) {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
       const permalink = findPermalinkForBody(body);
-      if (permalink) return { permalink };
+      if (permalink) return permalink;
       await sleep(1200);
     }
-    if (pendingApprovalVisible()) return { pendingApproval: true };
-    return { foundArticle: articlesForBody(body).length > 0 };
+    return null;
   }
 
   // ---- 投稿実行 -------------------------------------------------------------
@@ -393,22 +290,13 @@
 
     await sleep(400);
     log("本文を入力中...");
-    const insertMode = await insertTextReactSafe(editable, text);
-    log(`本文入力方式: ${insertMode}`);
+    insertTextReactSafe(editable, text);
     await sleep(800);
     await attachTaskImages(task, log, editable);
 
     if (!post) {
-      const lines = contentLines(editable.innerText).length;
-      const expected = contentLines(text).length;
-      log(`✅ 下書き投入完了（プレビュー）。行数 ${lines}/${expected}`);
-      if (task?.action === "layout_check") {
-        // Leave nothing behind: empty the composer so closing it never prompts.
-        clearEditable(editable);
-        await sleep(300);
-        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-      }
-      return { status: "layout_ok", error: `mode=${insertMode} lines=${lines}/${expected}` };
+      log("✅ 下書き投入完了（プレビュー）。");
+      return { status: "preview" };
     }
 
     log("「投稿」ボタン待機中...");
@@ -424,15 +312,13 @@
       err.afterClick = clickStarted;
       throw err;
     }
-    const verified = await verifyPublished(text);
-    if (verified.permalink) {
+    const permalink = await verifyPublished(text);
+    if (permalink) {
       log("✅ 公開投稿を確認しました。");
-      return { status: "posted", permalink: verified.permalink };
+      return { status: "posted", permalink };
     }
     log("⚠️ 公開投稿を確認できませんでした。");
-    if (verified.pendingApproval) return { status: "uncertain", error: "pending_admin_approval" };
-    const diag = verified.diag ? ` [${verified.diag.join(" ")}]` : "";
-    return { status: "uncertain", error: (verified.foundArticle ? "article_visible_permalink_hidden" : "permalink_not_found") + diag };
+    return { status: "uncertain", error: "permalink_not_found" };
   }
 
   // ---- UI -------------------------------------------------------------------
@@ -553,14 +439,7 @@
       let result;
       if (loginLooksBroken()) result = { status: "session_expired", error: "facebook_login_required" };
       else if (task.action === "probe") result = { status: "session_ok" };
-      else if (task.action === "find_post") {
-        const own = await lookupOwnPost(task.body || "", String(task.group_id || ""));
-        result = own.permalink ? { status: "posted", permalink: own.permalink }
-          : { status: "uncertain", error: (own.pendingApproval ? "pending_admin_approval " : "not_found ") + (own.diag || []).join(" ") };
-      }
-      else if (task.action === "layout_check") {
-        result = await doPost(task.body || "", { post: false, log: console.log, task });
-      } else {
+      else {
         result = await doPost(task.body || "", { post: true, log: console.log, task });
         result = result || { status: "uncertain", error: "empty_result" };
       }
