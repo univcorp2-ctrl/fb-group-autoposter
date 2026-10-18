@@ -1,17 +1,98 @@
 {
-  "generated_at": "2026-10-18T07:50:30.146279+00:00",
+  "generated_at": "2026-10-18T13:29:45.860228+00:00",
   "health": "healthy",
   "message": "投稿ランタイムは正常範囲です。",
   "counts": {
-    "skipped": 44,
-    "uncertain": 6
+    "uncertain": 10,
+    "failed": 2,
+    "skipped": 38
   },
-  "last_post_at": "2026-10-17T07:49:42.179415+00:00",
+  "last_post_at": "2026-10-18T13:28:46.218353+00:00",
   "heartbeat": {
-    "orchestrator": "2026-10-17T13:13:33.130032+00:00",
+    "orchestrator": "2026-10-18T13:29:21.504520+00:00",
     "session": "2026-08-18T23:11:06.600187+00:00"
   },
   "recent": [
+    {
+      "property_id": "eb-29932",
+      "group_id": "774212775739164",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-18T13:28:46.218353+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-18T13:29:21.501520+00:00"
+    },
+    {
+      "property_id": "eb-24283",
+      "group_id": "1261566862455883",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-18T12:52:47.403760+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-18T12:53:23.824939+00:00"
+    },
+    {
+      "property_id": "eb-2287",
+      "group_id": "350006781786522",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "pending_admin_approval",
+      "posted_at": "2026-10-18T12:23:46.838497+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-18T12:24:23.133001+00:00"
+    },
+    {
+      "property_id": "eb-29935",
+      "group_id": "2217518449046952",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "pending_admin_approval",
+      "posted_at": "2026-10-18T11:51:46.109395+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-18T11:52:20.363170+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "674802419312579",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "安全な新規投稿本文欄が見つかりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-18T11:50:54.743567+00:00"
+    },
+    {
+      "property_id": "eb-23685",
+      "group_id": "1092188554162022",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "新規スレッド作成欄が見つかりません。コメント/返信欄への投稿は禁止しています",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-18T11:49:53.196005+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-18T11:48:41.534858+00:00"
+    },
+    {
+      "property_id": "eb-29937",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-18T11:48:41.487858+00:00"
+    },
     {
       "property_id": "eb-28032",
       "group_id": "628818327463444",
@@ -431,86 +512,6 @@
       "posted_at": null,
       "permalink": null,
       "updated_at": "2026-10-17T06:13:57.223028+00:00"
-    },
-    {
-      "property_id": "eb-29937",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-17T06:13:57.182029+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T12:52:59.571101+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T12:52:59.533418+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T12:37:59.053887+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T12:37:59.013796+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T12:22:58.532098+00:00"
-    },
-    {
-      "property_id": "eb-29351",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T12:22:58.490570+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-10T12:07:57.965215+00:00"
     }
   ]
 }
