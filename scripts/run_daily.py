@@ -241,10 +241,17 @@ def main() -> None:
 
     if preflight_result is not None and not preflight_result.get("ok"):
         challenge = preflight_result.get("challenge")
+        preflight_reason = str(preflight_result.get("reason") or "")
+        # A missing/unresponsive Chrome MV3 worker is not proof of a lost login.
+        # Preserve the transport error so monitoring can repair the right layer.
+        transport_faults = {
+            "extension_not_polling", "extension_bridge_unreachable",
+            "extension_probe_failed", "extension_probe_timeout",
+        }
         result = {
             "attempts": 0,
             "posted": False,
-            "reason": "manual_profile_recovery_required",
+            "reason": preflight_reason if preflight_reason in transport_faults else "manual_profile_recovery_required",
             "restored": False,
             "challenge": challenge,
         }
