@@ -21,6 +21,7 @@ LEDGER = ROOT / "data" / "auto_reply_ledger.json"
 BASELINE_INBOX = ROOT / "data" / "auto_reply_baseline_inbox.json"
 STATUS = ROOT / "data" / "auto_reply_status.json"
 DRIVE_STATUS = Path(r"G:\マイドライブ\AI_Agents\Private\FBGroupAutoposter\messenger_auto_reply_status.json")
+DRIVE_LEDGER = Path(r"G:\マイドライブ\AI_Agents\Private\FBGroupAutoposter\messenger_auto_reply_ledger.json")
 KEYWORDS = ("物件", "不動産", "内見", "投資", "賃貸", "利回り", "アパート", "マンション", "土地", "収益ビル", "査定", "売却", "融資", "買付")
 IGNORED = ("メッセージは復元されていません", "不在着信", "自動送信", "自動応答")
 ONLY_INBOUND = re.compile(r"^\d+$")
@@ -163,9 +164,14 @@ def run_pending(settings) -> dict:
                 skipped += 1
                 continue
             # Pre-commit before invoking any potentially consequential UI action.
+            material = nowrow.get("material") or {}
             data["attempts"][key] = {
                 "thread_id": row["thread_id"], "created_at": now.isoformat(),
                 "state": "attempted_unconfirmed",
+                "property_id": material.get("property_id", ""),
+                "pdf_sha256": material.get("sha256", ""),
+                "pdf_file_name": material.get("file_name", ""),
+                "attachment_confirmed": False,
             }
             safe_save(LEDGER, data)
             attempted += 1
@@ -184,6 +190,9 @@ def run_pending(settings) -> dict:
                 result = json.loads(proc.stdout.strip().splitlines()[-1]) if proc.stdout.strip() else {}
                 if proc.returncode == 0 and result.get("sent") is True:
                     data["attempts"][key]["state"] = "confirmed_sent"
+                    data["attempts"][key]["attachment_confirmed"] = bool(
+                        result.get("attachment_confirmed")
+                    ) if material else False
                     confirmed += 1
                 else:
                     data["attempts"][key]["state"] = "blocked_or_uncertain_no_replay"
@@ -196,10 +205,18 @@ def run_pending(settings) -> dict:
     report = {
         "checked_at": now.isoformat(), "armed": True, "attempted": attempted,
         "confirmed": confirmed, "skipped": skipped, "total_attempts": len(data["attempts"]),
+        "confirmed_total": sum(1 for v in data["attempts"].values()
+                               if v.get("state") == "confirmed_sent"),
+        "pdf_confirmed_total": sum(1 for v in data["attempts"].values()
+                                  if v.get("state") == "confirmed_sent"
+                                  and v.get("attachment_confirmed")),
+        "uncertain_total": sum(1 for v in data["attempts"].values()
+                              if v.get("state") == "blocked_or_uncertain_no_replay"),
         "status": "running" if os.getenv("MESSENGER_AUTO_SEND", "").lower() in {"true", "1"} else "dry_run",
     }
     safe_save(STATUS, report)
     try:
+        safe_save(DRIVE_LEDGER, data)
         safe_save(DRIVE_STATUS, report)
     except OSError:
         pass
