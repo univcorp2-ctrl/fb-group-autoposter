@@ -1,18 +1,98 @@
 {
-  "generated_at": "2026-10-20T03:14:27.775366+00:00",
-  "health": "stalled",
-  "message": "最終投稿から37.8時間経過しています。",
+  "generated_at": "2026-10-20T06:39:29.509052+00:00",
+  "health": "healthy",
+  "message": "投稿ランタイムは正常範囲です。",
   "counts": {
-    "uncertain": 10,
-    "failed": 2,
-    "skipped": 38
+    "uncertain": 14,
+    "skipped": 34,
+    "failed": 2
   },
-  "last_post_at": "2026-10-18T13:28:46.218353+00:00",
+  "last_post_at": "2026-10-20T06:38:30.534676+00:00",
   "heartbeat": {
-    "orchestrator": "2026-10-18T13:29:21.504520+00:00",
+    "orchestrator": "2026-10-20T06:39:04.879938+00:00",
     "session": "2026-08-18T23:11:06.600187+00:00"
   },
   "recent": [
+    {
+      "property_id": "eb-30214",
+      "group_id": "2478498062317428",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-20T06:38:30.534676+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-20T06:39:04.875936+00:00"
+    },
+    {
+      "property_id": "eb-29625",
+      "group_id": "792499964217824",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-20T06:03:33.893538+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-20T06:04:08.232213+00:00"
+    },
+    {
+      "property_id": "eb-9919",
+      "group_id": "630451722001309",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "pending_admin_approval",
+      "posted_at": "2026-10-20T05:46:32.025329+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-20T05:47:06.359592+00:00"
+    },
+    {
+      "property_id": "eb-29811",
+      "group_id": "1281008662437696",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-20T05:30:32.375432+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-20T05:31:08.769954+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "674802419312579",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-20T04:57:33.203696+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-20T04:58:06.578226+00:00"
+    },
+    {
+      "property_id": "eb-23685",
+      "group_id": "1092188554162022",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-20T04:27:32.268298+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-20T04:28:05.560048+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-20T04:26:28.690949+00:00"
+    },
+    {
+      "property_id": "eb-29810",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-20T04:26:28.649253+00:00"
+    },
     {
       "property_id": "eb-29932",
       "group_id": "774212775739164",
@@ -432,86 +512,6 @@
       "posted_at": null,
       "permalink": null,
       "updated_at": "2026-10-17T06:28:29.810532+00:00"
-    },
-    {
-      "property_id": "eb-29937",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "superseded_quality_rework_20261017:score=5/10 critical=['negative_money_figure'] issues=['no_headline', 'rule_lines', 'duplicate_lines', 'too_many_emoji']",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-17T06:28:29.800532+00:00"
-    },
-    {
-      "property_id": "eb-29625",
-      "group_id": "1006724479360528",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "superseded_quality_rework_20261017:score=5/10 critical=['negative_money_figure'] issues=['no_headline', 'rule_lines', 'duplicate_lines', 'too_many_emoji']",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-17T06:28:29.788531+00:00"
-    },
-    {
-      "property_id": "eb-11836",
-      "group_id": "1911961896257757",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "superseded_quality_rework_20261017:score=5/10 critical=['missing_facts:記載なし'] issues=['no_headline', 'rule_lines', 'duplicate_lines', 'too_many_emoji']",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-17T06:28:29.777530+00:00"
-    },
-    {
-      "property_id": "eb-29932",
-      "group_id": "2478498062317428",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "superseded_quality_rework_20261017:score=5/10 critical=['negative_money_figure'] issues=['no_headline', 'rule_lines', 'duplicate_lines', 'too_many_emoji']",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-17T06:28:29.766531+00:00"
-    },
-    {
-      "property_id": "eb-29624",
-      "group_id": "792499964217824",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "superseded_quality_rework_20261017:score=5/10 critical=['missing_facts:記載なし'] issues=['no_headline', 'rule_lines', 'duplicate_lines', 'too_many_emoji']",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-17T06:28:29.755015+00:00"
-    },
-    {
-      "property_id": "eb-23626",
-      "group_id": "630451722001309",
-      "status": "uncertain",
-      "attempts": 0,
-      "last_error": "permalink_not_found",
-      "posted_at": "2026-10-17T06:16:39.576183+00:00",
-      "permalink": null,
-      "updated_at": "2026-10-17T06:28:35.453873+00:00"
-    },
-    {
-      "property_id": "eb-29935",
-      "group_id": "1281008662437696",
-      "status": "uncertain",
-      "attempts": 0,
-      "last_error": "permalink_not_found",
-      "posted_at": "2026-10-17T06:14:40.580436+00:00",
-      "permalink": null,
-      "updated_at": "2026-10-17T06:16:05.293328+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-17T06:13:57.223028+00:00"
     }
   ]
 }
