@@ -18,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 JST = timezone(timedelta(hours=9))
 LEDGER = ROOT / "data" / "auto_reply_ledger.json"
+BASELINE_INBOX = ROOT / "data" / "auto_reply_baseline_inbox.json"
 STATUS = ROOT / "data" / "auto_reply_status.json"
 DRIVE_STATUS = Path(r"G:\マイドライブ\AI_Agents\Private\FBGroupAutoposter\messenger_auto_reply_status.json")
 KEYWORDS = ("物件", "不動産", "内見", "投資", "賃貸", "利回り", "アパート", "マンション", "土地", "収益ビル", "査定", "売却", "融資", "買付")
@@ -83,6 +84,17 @@ def run_pending(settings) -> dict:
         safe_save(STATUS, report)
         return report
 
+    # Require a live inbox snapshot captured at the moment auto-send was
+    # activated. Without it, old unread threads may look like fresh messages.
+    if not BASELINE_INBOX.exists():
+        report = {"armed": False, "attempted": 0, "confirmed": 0,
+                  "status": "missing_inbox_baseline_fail_closed"}
+        safe_save(STATUS, report)
+        return report
+    previous_inbox = json.loads(BASELINE_INBOX.read_text(encoding="utf-8"))
+    if not isinstance(previous_inbox.get("previews"), dict):
+        raise RuntimeError("inbox baseline corrupt; do not send")
+
     data = json.loads(LEDGER.read_text(encoding="utf-8"))
     if not isinstance(data.get("attempts"), dict):
         raise RuntimeError("auto reply ledger corrupt: do not send")
@@ -117,6 +129,13 @@ def run_pending(settings) -> dict:
                 continue
             nowrow = by_id.get(str(row.get("thread_id")))
             if not nowrow or nowrow.get("last_message") != row.get("last_message"):
+                skipped += 1
+                continue
+            # A thread whose latest preview was already present when automation
+            # was enabled is historical, even if first reviewed only today.
+            previous = previous_inbox["previews"].get(str(row.get("thread_id")))
+            if (previous is not None and previous == hashlib.sha256(
+                    str(row.get("last_message")).encode("utf-8")).hexdigest()):
                 skipped += 1
                 continue
             # Never deliver legacy bot text or any low-cost draft that has not

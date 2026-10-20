@@ -24,6 +24,8 @@ def test_initial_arm_never_sends_history(tmp_path, monkeypatch):
     monkeypatch.setattr(auto_reply,"LEDGER",tmp_path/"ledger.json")
     monkeypatch.setattr(auto_reply,"STATUS",tmp_path/"status.json")
     monkeypatch.setattr(auto_reply,"DRIVE_STATUS",tmp_path/"drive.json")
+    monkeypatch.setattr(auto_reply,"BASELINE_INBOX",tmp_path/"baseline.json")
+    (tmp_path/"baseline.json").write_text('{"previews":{}}',encoding="utf-8")
     monkeypatch.setenv("MESSENGER_AUTO_SEND","true")
     from unittest.mock import Mock
     runner=Mock(side_effect=AssertionError("historical send forbidden"))
@@ -42,6 +44,8 @@ def test_fresh_inbound_send_at_most_once(tmp_path,monkeypatch):
     monkeypatch.setattr(auto_reply,"LEDGER",tmp_path/"ledger.json")
     monkeypatch.setattr(auto_reply,"STATUS",tmp_path/"status.json")
     monkeypatch.setattr(auto_reply,"DRIVE_STATUS",tmp_path/"drive.json")
+    monkeypatch.setattr(auto_reply,"BASELINE_INBOX",tmp_path/"baseline.json")
+    (tmp_path/"baseline.json").write_text('{"previews":{}}',encoding="utf-8")
     monkeypatch.setenv("MESSENGER_AUTO_SEND","true")
     s=SimpleNamespace(data_dir=tmp_path)
     _=auto_reply.run_pending(s)
@@ -64,3 +68,33 @@ def test_fresh_inbound_send_at_most_once(tmp_path,monkeypatch):
     assert auto_reply.run_pending(s)["confirmed"]==1
     assert auto_reply.run_pending(s)["attempted"]==0
     assert len(calls)==1
+
+
+def test_inbox_snapshot_blocks_preexisting_message(tmp_path, monkeypatch):
+    import hashlib
+    from unittest.mock import Mock
+    monkeypatch.setattr(auto_reply,"LEDGER",tmp_path/"ledger.json")
+    monkeypatch.setattr(auto_reply,"STATUS",tmp_path/"status.json")
+    monkeypatch.setattr(auto_reply,"DRIVE_STATUS",tmp_path/"drive.json")
+    monkeypatch.setattr(auto_reply,"BASELINE_INBOX",tmp_path/"baseline.json")
+    monkeypatch.setenv("MESSENGER_AUTO_SEND","true")
+    s=SimpleNamespace(data_dir=tmp_path)
+    assert auto_reply.run_pending(s)["attempted"]==0
+    inbound="この物件の資料をください"
+    snapshot=hashlib.sha256(inbound.encode("utf-8")).hexdigest()
+    (tmp_path/"baseline.json").write_text(
+        json.dumps({"previews":{"123456789":snapshot}},ensure_ascii=False),encoding="utf-8"
+    )
+    approval=hashlib.sha256(("物件問い合わせ"+"\0"+inbound).encode("utf-8")).hexdigest()
+    row=candidate(review_status="approved",review_model="gpt-5.6-terra/high",
+                  review_message_sha256=approval, draft="資料の共有条件を確認してご案内いたします。")
+    (tmp_path/"drafts.json").write_text(json.dumps({"drafts":[row]},ensure_ascii=False),encoding="utf-8")
+    stamp=(datetime.now(auto_reply.JST)+timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M JST")
+    (tmp_path/"drafts_archive.jsonl").write_text(
+        json.dumps({"checked_at":stamp,**row},ensure_ascii=False),encoding="utf-8"
+    )
+    sender=Mock(side_effect=AssertionError("Never send preexisting Messenger preview"))
+    monkeypatch.setattr(auto_reply.subprocess,"run",sender)
+    result=auto_reply.run_pending(s)
+    assert result["attempted"]==0 and result["confirmed"]==0
+    sender.assert_not_called()
