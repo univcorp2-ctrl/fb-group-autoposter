@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import random
 import sys
 from datetime import datetime, timedelta, timezone
@@ -134,76 +135,78 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
             needing = select_threads_needing_reply(threads)
             summary["need_reply"] = len(needing)
 
-            for thread in needing:
-                preview = thread.get("preview", "")
-                if not store.is_new_state(thread["thread_id"], preview):
-                    # The state DB can outlive drafts.json. Rehydrate the saved
-                    # draft from the current inbound preview if necessary, then
-                    # idempotently place/verify it in Messenger's composer.
-                    saved = active_drafts.get(str(thread["thread_id"]))
-                    if not saved:
-                        draft = build_draft(
-                            thread["name"],
-                            preview,
-                            line_url=settings.line_url,
-                            community_url=settings.community_url,
-                            api_key=settings.anthropic_api_key,
-                            model=settings.claude_model,
-                        )
-                        saved = {
-                            "thread_id": thread["thread_id"],
-                            "url": thread["url"],
-                            "name": thread["name"],
-                            "last_message": preview,
-                            "draft": draft,
-                            "priority": thread["classification"]["priority"],
-                        }
-                        active_drafts[str(thread["thread_id"])] = saved
-                        summary["drafted"] += 1
-                        _archive_draft(settings, saved, _now_jst())
-                    if settings.write_draft_to_fb and not settings.read_only:
-                        from src.fb_draft_writer import write_draft_no_send
+            from src.review_pipeline import review_draft
+            from src.thread_context import read_recent_thread_text
 
-                        if await write_draft_no_send(
-                            page, thread["url"], str(saved["draft"])
-                        ):
-                            summary["placed_in_fb"] += 1
-                    continue  # already drafted for this exact message state
-                # Use the inbox preview as the last message. We deliberately do NOT
-                # open the thread: opening marks it "seen" and sends a read receipt,
-                # which would break the passive, non-intrusive guarantee.
-                last_message = preview
-                draft = build_draft(
-                    thread["name"],
-                    last_message,
-                    line_url=settings.line_url,
-                    community_url=settings.community_url,
-                    api_key=settings.anthropic_api_key,
-                    model=settings.claude_model,
+            review_limit = max(1, min(10, int(os.getenv("MESSENGER_MAX_REVIEWS_PER_SCAN", "5"))))
+            reviewed_now = 0
+            for thread in needing:
+                preview = str(thread.get("preview") or "")
+                tid = str(thread["thread_id"])
+                prior = active_drafts.get(tid)
+                # Reject all legacy drafts: these predate mandatory senior review.
+                # Do not preserve bot text with "first-time" greetings and ads.
+                # Cache accepted and human-escalated high-end reviews for
+                # unchanged messages. Do not re-bill the premium model every
+                # 30 minutes for the same unresolved document request.
+                review_cached = bool(
+                    prior and prior.get("last_message") == preview
+                    and prior.get("review_status") in {"approved", "needs_human"}
+                    and prior.get("review_policy_version") == "2026-10-20-v3"
+                    and any(m in str(prior.get("review_model", "")).lower()
+                            for m in ("opus", "gpt-5.6-terra"))
+                )
+                if review_cached:
+                    continue
+                if reviewed_now >= review_limit:
+                    active_drafts.pop(tid, None)
+                    continue
+                reviewed_now += 1
+                history = await read_recent_thread_text(page, tid, str(thread["name"]))
+                decision = await asyncio.to_thread(
+                    review_draft, str(thread["name"]), preview,
+                    history=history, api_key=settings.anthropic_api_key,
                 )
                 row = {
-                    "thread_id": thread["thread_id"],
-                    "url": thread["url"],
-                    "name": thread["name"],
-                    "last_message": last_message,
-                    "draft": draft,
+                    "thread_id": tid, "url": str(thread["url"]),
+                    "name": str(thread["name"]), "last_message": preview,
                     "priority": thread["classification"]["priority"],
+                    "one_to_one_verified": thread.get("one_to_one_verified") is True,
+                    "participant_count": thread.get("participant_count"),
+                    "is_group": thread.get("is_group") is True,
+                    "time_text": thread.get("time_text", ""),
+                    "review_policy_version": "2026-10-20-v3",
+                    **decision,
                 }
-                active_drafts[str(thread["thread_id"])] = row
-                summary["drafted"] += 1
-
-                if settings.write_draft_to_fb and not settings.read_only:
+                active_drafts[tid] = row
+                summary["drafted"] += int(bool(row.get("draft")))
+                summary["reviewed_approved"] = summary.get("reviewed_approved", 0) + (
+                    1 if decision["review_status"] == "approved" else 0
+                )
+                summary["review_blocked"] = summary.get("review_blocked", 0) + (
+                    1 if decision["review_status"] != "approved" else 0
+                )
+                # Only a high-end approved text can reach the composer. By default
+                # composer writes are switched OFF until a human clears old text.
+                if (decision["review_status"] == "approved"
+                        and decision["draft"]
+                        and settings.write_draft_to_fb and not settings.read_only):
                     from src.fb_draft_writer import write_draft_no_send
-
-                    if await write_draft_no_send(page, thread["url"], draft):
+                    if await write_draft_no_send(page, str(thread["url"]), decision["draft"]):
                         summary["placed_in_fb"] += 1
-
                 _sync_notion(settings, row, _now_jst())
                 if use_telegram:
                     _notify(notifier, row)
                 _archive_draft(settings, row, _now_jst())
-                store.mark_drafted(thread["thread_id"], preview, drafted_at=_now_jst())
-                await page.wait_for_timeout(random.randint(2000, 5000))  # gentle pacing
+                store.mark_drafted(tid, preview, drafted_at=_now_jst())
+                await page.wait_for_timeout(random.randint(400, 900))
+            # Scrub cached pre-review legacy drafts, including threads omitted
+            # from today's virtualized inbox scan, so they cannot be auto-sent.
+            for tid in list(active_drafts):
+                if active_drafts[tid].get("review_status") != "approved":
+                    if active_drafts[tid].get("review_status") is None:
+                        active_drafts[tid]["draft"] = ""
+                        active_drafts[tid]["review_status"] = "legacy_unreviewed"
         finally:
             # The Chrome process, context, and page are externally owned by the
             # central Executor. Exiting Playwright disconnects only this client.

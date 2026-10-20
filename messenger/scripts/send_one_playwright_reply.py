@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import hashlib
 import json
 import sys
 from dataclasses import replace
@@ -93,6 +94,43 @@ def _reply_text(args: argparse.Namespace, row: dict[str, Any]) -> str:
     if not value:
         raise ValueError("reply text is empty")
     return value
+
+
+def _require_premium_approval(args: argparse.Namespace, row: dict[str, Any], reply: str) -> None:
+    """Fail closed: nothing can be sent without exact high-end reviewed text."""
+    if not args.send:
+        return
+    reviewed = str(row.get("draft") or "").strip()
+    if row.get("review_status") != "approved":
+        raise RuntimeError("premium_review_not_approved")
+    if not any(model in str(row.get("review_model", "")).lower()
+               for model in ("opus", "gpt-5.6-terra")):
+        raise RuntimeError("premium_review_model_unverified")
+    expected = hashlib.sha256(
+        (str(row.get("name", "")) + "\0" + str(row.get("last_message", ""))).encode("utf-8")
+    ).hexdigest()
+    if expected != str(row.get("review_message_sha256") or ""):
+        raise RuntimeError("reviewed_message_fingerprint_mismatch")
+    if not reviewed or normalize_text(reviewed) != normalize_text(reply):
+        raise RuntimeError("reply_must_equal_high_end_reviewed_draft")
+    from src.review_pipeline import _validate
+    from src.property_evidence import lookup_property
+    evidence = lookup_property(str(row.get("last_message", "")))
+    if _validate(reply, str(row.get("last_message", "")), evidence):
+        raise RuntimeError("premium_review_content_invalid")
+    wants_pdf = any(word in str(row.get("last_message", "")) for word in
+                    ("資料", "図面", "詳細", "概要書", "レントロール"))
+    if wants_pdf:
+        from src.material_delivery import plan_material, download_material
+        expected = row.get("material") or {}
+        plan = plan_material(str(row.get("last_message", "")))
+        if not plan.approved or expected.get("drive_file_id") != plan.drive_file_id:
+            raise RuntimeError("restricted_property_material_not_verified")
+        pdf = download_material(plan)
+        if (expected.get("sha256") != pdf.sha256
+                or expected.get("file_name") != pdf.file_name
+                or expected.get("property_id") != pdf.property_id):
+            raise RuntimeError("reviewed_pdf_identity_or_sha256_mismatch")
 
 
 def _base_status(args: argparse.Namespace, fingerprint: str, message_length: int) -> dict[str, Any]:
@@ -205,6 +243,7 @@ async def _run_browser(
         raise RuntimeError("saved draft has no last_message to verify")
 
     clicked = False
+    attachment = None
     original_editor_text = ""
     editor: Any | None = None
 
@@ -269,7 +308,22 @@ async def _run_browser(
                 }
             )
 
+            if args.send and normalize_text(original_editor_text) and normalize_text(original_editor_text) != normalize_text(reply):
+                raise RuntimeError("existing human draft in Messenger composer; refusing to overwrite or send")
+
+            if args.send and isinstance(row.get("material"), dict):
+                from src.material_delivery import plan_material, download_material
+                plan = plan_material(expected_preview)
+                if not plan.approved:
+                    raise RuntimeError("document_unverified_before_upload")
+                attachment = download_material(plan)
+                if attachment.sha256 != row["material"].get("sha256"):
+                    raise RuntimeError("document_changed_since_premium_review")
+
             if not args.send:
+                if isinstance(row.get("material"), dict):
+                    from src.messenger_attachment import attachment_input_ready
+                    status["attachment_input_ready"] = await attachment_input_ready(page)
                 status.update(
                     {
                         "ok": True,
@@ -284,6 +338,14 @@ async def _run_browser(
             if editor_after_fill != normalize_text(reply):
                 raise RuntimeError("composer text did not exactly match the intended reply")
 
+            if attachment is not None:
+                from src.messenger_attachment import stage_verified_pdf
+                staged = await stage_verified_pdf(
+                    page, Path(attachment.file_path), attachment.file_name
+                )
+                status.update({"attachment_staged": staged["staged"],
+                               "attachment_sha256": attachment.sha256,
+                               "attachment_filename": attachment.file_name})
             send_button = await _first_visible(page, SEND_SELECTORS)
             if send_button is None:
                 raise RuntimeError("exact Messenger send button was not found")
@@ -323,7 +385,15 @@ async def _run_browser(
             except Exception as exc:  # noqa: BLE001 - DOM proof remains available
                 post_reason = f"post_check_error:{type(exc).__name__}"
 
-            sent = dom_confirmed or post_inbox_confirmed
+            attachment_confirmed = True
+            if attachment is not None:
+                from src.messenger_attachment import attachment_visible_after_send
+                attachment_confirmed = await attachment_visible_after_send(
+                    page, attachment.file_name
+                )
+            # A verified document reply requires BOTH text and PDF evidence.
+            sent = (dom_confirmed or post_inbox_confirmed) and attachment_confirmed
+            status["attachment_confirmed"] = attachment_confirmed
             status.update(
                 {
                     "dom_confirmed": dom_confirmed,
@@ -392,10 +462,11 @@ def main() -> int:
     if args.scan_limit < 1 or args.scan_limit > 100:
         raise SystemExit("--scan-limit must be between 1 and 100")
 
+    # Attach to the actual Chrome profile mode; do not force headless and
+    # incorrectly reject the authenticated visible session.
     settings = replace(
         Settings.load(),
-        headless=not args.headful,
-        browser_display_mode="visible" if args.headful else "headless",
+        browser_display_mode="visible" if args.headful else "auto",
     )
     drafts_path = settings.data_dir / "drafts.json"
     status_path = settings.data_dir / "send_one_reply_status.json"
@@ -408,6 +479,7 @@ def main() -> int:
             thread_id=args.thread_id,
         )
         reply = _reply_text(args, row)
+        _require_premium_approval(args, row, reply)
         fingerprint = message_fingerprint(reply)
         status = _base_status(args, fingerprint, len(reply))
         _block_duplicate(status_path, args)
