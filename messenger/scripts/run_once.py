@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import random
 import sys
 from datetime import datetime, timedelta, timezone
@@ -145,12 +146,17 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                 prior = active_drafts.get(tid)
                 # Reject all legacy drafts: these predate mandatory senior review.
                 # Do not preserve bot text with "first-time" greetings and ads.
-                already_reviewed = bool(
+                # Cache accepted and human-escalated high-end reviews for
+                # unchanged messages. Do not re-bill the premium model every
+                # 30 minutes for the same unresolved document request.
+                review_cached = bool(
                     prior and prior.get("last_message") == preview
-                    and prior.get("review_status") == "approved"
-                    and any(m in prior.get("review_model", "").lower() for m in ("opus", "gpt-5.6-terra"))
+                    and prior.get("review_status") in {"approved", "needs_human"}
+                    and prior.get("review_policy_version") == "2026-10-20-v2"
+                    and any(m in str(prior.get("review_model", "")).lower()
+                            for m in ("opus", "gpt-5.6-terra"))
                 )
-                if already_reviewed:
+                if review_cached:
                     continue
                 if reviewed_now >= review_limit:
                     active_drafts.pop(tid, None)
@@ -169,6 +175,7 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                     "participant_count": thread.get("participant_count"),
                     "is_group": thread.get("is_group") is True,
                     "time_text": thread.get("time_text", ""),
+                    "review_policy_version": "2026-10-20-v2",
                     **decision,
                 }
                 active_drafts[tid] = row

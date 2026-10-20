@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import hashlib
 import json
 import sys
 from dataclasses import replace
@@ -93,6 +94,33 @@ def _reply_text(args: argparse.Namespace, row: dict[str, Any]) -> str:
     if not value:
         raise ValueError("reply text is empty")
     return value
+
+
+def _require_premium_approval(args: argparse.Namespace, row: dict[str, Any], reply: str) -> None:
+    """Fail closed: nothing can be sent without exact high-end reviewed text."""
+    if not args.send:
+        return
+    reviewed = str(row.get("draft") or "").strip()
+    if row.get("review_status") != "approved":
+        raise RuntimeError("premium_review_not_approved")
+    if not any(model in str(row.get("review_model", "")).lower()
+               for model in ("opus", "gpt-5.6-terra")):
+        raise RuntimeError("premium_review_model_unverified")
+    expected = hashlib.sha256(
+        (str(row.get("name", "")) + "\0" + str(row.get("last_message", ""))).encode("utf-8")
+    ).hexdigest()
+    if expected != str(row.get("review_message_sha256") or ""):
+        raise RuntimeError("reviewed_message_fingerprint_mismatch")
+    if not reviewed or normalize_text(reviewed) != normalize_text(reply):
+        raise RuntimeError("reply_must_equal_high_end_reviewed_draft")
+    from src.review_pipeline import _validate
+    from src.property_evidence import lookup_property
+    evidence = lookup_property(str(row.get("last_message", "")))
+    if _validate(reply, str(row.get("last_message", "")), evidence):
+        raise RuntimeError("premium_review_content_invalid")
+    if (evidence.matched and not evidence.sharing_cleared
+            and any(word in str(row.get("last_message", "")) for word in ("資料", "図面", "詳細", "概要書"))):
+        raise RuntimeError("restricted_property_sharing_not_cleared")
 
 
 def _base_status(args: argparse.Namespace, fingerprint: str, message_length: int) -> dict[str, Any]:
@@ -395,10 +423,11 @@ def main() -> int:
     if args.scan_limit < 1 or args.scan_limit > 100:
         raise SystemExit("--scan-limit must be between 1 and 100")
 
+    # Attach to the actual Chrome profile mode; do not force headless and
+    # incorrectly reject the authenticated visible session.
     settings = replace(
         Settings.load(),
-        headless=not args.headful,
-        browser_display_mode="visible" if args.headful else "headless",
+        browser_display_mode="visible" if args.headful else "auto",
     )
     drafts_path = settings.data_dir / "drafts.json"
     status_path = settings.data_dir / "send_one_reply_status.json"
@@ -411,6 +440,7 @@ def main() -> int:
             thread_id=args.thread_id,
         )
         reply = _reply_text(args, row)
+        _require_premium_approval(args, row, reply)
         fingerprint = message_fingerprint(reply)
         status = _base_status(args, fingerprint, len(reply))
         _block_duplicate(status_path, args)
