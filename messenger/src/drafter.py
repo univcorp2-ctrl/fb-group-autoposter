@@ -12,7 +12,6 @@ A draft is a SUGGESTION saved for human review. It is never auto-sent.
 from __future__ import annotations
 
 import logging
-import os
 
 log = logging.getLogger(__name__)
 
@@ -97,27 +96,7 @@ def build_draft(
     for an auto-sent message.
     """
     draft: str | None = None
-    provider = os.environ.get("MESSENGER_DRAFT_PROVIDER", "api").strip().lower()
-    if provider in {"codex", "claude"}:
-        from src.cli_drafter import generate_via_cli
-
-        draft = generate_via_cli(
-            provider, name, last_message,
-            line_url=line_url, community_url=community_url,
-            timeout_seconds=int(os.environ.get("MESSENGER_CLI_TIMEOUT_SECONDS", "60")),
-        )
-    elif provider == "auto":
-        from src.cli_drafter import generate_via_cli
-
-        for candidate in ("codex", "claude"):
-            draft = generate_via_cli(
-                candidate, name, last_message,
-                line_url=line_url, community_url=community_url,
-                timeout_seconds=int(os.environ.get("MESSENGER_CLI_TIMEOUT_SECONDS", "60")),
-            )
-            if draft:
-                break
-    elif provider == "api" and api_key:
+    if api_key:
         draft = _claude_draft(name, last_message, line_url, community_url, api_key, model)
     if not draft:
         draft = build_template_draft(name, last_message, line_url=line_url, community_url=community_url)
