@@ -144,7 +144,13 @@ def review_draft(
     if parsed is None:
         return {**base,"review_reason":"high_end_response_invalid","review_model":model}
     if parsed["verdict"]!="approve":
-        return {**base,"review_reason":str(parsed["reason"])[:250],"review_model":model}
+        # A human may inspect the senior model's proposed reply, but an
+        # unapproved draft is never eligible for composer placement or send.
+        suggestion=sanitize_draft(parsed["reply"]).strip()
+        if _validate(suggestion,incoming,evidence):
+            suggestion=""
+        return {**base,"review_reason":str(parsed["reason"])[:250],
+                "review_model":model,"draft":suggestion}
     final=sanitize_draft(parsed["reply"]).strip()
     reason=_validate(final,incoming,evidence)
     if reason:
