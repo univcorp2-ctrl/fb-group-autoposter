@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-10-19T11:47:16.139659+00:00",
-  "health": "healthy",
-  "message": "投稿ランタイムは正常範囲です。",
+  "generated_at": "2026-10-20T01:32:25.209018+00:00",
+  "health": "stalled",
+  "message": "最終投稿から36.1時間経過しています。",
   "counts": {
     "uncertain": 10,
     "failed": 2,
