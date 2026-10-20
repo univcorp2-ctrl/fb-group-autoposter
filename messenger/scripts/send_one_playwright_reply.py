@@ -269,6 +269,9 @@ async def _run_browser(
                 }
             )
 
+            if args.send and normalize_text(original_editor_text) and normalize_text(original_editor_text) != normalize_text(reply):
+                raise RuntimeError("existing human draft in Messenger composer; refusing to overwrite or send")
+
             if not args.send:
                 status.update(
                     {
