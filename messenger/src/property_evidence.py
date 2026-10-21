@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import unicodedata
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -54,27 +55,44 @@ def lookup_property(inbound: str, source: Path | None = None) -> Evidence:
     if not isinstance(rows, list):
         return Evidence(**blank, reason="property_catalog_invalid")
 
-    text = inbound.replace(" ", "").replace("　", "")
+    def normalized(value: str) -> str:
+        return re.sub(r"\s+", "", unicodedata.normalize("NFKC", value)).casefold()
+
+    text = normalized(inbound)
     wanted = _request_price_jpy(text)
+    valid_rows = [row for row in rows if isinstance(row, dict)]
+    explicit_ids = set(re.findall(r"(?:物件id|物件番号|propertyid)[:#]?([0-9]+)(?![a-z0-9])", text))
+    named_rows = [row for row in valid_rows
+                  if len(normalized(str(row.get("property.label") or ""))) >= 4
+                  and normalized(str(row.get("property.label") or "")) in text]
+    has_identity = bool(explicit_ids or named_rows)
+    if explicit_ids:
+        identified = [row for row in valid_rows
+                      if str(row.get("propertyId") or row.get("property.id") or "") in explicit_ids]
+        if len(explicit_ids) != 1 or (named_rows and named_rows != identified):
+            return Evidence(**blank, reason="conflicting_property_identity")
+    else:
+        identified = named_rows
     # Broad geography alone must never auto-select among unrelated properties.
     areas = [word for word in ("海浜幕張", "幕張本郷", "幕張", "横浜", "渋谷", "新宿", "吉祥寺", "藤沢") if word in text]
     area = areas[0] if areas else ""
-    if not area or wanted is None:
+    if not has_identity and (not area or wanted is None):
         return Evidence(**blank, reason="insufficient_property_identity")
     matched = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
+    candidates = identified if has_identity else valid_rows
+    if has_identity and len(candidates) != 1:
+        return Evidence(**{**blank, "ambiguous": len(candidates) > 1}, reason="no_unique_property_match")
+    for row in candidates:
         name = str(row.get("property.label") or "")
         city = str(row.get("property.cityLabel") or "")
         p = row.get("property.price")
         try:
             price = int(float(p))
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             continue
-        if area not in name + city:
+        if not has_identity and area not in name + city:
             continue
-        if abs(price - wanted) > max(50_000_000, wanted * 0.03):
+        if wanted is not None and abs(price - wanted) > max(50_000_000, wanted * 0.03):
             continue
         matched.append((row, price))
     if len(matched) != 1:
