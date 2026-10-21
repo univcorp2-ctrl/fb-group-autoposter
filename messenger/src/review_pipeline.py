@@ -73,63 +73,12 @@ def _prompt(name: str, inbound: str, history: str, first_draft: str, evidence: E
     )
 
 def _call_opus(prompt: str, api_key: str = "") -> tuple[str, str] | None:
-    model = os.getenv("MESSENGER_REVIEW_MODEL", REVIEW_MODEL)
-    if "opus" not in model.lower():
-        log.error("High-end review model must be Opus")
-        return None
-    provider = os.getenv("MESSENGER_REVIEW_PROVIDER", "auto").strip().lower()
-    if api_key and provider != "codex":
-        try:
-            import anthropic
-            client = anthropic.Anthropic(api_key=api_key, timeout=55.0, max_retries=0)
-            result = client.messages.create(
-                model=model, max_tokens=1100,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            text = "".join(b.text for b in result.content if getattr(b,"type","")=="text").strip()
-            if text: return text, model
-        except Exception as e:
-            log.warning("Opus API unavailable: %s", type(e).__name__)
-    # Explicit API-only mode must never fall back to a local CLI.
-    # A missing or failed API review is a fail-closed, unsent draft.
-    if provider in {"api_only", "anthropic_api_only"}:
-        return None
-    cli = shutil.which("claude.exe") or shutil.which("claude")
-    if cli and provider != "codex":
-        try:
-            p = subprocess.run(
-                [cli, "--print", "--model", model, "--output-format", "text",
-                 "--no-session-persistence", "--tools", ""],
-                input=prompt, encoding="utf-8", text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                timeout=80, check=False,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            if p.returncode == 0 and p.stdout.strip(): return p.stdout.strip(), model
-        except (OSError, subprocess.TimeoutExpired): pass
-    # Codex's high-effort model is the second independent premium reviewer.
-    # Use a sandboxed text-only job, never allow it to send Messenger messages.
-    codex = shutil.which("codex.cmd") or shutil.which("codex.exe") or shutil.which("codex")
-    if codex:
-        with tempfile.TemporaryDirectory(prefix="messenger-senior-review-") as folder:
-            resultfile = Path(folder) / "review.txt"
-            try:
-                p = subprocess.run(
-                    [codex, "exec", "--model", "gpt-5.6-terra",
-                     "--config", 'model_reasoning_effort="high"',
-                     "--sandbox", "read-only", "--skip-git-repo-check",
-                     "--output-last-message", str(resultfile), "-"],
-                    input=prompt, encoding="utf-8", text=True,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    cwd=folder, timeout=100, check=False,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                )
-                if p.returncode == 0 and resultfile.exists():
-                    reviewed = resultfile.read_text(encoding="utf-8").strip()
-                    if reviewed: return reviewed, "gpt-5.6-terra/high"
-            except (OSError, subprocess.TimeoutExpired):
-                pass
+    # User policy: paid API, Codex CLI and other external reviewers are disabled.
+    # Review belongs in the current normal ChatGPT conversation only.
+    # Fail closed: no automated approval, external invocation or send.
     return None
+
+
 
 def _parse_review(raw: str) -> dict[str, Any] | None:
     raw = raw.strip()
