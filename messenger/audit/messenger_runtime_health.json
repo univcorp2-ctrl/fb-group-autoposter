@@ -1,0 +1,18 @@
+{
+  "schema_version": "messenger-runtime-health/v1",
+  "source": "local_runtime_read_only",
+  "generated_at_utc": "2026-10-21T06:31:27.371367+00:00",
+  "includes_customer_identifiers": false,
+  "estateboard_published_verified": false,
+  "daemon_running": true,
+  "browser_authenticated": true,
+  "watchdog_decision": "healthy_running",
+  "auto_send_configured": true,
+  "scanned_count": 1,
+  "needs_reply_count": 0,
+  "active_draft_count": 3,
+  "review_approved_count": 1,
+  "material_approved_count": 1,
+  "confirmed_sent_total": 0,
+  "uncertain_send_total": 1
+}
