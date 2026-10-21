@@ -147,6 +147,31 @@ def _base_status(args: argparse.Namespace, fingerprint: str, message_length: int
     }
 
 
+def _assert_global_send_guard(data_dir: Path, thread_id: str) -> None:
+    """Never override pause or an ambiguous delivery, even with --force.
+
+    Read-only fail-closed check used before browsing and again before clicking.
+    This check cannot clear the ledger or grant a customer-send approval.
+    """
+    if (data_dir / "send_pause.lock").exists():
+        raise RuntimeError("send_paused_fail_closed")
+    ledger = data_dir / "auto_reply_ledger.json"
+    if not ledger.is_file():
+        raise RuntimeError("auto_reply_ledger_missing_fail_closed")
+    try:
+        attempts = _read_json(ledger).get("attempts")
+    except (OSError, ValueError, TypeError) as exc:
+        raise RuntimeError("auto_reply_ledger_unreadable_fail_closed") from exc
+    if not isinstance(attempts, dict):
+        raise RuntimeError("auto_reply_ledger_invalid_fail_closed")
+    for entry in attempts.values():
+        if not isinstance(entry, dict):
+            raise RuntimeError("auto_reply_ledger_invalid_fail_closed")
+        if (str(entry.get("thread_id", "")) == str(thread_id)
+                and entry.get("state") != "confirmed_sent"):
+            raise RuntimeError("uncertain_prior_delivery_no_replay")
+
+
 def _block_duplicate(status_path: Path, args: argparse.Namespace) -> None:
     if not args.send or args.force or not status_path.exists():
         return
@@ -338,6 +363,8 @@ async def _run_browser(
                 )
                 return status
 
+            # Recheck after asynchronous UI navigation, before mutating composer.
+            _assert_global_send_guard(settings.data_dir, args.thread_id)
             await _set_editor_text(page, editor, reply)
             editor_after_fill = normalize_text(await _editor_text(editor))
             if editor_after_fill != normalize_text(reply):
@@ -355,6 +382,8 @@ async def _run_browser(
             if send_button is None:
                 raise RuntimeError("exact Messenger send button was not found")
 
+            # The last non-overridable gate immediately before the send click.
+            _assert_global_send_guard(settings.data_dir, args.thread_id)
             await send_button.click(timeout=10_000)
             clicked = True
 
@@ -477,6 +506,8 @@ def main() -> int:
     status_path = settings.data_dir / "send_one_reply_status.json"
 
     try:
+        if args.send:
+            _assert_global_send_guard(settings.data_dir, args.thread_id)
         payload = _read_json(drafts_path)
         row = select_exact_draft(
             payload,
