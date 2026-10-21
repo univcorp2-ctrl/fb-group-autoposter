@@ -19,7 +19,16 @@ def _load(path: Path) -> dict:
 
 def build_live_metrics(data_dir: Path) -> dict:
     status = _load(data_dir / "draft_daemon_status.json")
-    auto = _load(data_dir / "auto_reply_status.json")
+    # Durable ledger is authoritative; paused status omits historical totals.
+    ledger_path = data_dir / "auto_reply_ledger.json"
+    if not ledger_path.is_file():
+        raise ValueError("send ledger missing; refuse inaccurate counts")
+    ledger = _load(ledger_path)
+    attempts = ledger.get("attempts")
+    if not isinstance(attempts, dict) or any(not isinstance(v, dict) for v in attempts.values()):
+        raise ValueError("invalid ledger; refuse inaccurate counts")
+    confirmed = sum(v.get("state") == "confirmed_sent" for v in attempts.values())
+    uncertain = sum(v.get("state") != "confirmed_sent" for v in attempts.values())
     threads = _load(data_dir / "threads_state.json")
     drafts = _load(data_dir / "drafts.json").get("drafts", [])
     if not isinstance(drafts, list):
@@ -35,7 +44,7 @@ def build_live_metrics(data_dir: Path) -> dict:
         "scope": "messenger_only",
         "contains_personal_data": False,
         "source_files": [
-            "draft_daemon_status.json", "auto_reply_status.json",
+            "draft_daemon_status.json", "auto_reply_ledger.json",
             "threads_state.json", "drafts.json"
         ],
         "tracked_thread_count": len(threads),
@@ -45,8 +54,8 @@ def build_live_metrics(data_dir: Path) -> dict:
         "current_premium_approved_count": sum(
             r.get("review_status") == "approved" for r in drafts
         ),
-        "confirmed_send_count": int(auto.get("confirmed_total") or 0),
-        "uncertain_send_count": int(auto.get("uncertain_total") or 0),
+        "confirmed_send_count": confirmed,
+        "uncertain_send_count": uncertain,
         "estateboard_publication_confirmed": False,
         "remarks": "Scanned counts are cycle observations, not unique leads. No fake customers."
     }
