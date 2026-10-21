@@ -14,6 +14,8 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
+import hmac
 import sys
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -147,11 +149,14 @@ def _base_status(args: argparse.Namespace, fingerprint: str, message_length: int
     }
 
 
-def _assert_global_send_guard(data_dir: Path, thread_id: str) -> None:
-    """Never override pause or an ambiguous delivery, even with --force.
+def _assert_global_send_guard(
+    data_dir: Path, thread_id: str, *, auto_claim: str = "", consume: bool = False
+) -> None:
+    """Fail closed on pause/uncertain deliveries, including the current attempt.
 
-    Read-only fail-closed check used before browsing and again before clicking.
-    This check cannot clear the ledger or grant a customer-send approval.
+    A matching freshly precommitted auto-claim is the ONLY exception to the
+    unresolved-attempt guard. Claim consumption is atomic and irreversible,
+    immediately before the real send click. A crash never enables replay.
     """
     if (data_dir / "send_pause.lock").exists():
         raise RuntimeError("send_paused_fail_closed")
@@ -164,12 +169,38 @@ def _assert_global_send_guard(data_dir: Path, thread_id: str) -> None:
         raise RuntimeError("auto_reply_ledger_unreadable_fail_closed") from exc
     if not isinstance(attempts, dict):
         raise RuntimeError("auto_reply_ledger_invalid_fail_closed")
-    for entry in attempts.values():
+    eligible_keys = []
+    for key, entry in attempts.items():
         if not isinstance(entry, dict):
             raise RuntimeError("auto_reply_ledger_invalid_fail_closed")
-        if (str(entry.get("thread_id", "")) == str(thread_id)
-                and entry.get("state") != "confirmed_sent"):
+        if str(entry.get("thread_id", "")) != str(thread_id):
+            continue
+        if entry.get("state") == "confirmed_sent":
+            continue
+        if not (auto_claim and entry.get("state") == "attempted_unconfirmed"
+                and hmac.compare_digest(str(entry.get("claim_nonce") or ""), auto_claim)):
             raise RuntimeError("uncertain_prior_delivery_no_replay")
+        try:
+            created = datetime.fromisoformat(str(entry["created_at"]))
+            age = datetime.now(JST) - created.astimezone(JST)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise RuntimeError("auto_claim_invalid_timestamp") from exc
+        if not timedelta(0) <= age <= timedelta(minutes=5):
+            raise RuntimeError("auto_claim_expired_fail_closed")
+        eligible_keys.append(key)
+    if auto_claim and len(eligible_keys) != 1:
+        raise RuntimeError("auto_claim_not_unique_or_missing")
+    if consume:
+        if not auto_claim:
+            raise RuntimeError("auto_claim_required_for_atomic_consumption")
+        claim_dir = data_dir / "send_claims"
+        claim_dir.mkdir(parents=True, exist_ok=True)
+        lock_path = claim_dir / (eligible_keys[0] + ".claimed")
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError as exc:
+            raise RuntimeError("auto_claim_already_consumed_no_replay") from exc
+        os.close(fd)
 
 
 def _block_duplicate(status_path: Path, args: argparse.Namespace) -> None:
@@ -246,6 +277,11 @@ async def _scan_exact_thread(
 ) -> tuple[dict[str, Any], Any, int]:
     threads = await scrape_inbox(page, scan_limit, quick=True)
     matches = [row for row in threads if str(row.get("thread_id", "")) == thread_id]
+    if len(matches) != 1:
+        # Message requests often sit below the virtualized top 40 rows.
+        # Search the full inbox before declaring a valid one-to-one request missing.
+        threads = await scrape_inbox(page, scan_limit, quick=False)
+        matches = [row for row in threads if str(row.get("thread_id", "")) == thread_id]
     if len(matches) != 1:
         raise RuntimeError(
             f"expected one current inbox thread for {thread_id!r}; found {len(matches)}"
@@ -324,6 +360,25 @@ async def _run_browser(
             if expected_preview not in body_before:
                 raise RuntimeError("saved inbound message is not visible in the opened thread")
 
+            # The inbox also contains unaccepted 1:1 Messenger requests.
+            # Group prevention above MUST pass before touching approval.
+            approval = page.get_by_role("button", name="承認", exact=True)
+            if await approval.count() == 1:
+                status["pending_request"] = True
+                if not args.send:
+                    status.update({"ok": True, "sent": False,
+                                   "reason": "pending_direct_request_can_be_approved"})
+                    return status
+                if not any(term in expected_preview for term in
+                           ("物件", "戸建", "葛西", "住所", "資料", "不動産", "再建築")):
+                    raise RuntimeError("non_property_or_group_invite_request_not_approved")
+                await approval.click(timeout=10_000)
+                await page.wait_for_timeout(3_000)
+                if await page.get_by_role("button", name="承認", exact=True).count():
+                    raise RuntimeError("request_approval_unconfirmed_stop_no_send")
+                await assert_one_to_one_thread(page, args.target_name, current)
+                status["request_accepted"] = True
+
             editor = await _first_visible(page, COMPOSER_SELECTORS)
             if editor is None:
                 raise RuntimeError("Messenger composer was not found")
@@ -364,7 +419,7 @@ async def _run_browser(
                 return status
 
             # Recheck after asynchronous UI navigation, before mutating composer.
-            _assert_global_send_guard(settings.data_dir, args.thread_id)
+            _assert_global_send_guard(settings.data_dir, args.thread_id, auto_claim=args.auto_claim)
             await _set_editor_text(page, editor, reply)
             editor_after_fill = normalize_text(await _editor_text(editor))
             if editor_after_fill != normalize_text(reply):
@@ -383,7 +438,7 @@ async def _run_browser(
                 raise RuntimeError("exact Messenger send button was not found")
 
             # The last non-overridable gate immediately before the send click.
-            _assert_global_send_guard(settings.data_dir, args.thread_id)
+            _assert_global_send_guard(settings.data_dir, args.thread_id, auto_claim=args.auto_claim, consume=bool(args.auto_claim))
             await send_button.click(timeout=10_000)
             clicked = True
 
@@ -486,6 +541,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--reply-file", default="")
     parser.add_argument("--scan-limit", type=int, default=50)
     parser.add_argument("--send", action="store_true")
+    parser.add_argument("--auto-claim", default="", help="one-shot precommitted daemon claim; never a manual override")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--headful", action="store_true")
     return parser
@@ -493,8 +549,8 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = _parser().parse_args()
-    if args.scan_limit < 1 or args.scan_limit > 100:
-        raise SystemExit("--scan-limit must be between 1 and 100")
+    if args.scan_limit < 1 or args.scan_limit > 250:
+        raise SystemExit("--scan-limit must be between 1 and 250")
 
     # Attach to the actual Chrome profile mode; do not force headless and
     # incorrectly reject the authenticated visible session.
@@ -507,7 +563,7 @@ def main() -> int:
 
     try:
         if args.send:
-            _assert_global_send_guard(settings.data_dir, args.thread_id)
+            _assert_global_send_guard(settings.data_dir, args.thread_id, auto_claim=args.auto_claim)
         payload = _read_json(drafts_path)
         row = select_exact_draft(
             payload,
