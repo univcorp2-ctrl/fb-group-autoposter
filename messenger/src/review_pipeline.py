@@ -90,6 +90,10 @@ def _call_opus(prompt: str, api_key: str = "") -> tuple[str, str] | None:
             if text: return text, model
         except Exception as e:
             log.warning("Opus API unavailable: %s", type(e).__name__)
+    # Explicit API-only mode must never fall back to a local CLI.
+    # A missing or failed API review is a fail-closed, unsent draft.
+    if provider in {"api_only", "anthropic_api_only"}:
+        return None
     cli = shutil.which("claude.exe") or shutil.which("claude")
     if cli and provider != "codex":
         try:
