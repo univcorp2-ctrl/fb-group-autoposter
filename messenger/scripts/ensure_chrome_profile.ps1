@@ -17,8 +17,8 @@ try {
     if ($existing.Count -eq 0) {
       Start-Process -FilePath $Chrome -ArgumentList @(
         "--user-data-dir=$ProfileDir",'--profile-directory=Default','--remote-debugging-port=0',
-        '--no-first-run','--no-default-browser-check','https://www.messenger.com/'
-      ) -WindowStyle Minimized
+        '--no-first-run','--no-default-browser-check','--start-minimized','https://www.messenger.com/'
+      ) -WindowStyle Hidden
       $state.status = 'profile_started_minimized'
       Start-Sleep -Seconds 4
     } else {
