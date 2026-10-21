@@ -74,8 +74,16 @@ def _parse_row(row: dict) -> dict:
         preview = spans[1]
     elif len(spans) == 2:
         preview = spans[1]  # could be preview or time; classifier tolerates either
-    is_group = _is_group(aria, int(row.get("imgCount", 0) or 0))
-    thread_id = row.get("id", "")
+    img_count = int(row.get("imgCount", 0) or 0)
+    is_group = _is_group(aria, img_count)
+    thread_id = str(row.get("id", ""))
+    # A single counterpart avatar, a numeric DM thread ID and a named
+    # counterpart are positive 1:1 inbox signals. Ambiguous rows fail closed.
+    # Sending requires a separate, exact-recipient in-thread preflight.
+    one_to_one_verified = bool(
+        not is_group and img_count == 1 and thread_id.isdecimal()
+        and name != "(名称不明)" and bool(name.strip())
+    )
     return {
         "thread_id": thread_id,
         "url": f"https://www.messenger.com/t/{thread_id}",
@@ -84,7 +92,9 @@ def _parse_row(row: dict) -> dict:
         "is_unread": False,  # inbox does not reliably expose this; left to a future pass
         "last_from_me": None,  # inferred from the preview prefix by the classifier
         "is_group": is_group,
-        "participant_count": 2 if is_group else 1,
+        "participant_count": 2 if is_group else (1 if one_to_one_verified else None),
+        "one_to_one_verified": one_to_one_verified,
+        "time_text": spans[-1] if len(spans) >= 3 else "",
     }
 
 
@@ -96,23 +106,51 @@ async def _human_dwell(page: Any) -> None:
         pass
 
 
-async def scrape_inbox(page: Any, max_threads: int) -> list[dict]:
+async def scrape_inbox(page: Any, max_threads: int, *, quick: bool = False) -> list[dict]:
     """Load the inbox (read-only) and return up to `max_threads` thread dicts.
 
     Only the conversation LIST is read — no thread is opened, so nothing is marked
     seen and no read receipt is sent.
     """
-    await page.goto(MESSENGER_INBOX, wait_until="domcontentloaded", timeout=60000)
+    # Preserve the live inbox SPA and its WebSocket subscriptions across polls.
+    # Unconditionally reloading each minute resets the virtual list to
+    # "loading..." and may miss every new message.
+    from urllib.parse import urlparse
+    current=urlparse(str(page.url))
+    inbox_already_open=(
+        (current.hostname or "").lower() in {"messenger.com","www.messenger.com"}
+        and current.path in {"","/"}
+    )
+    if not inbox_already_open:
+        await page.goto(MESSENGER_INBOX, wait_until="domcontentloaded", timeout=60000)
+    # Modern Chrome resets window.name when navigating from about:blank to
+    # messenger.com. Tag on the *Messenger origin* so the background tab is
+    # found again on the next poll, avoiding a new tab every minute.
+    from src.authenticated_chrome import AUTOMATION_PAGE_TAG
+    await page.evaluate("(tag) => { window.name = tag; }", AUTOMATION_PAGE_TAG)
     # Wait for the conversation list to actually populate before scraping — the
     # SSO bounce + SPA render can lag several seconds, and scraping too early
     # under-counts (the list looks empty, then fills in).
     try:
-        await page.wait_for_selector('a[href*="/t/"]', timeout=30000)
+        await page.wait_for_selector('a[href*="/t/"]', timeout=12000 if quick else 30000)
     except Exception:  # noqa: BLE001 - fall through; _poll_rows still tries
         pass
-    await page.wait_for_timeout(random.randint(2500, 4000))
-    await _human_dwell(page)
-    raw_rows = await _poll_rows(page)
+    if quick:
+        # The newest inbound DM is at the top. Never scroll through history
+        # on every minute-sized poll; that takes too long and disturbs UI state.
+        await page.wait_for_timeout(650)
+        raw_rows = await _poll_rows(page, max_scrolls=2, interval_ms=350)
+        if not raw_rows:
+            # Messenger sometimes renders "loading..." for several seconds
+            # *after* domcontentloaded. Never report a false empty inbox.
+            await page.wait_for_timeout(2600)
+            raw_rows = await _poll_rows(page, max_scrolls=6, interval_ms=800)
+        if not raw_rows:
+            raise RuntimeError("messenger_inbox_not_rendered_retry")
+    else:
+        await page.wait_for_timeout(random.randint(2500, 4000))
+        await _human_dwell(page)
+        raw_rows = await _poll_rows(page)
     threads = [_parse_row(r) for r in raw_rows]
     return threads[:max_threads]
 

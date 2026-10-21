@@ -2,7 +2,7 @@ import asyncio
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -180,8 +180,11 @@ def test_attach_fails_closed_on_display_mode_mismatch(tmp_path: Path) -> None:
 
 def test_select_messenger_page_reuses_matching_tab() -> None:
     browser = _browser_module()
-    other = SimpleNamespace(url="https://example.com/")
-    messenger = SimpleNamespace(url="https://www.messenger.com/t/123")
+    other = SimpleNamespace(url="https://example.com/", evaluate=AsyncMock(return_value=""))
+    messenger = SimpleNamespace(
+        url="https://www.messenger.com/t/123",
+        evaluate=AsyncMock(return_value=browser.AUTOMATION_PAGE_TAG),
+    )
     context = SimpleNamespace(pages=[other, messenger], new_page=AsyncMock())
 
     selected = asyncio.run(browser.select_messenger_page(context))
@@ -194,11 +197,14 @@ def test_select_messenger_page_creates_tab_without_replacing_user_page() -> None
     browser = _browser_module()
     created = SimpleNamespace(url="about:blank")
     context = SimpleNamespace(
-        pages=[SimpleNamespace(url="https://example.com/")],
-        new_page=AsyncMock(return_value=created),
+        pages=[SimpleNamespace(
+            url="https://example.com/", evaluate=AsyncMock(return_value="")
+        )],
+        new_page=AsyncMock(),
     )
-
-    selected = asyncio.run(browser.select_messenger_page(context))
+    with patch.object(browser, "create_background_page", new=AsyncMock(return_value=created)) as make:
+        selected = asyncio.run(browser.select_messenger_page(context))
 
     assert selected is created
-    context.new_page.assert_awaited_once_with()
+    make.assert_awaited_once_with(context)
+    context.new_page.assert_not_awaited()
