@@ -1,0 +1,22 @@
+{
+  "schema_version": "messenger-crm-private-aggregate/v1",
+  "source": "live_local_json_not_demo",
+  "generated_at_utc": "2026-10-21T07:55:41.415719+00:00",
+  "scope": "messenger_only",
+  "contains_personal_data": false,
+  "source_files": [
+    "draft_daemon_status.json",
+    "auto_reply_status.json",
+    "threads_state.json",
+    "drafts.json"
+  ],
+  "tracked_thread_count": 14,
+  "latest_scan_count": 22,
+  "latest_need_reply_count": 15,
+  "current_active_draft_count": 4,
+  "current_premium_approved_count": 3,
+  "confirmed_send_count": 0,
+  "uncertain_send_count": 1,
+  "estateboard_publication_confirmed": false,
+  "remarks": "Scanned counts are cycle observations, not unique leads. No fake customers."
+}
