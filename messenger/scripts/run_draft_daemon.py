@@ -140,7 +140,7 @@ async def main_async() -> int:
                 "running": True,
                 "started_at": started,
                 "interval_minutes": interval_minutes,
-                "send_enabled": os.getenv("MESSENGER_AUTO_SEND", "false").lower() in {"1", "true"},
+                "send_enabled": False,
                 "profile_dir": str(settings.profile_dir),
                 "profile_directory": settings.chrome_profile_directory,
                 "browser_display_mode": settings.browser_display_mode,
@@ -152,9 +152,6 @@ async def main_async() -> int:
                 # inbox rows, builds drafts, persists state, and may write drafts.
                 scan = await _scan(settings, use_telegram=True)
                 status["scan"] = scan
-                if status["send_enabled"] and scan.get("logged_in"):
-                    from src.auto_reply import run_pending
-                    status["auto_reply"] = await asyncio.to_thread(run_pending, settings)
                 rows = _load_active_drafts(settings.data_dir)
                 focus = _select_focus_draft(rows)
                 status["active_drafts"] = len(rows)

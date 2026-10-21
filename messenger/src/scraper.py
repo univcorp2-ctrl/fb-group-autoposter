@@ -74,16 +74,8 @@ def _parse_row(row: dict) -> dict:
         preview = spans[1]
     elif len(spans) == 2:
         preview = spans[1]  # could be preview or time; classifier tolerates either
-    img_count = int(row.get("imgCount", 0) or 0)
-    is_group = _is_group(aria, img_count)
-    thread_id = str(row.get("id", ""))
-    # A single counterpart avatar, a numeric DM thread ID and a named
-    # counterpart are positive 1:1 inbox signals. Ambiguous rows fail closed.
-    # Sending requires a separate, exact-recipient in-thread preflight.
-    one_to_one_verified = bool(
-        not is_group and img_count == 1 and thread_id.isdecimal()
-        and name != "(名称不明)" and bool(name.strip())
-    )
+    is_group = _is_group(aria, int(row.get("imgCount", 0) or 0))
+    thread_id = row.get("id", "")
     return {
         "thread_id": thread_id,
         "url": f"https://www.messenger.com/t/{thread_id}",
@@ -92,9 +84,7 @@ def _parse_row(row: dict) -> dict:
         "is_unread": False,  # inbox does not reliably expose this; left to a future pass
         "last_from_me": None,  # inferred from the preview prefix by the classifier
         "is_group": is_group,
-        "participant_count": 2 if is_group else (1 if one_to_one_verified else None),
-        "one_to_one_verified": one_to_one_verified,
-        "time_text": spans[-1] if len(spans) >= 3 else "",
+        "participant_count": 2 if is_group else 1,
     }
 
 

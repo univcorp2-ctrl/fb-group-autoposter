@@ -1,4 +1,4 @@
-# Register Messenger reply-draft daemon using the LIVE app runtime, not the stale Google Drive copy.
+# Register the Messenger reply-draft daemon for the current Windows user.
 # Safety: the daemon NEVER sends Facebook messages. It only scans, drafts,
 # and may write unsent text into the Messenger composer in the central Chrome.
 #
@@ -7,7 +7,7 @@
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$Python = Join-Path $env:LOCALAPPDATA 'FBGroupAutoposter\.venv\Scripts\pythonw.exe'
+$Python = Join-Path $RepoRoot '.venv\Scripts\pythonw.exe'
 if (!(Test-Path $Python)) {
     throw "Windowless Python runtime not found: $Python"
 }
@@ -38,13 +38,6 @@ Register-ScheduledTask `
     -Settings $Settings `
     -Description 'Persistent Messenger reply-draft assistant: periodic scan, draft generation, composer placement, never sends' `
     -Force | Out-Null
-
-# A separate, idempotent 30-minute watchdog ensures the authenticated Chrome
-# profile is running. It never closes tabs or creates another profile.
-$ChromeWatchScript = Join-Path $PSScriptRoot 'ensure_chrome_profile.ps1'
-$ChromeTaskCommand = 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $ChromeWatchScript + '"'
-& schtasks.exe /Create /TN 'FBAutoposter-MessengerChrome' /TR $ChromeTaskCommand /SC MINUTE /MO 30 /F | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "Messenger Chrome watchdog registration failed: $LASTEXITCODE" }
 
 $Task = Get-ScheduledTask -TaskName 'FBAutoposter-MessengerDrafts'
 $Info = Get-ScheduledTaskInfo -TaskName 'FBAutoposter-MessengerDrafts'
