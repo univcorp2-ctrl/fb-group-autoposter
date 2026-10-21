@@ -96,7 +96,7 @@ def lookup_property(inbound: str, source: Path | None = None) -> Evidence:
             continue
         matched.append((row, price))
     if len(matched) != 1:
-        return Evidence(**blank, ambiguous=len(matched) > 1, reason="no_unique_property_match")
+        return Evidence(**{**blank, "ambiguous": len(matched) > 1}, reason="no_unique_property_match")
     row, price = matched[0]
     scope = str(row.get("publicationScope") or "").upper()
     return Evidence(
