@@ -1,17 +1,497 @@
 {
-  "generated_at": "2026-10-21T08:59:47.338691+00:00",
+  "generated_at": "2026-10-21T13:08:17.970891+00:00",
   "health": "stalled",
   "message": "確認済み投稿がありません。",
   "counts": {
-    "failed": 36,
-    "skipped": 14
+    "failed": 38,
+    "skipped": 12
   },
   "last_post_at": null,
   "heartbeat": {
-    "orchestrator": "2026-10-21T08:59:23.709379+00:00",
+    "orchestrator": "2026-10-21T13:07:24.905463+00:00",
     "session": "2026-08-18T23:11:06.600187+00:00"
   },
   "recent": [
+    {
+      "property_id": "eb-30214",
+      "group_id": "774212775739164",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:07:24.897462+00:00"
+    },
+    {
+      "property_id": "eb-15416",
+      "group_id": "1261566862455883",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:06:24.145621+00:00"
+    },
+    {
+      "property_id": "eb-5630",
+      "group_id": "350006781786522",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:05:25.385672+00:00"
+    },
+    {
+      "property_id": "eb-29811",
+      "group_id": "2217518449046952",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:04:29.310601+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "1006724479360528",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:03:26.565447+00:00"
+    },
+    {
+      "property_id": "eb-20511",
+      "group_id": "1911961896257757",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:02:22.954323+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:01:26.426724+00:00"
+    },
+    {
+      "property_id": "eb-29810",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:01:26.336723+00:00"
+    },
+    {
+      "property_id": "eb-30214",
+      "group_id": "774212775739164",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:46:24.455085+00:00"
+    },
+    {
+      "property_id": "eb-15416",
+      "group_id": "1261566862455883",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:45:24.917666+00:00"
+    },
+    {
+      "property_id": "eb-5630",
+      "group_id": "350006781786522",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:44:26.445248+00:00"
+    },
+    {
+      "property_id": "eb-29811",
+      "group_id": "2217518449046952",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:43:24.656659+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "1006724479360528",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:42:24.214265+00:00"
+    },
+    {
+      "property_id": "eb-20511",
+      "group_id": "1911961896257757",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:41:25.632272+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:40:36.192947+00:00"
+    },
+    {
+      "property_id": "eb-29810",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:40:36.149947+00:00"
+    },
+    {
+      "property_id": "eb-30214",
+      "group_id": "774212775739164",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:32:27.960119+00:00"
+    },
+    {
+      "property_id": "eb-15416",
+      "group_id": "1261566862455883",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:31:24.185993+00:00"
+    },
+    {
+      "property_id": "eb-5630",
+      "group_id": "350006781786522",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:30:26.685652+00:00"
+    },
+    {
+      "property_id": "eb-29811",
+      "group_id": "2217518449046952",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:29:23.081611+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "1006724479360528",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:28:23.606148+00:00"
+    },
+    {
+      "property_id": "eb-20511",
+      "group_id": "1911961896257757",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:27:24.159825+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:26:28.674292+00:00"
+    },
+    {
+      "property_id": "eb-29810",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:26:28.626291+00:00"
+    },
+    {
+      "property_id": "eb-30214",
+      "group_id": "774212775739164",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:22:27.599743+00:00"
+    },
+    {
+      "property_id": "eb-15416",
+      "group_id": "1261566862455883",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:21:23.944513+00:00"
+    },
+    {
+      "property_id": "eb-5630",
+      "group_id": "350006781786522",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:20:27.486518+00:00"
+    },
+    {
+      "property_id": "eb-29811",
+      "group_id": "2217518449046952",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:19:24.647747+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "1006724479360528",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:18:23.172997+00:00"
+    },
+    {
+      "property_id": "eb-20511",
+      "group_id": "1911961896257757",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:17:54.912233+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:17:23.626883+00:00"
+    },
+    {
+      "property_id": "eb-29810",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:17:23.580884+00:00"
+    },
+    {
+      "property_id": "eb-30214",
+      "group_id": "774212775739164",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:15:22.765898+00:00"
+    },
+    {
+      "property_id": "eb-15416",
+      "group_id": "1261566862455883",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:14:23.263989+00:00"
+    },
+    {
+      "property_id": "eb-5630",
+      "group_id": "350006781786522",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:13:25.439120+00:00"
+    },
+    {
+      "property_id": "eb-29811",
+      "group_id": "2217518449046952",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:12:31.099137+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "1006724479360528",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:11:26.249289+00:00"
+    },
+    {
+      "property_id": "eb-20511",
+      "group_id": "1911961896257757",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:10:24.557791+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:09:26.026230+00:00"
+    },
+    {
+      "property_id": "eb-29810",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:09:25.979227+00:00"
+    },
+    {
+      "property_id": "eb-30214",
+      "group_id": "774212775739164",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:08:24.233672+00:00"
+    },
+    {
+      "property_id": "eb-15416",
+      "group_id": "1261566862455883",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:07:23.929503+00:00"
+    },
+    {
+      "property_id": "eb-5630",
+      "group_id": "350006781786522",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:06:23.156129+00:00"
+    },
+    {
+      "property_id": "eb-29811",
+      "group_id": "2217518449046952",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:05:24.597381+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "1006724479360528",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:04:24.084648+00:00"
+    },
+    {
+      "property_id": "eb-20511",
+      "group_id": "1911961896257757",
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "「投稿」ボタンが押せる状態になりません",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:03:26.626450+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "628818327463444",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:02:05.994675+00:00"
+    },
+    {
+      "property_id": "eb-29810",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T12:02:05.943111+00:00"
+    },
     {
       "property_id": "eb-30214",
       "group_id": "774212775739164",
@@ -31,486 +511,6 @@
       "posted_at": null,
       "permalink": null,
       "updated_at": "2026-10-21T08:58:24.474471+00:00"
-    },
-    {
-      "property_id": "eb-5630",
-      "group_id": "350006781786522",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:57:23.928748+00:00"
-    },
-    {
-      "property_id": "eb-29811",
-      "group_id": "2217518449046952",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:56:26.429817+00:00"
-    },
-    {
-      "property_id": "eb-29624",
-      "group_id": "1006724479360528",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:55:25.946636+00:00"
-    },
-    {
-      "property_id": "eb-20511",
-      "group_id": "1911961896257757",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:54:24.272977+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:53:25.807057+00:00"
-    },
-    {
-      "property_id": "eb-29810",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:53:25.749055+00:00"
-    },
-    {
-      "property_id": "eb-30214",
-      "group_id": "774212775739164",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:38:24.224000+00:00"
-    },
-    {
-      "property_id": "eb-15416",
-      "group_id": "1261566862455883",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:37:23.659728+00:00"
-    },
-    {
-      "property_id": "eb-5630",
-      "group_id": "350006781786522",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:36:25.123553+00:00"
-    },
-    {
-      "property_id": "eb-29811",
-      "group_id": "2217518449046952",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:35:25.574146+00:00"
-    },
-    {
-      "property_id": "eb-29624",
-      "group_id": "1006724479360528",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:34:24.988847+00:00"
-    },
-    {
-      "property_id": "eb-20511",
-      "group_id": "1911961896257757",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:33:23.397332+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:32:23.839526+00:00"
-    },
-    {
-      "property_id": "eb-29810",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:32:23.785525+00:00"
-    },
-    {
-      "property_id": "eb-30214",
-      "group_id": "774212775739164",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:24:22.750555+00:00"
-    },
-    {
-      "property_id": "eb-15416",
-      "group_id": "1261566862455883",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:23:23.233834+00:00"
-    },
-    {
-      "property_id": "eb-5630",
-      "group_id": "350006781786522",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:22:23.724936+00:00"
-    },
-    {
-      "property_id": "eb-29811",
-      "group_id": "2217518449046952",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:21:25.202400+00:00"
-    },
-    {
-      "property_id": "eb-29624",
-      "group_id": "1006724479360528",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:20:24.654889+00:00"
-    },
-    {
-      "property_id": "eb-20511",
-      "group_id": "1911961896257757",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:19:33.216946+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:18:23.550043+00:00"
-    },
-    {
-      "property_id": "eb-29810",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:18:23.507042+00:00"
-    },
-    {
-      "property_id": "eb-30214",
-      "group_id": "774212775739164",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:14:22.714524+00:00"
-    },
-    {
-      "property_id": "eb-15416",
-      "group_id": "1261566862455883",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:13:23.276980+00:00"
-    },
-    {
-      "property_id": "eb-5630",
-      "group_id": "350006781786522",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:12:22.742799+00:00"
-    },
-    {
-      "property_id": "eb-29811",
-      "group_id": "2217518449046952",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:11:23.513249+00:00"
-    },
-    {
-      "property_id": "eb-29624",
-      "group_id": "1006724479360528",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:10:24.522922+00:00"
-    },
-    {
-      "property_id": "eb-20511",
-      "group_id": "1911961896257757",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:09:21.935220+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:08:40.511783+00:00"
-    },
-    {
-      "property_id": "eb-29810",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:08:40.469785+00:00"
-    },
-    {
-      "property_id": "eb-30214",
-      "group_id": "774212775739164",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:06:39.610738+00:00"
-    },
-    {
-      "property_id": "eb-15416",
-      "group_id": "1261566862455883",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:06:21.394003+00:00"
-    },
-    {
-      "property_id": "eb-5630",
-      "group_id": "350006781786522",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:05:21.824147+00:00"
-    },
-    {
-      "property_id": "eb-29811",
-      "group_id": "2217518449046952",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:04:24.334785+00:00"
-    },
-    {
-      "property_id": "eb-29624",
-      "group_id": "1006724479360528",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:03:22.764314+00:00"
-    },
-    {
-      "property_id": "eb-20511",
-      "group_id": "1911961896257757",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:02:24.236486+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:01:39.796393+00:00"
-    },
-    {
-      "property_id": "eb-29810",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:01:39.749820+00:00"
-    },
-    {
-      "property_id": "eb-30214",
-      "group_id": "774212775739164",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:00:38.620130+00:00"
-    },
-    {
-      "property_id": "eb-15416",
-      "group_id": "1261566862455883",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T07:59:21.333346+00:00"
-    },
-    {
-      "property_id": "eb-5630",
-      "group_id": "350006781786522",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T07:58:22.755316+00:00"
-    },
-    {
-      "property_id": "eb-29811",
-      "group_id": "2217518449046952",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T07:57:22.255467+00:00"
-    },
-    {
-      "property_id": "eb-29624",
-      "group_id": "1006724479360528",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T07:56:21.652290+00:00"
-    },
-    {
-      "property_id": "eb-20511",
-      "group_id": "1911961896257757",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T07:55:26.364360+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T07:54:11.596201+00:00"
-    },
-    {
-      "property_id": "eb-29810",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T07:54:11.537612+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-20T12:44:42.978048+00:00"
-    },
-    {
-      "property_id": "eb-29810",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-20T12:44:42.931655+00:00"
     }
   ]
 }
