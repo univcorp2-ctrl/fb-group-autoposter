@@ -72,6 +72,21 @@ def eligible_message(row: dict) -> bool:
     )
 
 
+# Any unresolved attempt blocks the entire thread indefinitely, regardless
+# of preview changes or elapsed time. Existing evidence remains untouched.
+def has_unresolved_attempt(attempts: dict, thread_id: str) -> bool:
+    if not isinstance(attempts, dict):
+        return True  # malformed ledger: fail closed
+    return any(
+        not isinstance(entry, dict)
+        or (
+            str(entry.get("thread_id", "")) == str(thread_id)
+            and entry.get("state") != "confirmed_sent"
+        )
+        for entry in attempts.values()
+    )
+
+
 def run_pending(settings) -> dict:
     now = datetime.now(JST)
     if not LEDGER.exists():
@@ -130,6 +145,9 @@ def run_pending(settings) -> dict:
                 (str(row.get("thread_id")) + "\0" + str(row.get("last_message"))).encode("utf-8")
             ).hexdigest()
             if key in data["attempts"]:
+                continue
+            if has_unresolved_attempt(data["attempts"], str(row.get("thread_id"))):
+                skipped += 1
                 continue
             nowrow = by_id.get(str(row.get("thread_id")))
             if not nowrow or nowrow.get("last_message") != row.get("last_message"):
