@@ -114,13 +114,48 @@ async def attach_authenticated_context(
     return BrowserAttachment(context=contexts[0], actual_mode=actual_mode)
 
 
+AUTOMATION_PAGE_TAG = "FBGroupAutoposter-Messenger-Background"
+
+
+async def create_background_page(context: Any) -> Any:
+    """Create only a Chromium CDP *background* tab; never focus the user UI.
+
+    If CDP background target creation fails, fail closed instead of falling
+    back to context.new_page(), which may activate Chrome in front of the user.
+    """
+    browser = context.browser
+    if browser is None:
+        raise AuthenticatedProfileUnavailable("background_cdp_browser_unavailable")
+    session = await browser.new_browser_cdp_session()
+    try:
+        async with context.expect_page(timeout=15000) as pending:
+            await session.send("Target.createTarget", {
+                "url": "about:blank", "background": True,
+            })
+        page = await pending.value
+        await page.evaluate(
+            "(tag) => { window.name = tag; }", AUTOMATION_PAGE_TAG
+        )
+        return page
+    finally:
+        await session.detach()
+
+
 async def select_messenger_page(context: Any) -> Any:
-    """Reuse a Messenger tab without navigating unrelated user tabs away."""
+    """Reuse exactly one tagged background tab; never touch human tabs."""
+    owned = []
     for page in context.pages:
         try:
-            host = (urlparse(str(page.url)).hostname or "").lower()
-        except ValueError:
+            if await page.evaluate("() => window.name") == AUTOMATION_PAGE_TAG:
+                owned.append(page)
+        except Exception:
             continue
-        if host == "messenger.com" or host.endswith(".messenger.com"):
-            return page
-    return await context.new_page()
+    # Only explicitly tagged automation-owned extras may be cleaned up.
+    for extra in owned[1:]:
+        try:
+            await extra.close()
+        except Exception:
+            pass
+    if owned:
+        return owned[0]
+    return await create_background_page(context)

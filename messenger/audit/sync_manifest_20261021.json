@@ -1,0 +1,332 @@
+﻿{
+    "destination":  "Google Drive mounted repository/messenger",
+    "timestamp":  "2026-10-21T15:26:11.4422965+09:00",
+    "source":  "LocalAppData runtime messenger (non-secret sources only)",
+    "files":  [
+                  {
+                      "path":  "ARCHITECTURE_DRAFT_AUTOMATION.md",
+                      "status":  "unchanged",
+                      "sha256":  "45A1851437C1E208D304213DE75E5619969B302C92E53B3B63287C940F5FF3E6"
+                  },
+                  {
+                      "path":  "config.py",
+                      "status":  "unchanged",
+                      "sha256":  "2EFD420CB8F8C48662AA5AE6C35B826573B40F744B77A4300F09998C74084794"
+                  },
+                  {
+                      "path":  "README_ja.md",
+                      "status":  "unchanged",
+                      "sha256":  "E66DFDEB30D0017010FAA2D32BC6432F1F983582AF4CD2E09335E2164DE9ADD1"
+                  },
+                  {
+                      "path":  "README_material_delivery_ja.md",
+                      "status":  "added",
+                      "sha256":  "9AD002BF201B36D58A3F03B6FCD8168CFD2F8B7073F8A7E40CC229B4163341E6"
+                  },
+                  {
+                      "path":  "scripts\\arm_auto_reply_baseline.py",
+                      "status":  "added",
+                      "sha256":  "EE67F8C814EDED74A0F26D1367DEE52E1EE9DD61F160D8EE4C3C2E6E1CAEDDEE"
+                  },
+                  {
+                      "path":  "scripts\\diagnose_review_model.py",
+                      "status":  "added",
+                      "sha256":  "9523A09362775CA9C46E1A30EA065597E8340E3AC0D6AD8A07252BDA9E1BF938"
+                  },
+                  {
+                      "path":  "scripts\\export_multichannel_crm_dashboard.py",
+                      "status":  "unchanged",
+                      "sha256":  "626D945B3C5E7C03CB06327E6530EED3BDD5105F48FB1BC22B735C8C47BCDEBB"
+                  },
+                  {
+                      "path":  "scripts\\login.py",
+                      "status":  "unchanged",
+                      "sha256":  "0177204D898D60D5A7C3CFB6F1CE7336A53C0567B41E0131F807B7AD08C5A4A3"
+                  },
+                  {
+                      "path":  "scripts\\messenger_crm_demo.py",
+                      "status":  "unchanged",
+                      "sha256":  "0742496C8798384A5A81AF4A7CDA1D6B4A335E6899B4DFA325F590BBD0F89C5E"
+                  },
+                  {
+                      "path":  "scripts\\reconcile_verified_delivery.py",
+                      "status":  "added",
+                      "sha256":  "AFDA16E301384B76363E2ECA0991C93ACC9AACF42F969A5C1DACBE9746650FFF"
+                  },
+                  {
+                      "path":  "scripts\\run_draft_daemon.py",
+                      "status":  "updated",
+                      "sha256":  "6160122155DDCD7F2DFDD52A22E89F9A6B22A0BE189B65AF33F90520BA49B9F1"
+                  },
+                  {
+                      "path":  "scripts\\run_once.py",
+                      "status":  "updated",
+                      "sha256":  "509EA4670D93BA4853A8CF913088C85C63E2A2384AC8B69CAD8F5CED3A9E1373"
+                  },
+                  {
+                      "path":  "scripts\\run_visible_drafts.py",
+                      "status":  "unchanged",
+                      "sha256":  "5F41C5B2103163931E724D16043154651394A94235C4A3F20A0BDCD8D6696B88"
+                  },
+                  {
+                      "path":  "scripts\\send_one_playwright_reply.py",
+                      "status":  "updated",
+                      "sha256":  "4C8167AC98C95D0C863B3B269EED0CC7854003D0B0B93ACEC83DBFAD00D904FB"
+                  },
+                  {
+                      "path":  "scripts\\send_one_reply.py",
+                      "status":  "unchanged",
+                      "sha256":  "F02F691B82F407755F86CFC91EB33AB1F62302F57C180568D7A3A50A1B57B80B"
+                  },
+                  {
+                      "path":  "scripts\\watch_messenger_daemon.py",
+                      "status":  "added",
+                      "sha256":  "44DC08E2E6169C7844154A8692ACB5BDA3CC447991426512E728B32E4A48364E"
+                  },
+                  {
+                      "path":  "skills\\messenger-one-to-one-property-pdf-replies\\SKILL.md",
+                      "status":  "added",
+                      "sha256":  "8DAB8CD930E3FD130C69612168F9D938BABD942299C18A7873A654C7AB340605"
+                  },
+                  {
+                      "path":  "src\\authenticated_chrome.py",
+                      "status":  "updated",
+                      "sha256":  "02EAADBB347C6673EB793A615DE6F45146DC752DC6FBFAD972B1D582AC60CE94"
+                  },
+                  {
+                      "path":  "src\\auto_reply.py",
+                      "status":  "added",
+                      "sha256":  "5D9916F6B67B5C4C53CD5A3F8D5281BD5A8BD31F98B9D04194E68AB263250240"
+                  },
+                  {
+                      "path":  "src\\classifier.py",
+                      "status":  "unchanged",
+                      "sha256":  "B0514156DADCB9A1C69C3837CF7E9F6473AB4EB350297E9B42BD51CEB00BA943"
+                  },
+                  {
+                      "path":  "src\\cli_drafter.py",
+                      "status":  "added",
+                      "sha256":  "CC5B3E50CAF0586F29504C7A9AE2A4C800A6A21D05C020878BA38EDA3FF062CF"
+                  },
+                  {
+                      "path":  "src\\delivery_proof.py",
+                      "status":  "added",
+                      "sha256":  "3228598CF2A5D6599CAD47A566866420EE558430349993D6CED3B641447650C4"
+                  },
+                  {
+                      "path":  "src\\direct_thread_guard.py",
+                      "status":  "added",
+                      "sha256":  "F2409D74364B26273E1A7BD462CBAE8D2E4E0F0360B5608149B0B7BA86DFF072"
+                  },
+                  {
+                      "path":  "src\\drafter.py",
+                      "status":  "updated",
+                      "sha256":  "679F79FE7385CCA4966F15605EF8E9DA4977BBBFC36FE8C9E64C2069BEFB0B6B"
+                  },
+                  {
+                      "path":  "src\\fb_draft_writer.py",
+                      "status":  "unchanged",
+                      "sha256":  "428EEF3A2C609104F5E14B9EC058C2E50D112D4C07EE7B28214FD3F60CF3A44D"
+                  },
+                  {
+                      "path":  "src\\material_delivery.py",
+                      "status":  "added",
+                      "sha256":  "FE8D38948E387A0DB38E9A1734724BFB16990A25551D39359405BDEDCAC39655"
+                  },
+                  {
+                      "path":  "src\\messenger_attachment.py",
+                      "status":  "added",
+                      "sha256":  "469A76E4FA564D519BCFFDAD9496E1636F087E334A261E9D31F2D5DF7F8A023D"
+                  },
+                  {
+                      "path":  "src\\notifier.py",
+                      "status":  "unchanged",
+                      "sha256":  "4E8B7B474B495B2D6AF3FB4E75DC5948463C3257268AC0C1C74984A0FFDFDFAC"
+                  },
+                  {
+                      "path":  "src\\notion_sync.py",
+                      "status":  "unchanged",
+                      "sha256":  "54E0C2FB9FE8E5B782AB8842D6187860FF303CD6930A71AF363F86BC4627D2EA"
+                  },
+                  {
+                      "path":  "src\\property_evidence.py",
+                      "status":  "added",
+                      "sha256":  "DB87ACCC8C1D78FEA48FE5F74D117453A93D44C30ADF8DF5A9B150F42B60282A"
+                  },
+                  {
+                      "path":  "src\\review_pipeline.py",
+                      "status":  "added",
+                      "sha256":  "89E586AF9C27F8E00AD363E900BFA25121CF762CB84BEC98BEA144BE481F4E9C"
+                  },
+                  {
+                      "path":  "src\\scraper.py",
+                      "status":  "updated",
+                      "sha256":  "C9AE0D43FF8FB8B114A6A2A63AD061C8A8162560B878A10AE20175A66160AD2D"
+                  },
+                  {
+                      "path":  "src\\session.py",
+                      "status":  "unchanged",
+                      "sha256":  "1B146845DE92FBE072BD4A5ADB443BE1D92419DE06AC509A59B4E2937F55F448"
+                  },
+                  {
+                      "path":  "src\\store.py",
+                      "status":  "unchanged",
+                      "sha256":  "9F549C1DCBC8FDD1FBA6123369B178EF63265D13BBE1F58AB57B6D9606855F2E"
+                  },
+                  {
+                      "path":  "src\\targeted_reply.py",
+                      "status":  "unchanged",
+                      "sha256":  "57A41626868D17561FD261A7FE3312EA6A43AE360C8C358BC5163F8A658300CC"
+                  },
+                  {
+                      "path":  "src\\thread_context.py",
+                      "status":  "added",
+                      "sha256":  "44EA4172A51BC4CE4F7A1D6E0589E592B02F719CC8BE3EEB456495DEFBE705C5"
+                  },
+                  {
+                      "path":  "src\\__init__.py",
+                      "status":  "unchanged",
+                      "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+                  },
+                  {
+                      "path":  "src\\messenger_crm\\actions.py",
+                      "status":  "unchanged",
+                      "sha256":  "AA2FB7FFEB871204C013A8F81D1B959836C3DB632429624C836A194920EDCC3B"
+                  },
+                  {
+                      "path":  "src\\messenger_crm\\analytics.py",
+                      "status":  "unchanged",
+                      "sha256":  "B70E87E8001E09B6BE89CB2A5238E4FD3AC9B69FE268E333F15124A2383F7505"
+                  },
+                  {
+                      "path":  "src\\messenger_crm\\channels.py",
+                      "status":  "unchanged",
+                      "sha256":  "848DCCB5933E5DD7408371B914C0F2BD1C6E7B3F45D6EAA93241EE0D34B53B06"
+                  },
+                  {
+                      "path":  "src\\messenger_crm\\dashboard_payload.py",
+                      "status":  "unchanged",
+                      "sha256":  "102F6DB738E3A7424A392369CE99ACE3D228BA38A77FB593D55B850AFCB79375"
+                  },
+                  {
+                      "path":  "src\\messenger_crm\\drafts.py",
+                      "status":  "unchanged",
+                      "sha256":  "7802FD4CAD10151A68B45B4E0B61B2B7A5518459399EB15552172700DC78A96F"
+                  },
+                  {
+                      "path":  "src\\messenger_crm\\models.py",
+                      "status":  "unchanged",
+                      "sha256":  "E845A030286C6BE2A87A615FA8730FC05A477F9C36586FC8AAF4E2B8CE214382"
+                  },
+                  {
+                      "path":  "src\\messenger_crm\\repository.py",
+                      "status":  "unchanged",
+                      "sha256":  "A20F21B7A808547944C35B558B385C083DEB1C07FC3C2033347E703B0E05BC74"
+                  },
+                  {
+                      "path":  "src\\messenger_crm\\__init__.py",
+                      "status":  "unchanged",
+                      "sha256":  "1C059D990865E62BE3D1177EE914279BA06E0D12898B6CF0EE0DB09316C35381"
+                  },
+                  {
+                      "path":  "tests\\test_authenticated_chrome.py",
+                      "status":  "updated",
+                      "sha256":  "6E5B4660AAC9A57F13F58354AE5D7646E6320B2A62648C6AF0C59818180D75BC"
+                  },
+                  {
+                      "path":  "tests\\test_auto_reply.py",
+                      "status":  "added",
+                      "sha256":  "DE431485CE4EAD48CACD8BBBFA9B0EFB50F0FBF21CB5FE7E4FE2349C908A2461"
+                  },
+                  {
+                      "path":  "tests\\test_browser_entrypoints.py",
+                      "status":  "unchanged",
+                      "sha256":  "142C791427C62CB1B287740AA82661657F5BCA83049F67A580E0ABD8BBFB12F8"
+                  },
+                  {
+                      "path":  "tests\\test_classifier.py",
+                      "status":  "updated",
+                      "sha256":  "9A86B9B91905B4EC2A3EED9B9EA712F313A94504B4291E6048CE5992CD952AFA"
+                  },
+                  {
+                      "path":  "tests\\test_cli_drafter.py",
+                      "status":  "added",
+                      "sha256":  "81CEED3C60A72AF86280460523F6406FCD43C5D75DE33A6E3452685027526B8B"
+                  },
+                  {
+                      "path":  "tests\\test_daemon_watchdog.py",
+                      "status":  "added",
+                      "sha256":  "3A9400FADE77BF41E9135DE0258696730A6728A24C6B1CEE01F53CF10EDD7698"
+                  },
+                  {
+                      "path":  "tests\\test_delivery_proof.py",
+                      "status":  "added",
+                      "sha256":  "B70E028CA1CEA22C7EB4525BABEB03916E50523867BF29A03EEB012D763B70D9"
+                  },
+                  {
+                      "path":  "tests\\test_direct_thread_guard.py",
+                      "status":  "added",
+                      "sha256":  "7C9690A31A914B9ADF94A0E2DA6AFA02ED11274D271A0A09FED24F796A8122A8"
+                  },
+                  {
+                      "path":  "tests\\test_drafter.py",
+                      "status":  "unchanged",
+                      "sha256":  "3142EFA805CFFA61641789A5144E165F43B1FF642837ED45F79C6A8D13779A07"
+                  },
+                  {
+                      "path":  "tests\\test_draft_daemon.py",
+                      "status":  "unchanged",
+                      "sha256":  "D1DDD2A2BC68479892D0378B1F788369CCA2AD7E6D7D47906F918C5C5837E625"
+                  },
+                  {
+                      "path":  "tests\\test_fb_draft_writer.py",
+                      "status":  "unchanged",
+                      "sha256":  "77101762B1C97ED2A81B8ECCC4CFFEA950345DAA63B543B2A1F4E9C1B0CA038E"
+                  },
+                  {
+                      "path":  "tests\\test_material_delivery.py",
+                      "status":  "added",
+                      "sha256":  "913159FA71093FC239AD00E64D914C61CEDA4990AAC29147FEB7F41242659351"
+                  },
+                  {
+                      "path":  "tests\\test_messenger_crm_phase1.py",
+                      "status":  "unchanged",
+                      "sha256":  "F7C29CE39B5070B27FE57D9FD5C6A1180428C9F7845170C822E2D9C035031C79"
+                  },
+                  {
+                      "path":  "tests\\test_multichannel_crm_dashboard.py",
+                      "status":  "unchanged",
+                      "sha256":  "1DB025F7066FB07B4787B4D1C6F4A8180B25373A073E0E2536E654FDF1EAC929"
+                  },
+                  {
+                      "path":  "tests\\test_notion_sync.py",
+                      "status":  "unchanged",
+                      "sha256":  "4D0D339F54FE4FC310D174D5A4395DD449B910CF7608D2A6F86FF484D0119129"
+                  },
+                  {
+                      "path":  "tests\\test_review_pipeline.py",
+                      "status":  "added",
+                      "sha256":  "2D98A8A0E686ED0CE18F39323A7B3D7B6F7F2A7068E151B19E7FC0D8907DC825"
+                  },
+                  {
+                      "path":  "tests\\test_scraper.py",
+                      "status":  "unchanged",
+                      "sha256":  "E98861C308D506D2A03B39B98BBD7AAC7AE8246F5D9727448E61AB18EF8CE7A0"
+                  },
+                  {
+                      "path":  "tests\\test_sender_review_guard.py",
+                      "status":  "added",
+                      "sha256":  "2135ED060F4A8D0DC7BD43A3AD9C441E162DB58743B16A872639262627E3CB2E"
+                  },
+                  {
+                      "path":  "tests\\test_targeted_reply.py",
+                      "status":  "unchanged",
+                      "sha256":  "ACBE28841D3615E3F1E56C012468634F0F780466345409C07805B8967FEEA3DD"
+                  },
+                  {
+                      "path":  "tests\\__init__.py",
+                      "status":  "unchanged",
+                      "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+                  }
+              ]
+}

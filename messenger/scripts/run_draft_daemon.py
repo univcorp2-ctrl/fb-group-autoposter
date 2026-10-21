@@ -1,13 +1,11 @@
-"""Keep Messenger reply drafts refreshed and the latest reply screen open.
+"""Background Messenger property-document auto-reply daemon.
 
-Safety properties:
-- NEVER sends a Facebook/Messenger message.
-- Reuses the central authenticated Chrome Default profile only.
-- Generates drafts through the existing run_once scan pipeline.
-- Uses fb_draft_writer, which preserves non-matching human composer text.
-- Keeps only one daemon instance active using a local lock file.
-
-Default interval: 30 minutes. Override with MESSENGER_DRAFT_INTERVAL_MINUTES.
+A one-minute inbox poll finds new, positively verified one-to-one PDF requests.
+The premium reviewer and private-Drive document registry must approve the reply.
+Only then may src.auto_reply invoke the exact-thread sender. Group chats,
+ambiguous conversations, historical messages and unknown PDFs fail closed.
+Chrome stays in a CDP background tab; no foreground Windows/PowerShell.
+Uses an OS file lock to prevent duplicate daemon instances.
 """
 from __future__ import annotations
 
@@ -34,8 +32,8 @@ from src.authenticated_chrome import (  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("draft_daemon")
 JST = timezone(timedelta(hours=9))
-DEFAULT_INTERVAL_MINUTES = 30
-MIN_INTERVAL_MINUTES = 5
+DEFAULT_INTERVAL_MINUTES = 1
+MIN_INTERVAL_MINUTES = 1
 MAX_INTERVAL_MINUTES = 240
 
 
@@ -140,7 +138,7 @@ async def main_async() -> int:
                 "running": True,
                 "started_at": started,
                 "interval_minutes": interval_minutes,
-                "send_enabled": False,
+                "send_enabled": os.getenv("MESSENGER_AUTO_SEND", "false").lower() in {"1", "true"},
                 "profile_dir": str(settings.profile_dir),
                 "profile_directory": settings.chrome_profile_directory,
                 "browser_display_mode": settings.browser_display_mode,
@@ -152,6 +150,9 @@ async def main_async() -> int:
                 # inbox rows, builds drafts, persists state, and may write drafts.
                 scan = await _scan(settings, use_telegram=True)
                 status["scan"] = scan
+                if status["send_enabled"] and scan.get("logged_in"):
+                    from src.auto_reply import run_pending
+                    status["auto_reply"] = await asyncio.to_thread(run_pending, settings)
                 rows = _load_active_drafts(settings.data_dir)
                 focus = _select_focus_draft(rows)
                 status["active_drafts"] = len(rows)
