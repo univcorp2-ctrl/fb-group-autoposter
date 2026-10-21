@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
@@ -201,10 +202,14 @@ def run_pending(settings) -> dict:
                 skipped += 1
                 continue
             # Pre-commit before invoking any potentially consequential UI action.
+            # A one-shot nonce binds this attempt to its child sender; an
+            # unrelated sender cannot inherit this permission.
+            claim_nonce = secrets.token_hex(16)
             material = nowrow.get("material") or {}
             data["attempts"][key] = {
                 "thread_id": row["thread_id"], "created_at": now.isoformat(),
                 "state": "attempted_unconfirmed",
+                "claim_nonce": claim_nonce,
                 "property_id": material.get("property_id", ""),
                 "pdf_sha256": material.get("sha256", ""),
                 "pdf_file_name": material.get("file_name", ""),
@@ -216,7 +221,7 @@ def run_pending(settings) -> dict:
             command = [
                 sys.executable, str(ROOT / "scripts" / "send_one_playwright_reply.py"),
                 "--target-name", str(row["name"]), "--thread-id", str(row["thread_id"]),
-                "--scan-limit", "40", "--send",
+                "--scan-limit", "40", "--send", "--auto-claim", claim_nonce,
             ]
             try:
                 proc = subprocess.run(
