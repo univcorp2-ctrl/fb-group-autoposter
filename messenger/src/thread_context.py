@@ -1,8 +1,8 @@
 """Capture recent exact-thread context for a review draft.
 
-This opens a temporary tab in the already authenticated Messenger Chrome context.
-Reading an actual thread may mark messages seen; never send a message here.
-The newly created tab is closed, all preexisting tabs are untouched.
+Reuse the *single* automation-owned background tab for each read.
+No second tab is ever created. Reading a thread may mark it seen.
+Never navigate a user-owned tab and never send a message here.
 """
 from __future__ import annotations
 
@@ -11,7 +11,15 @@ from typing import Any
 async def read_recent_thread_text(page: Any, thread_id: str, recipient_name: str) -> str:
     if not thread_id.isdecimal():
         return ""
-    temp = await page.context.new_page()
+    from src.authenticated_chrome import AUTOMATION_PAGE_TAG
+    # A human-owned tab is not an acceptable fallback, even if it is on
+    # Messenger. The named CDP background tab is the sole worker.
+    try:
+        if await page.evaluate("() => window.name") != AUTOMATION_PAGE_TAG:
+            return ""
+    except Exception:
+        return ""
+    temp = page
     try:
         await temp.goto(
             f"https://www.messenger.com/t/{thread_id}",
@@ -35,4 +43,4 @@ async def read_recent_thread_text(page: Any, thread_id: str, recipient_name: str
     except Exception:
         return ""
     finally:
-        await temp.close()
+        pass  # Keep the sole background tab for the next inbox scan.
