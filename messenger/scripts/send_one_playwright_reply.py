@@ -219,7 +219,7 @@ async def _scan_exact_thread(
     thread_id: str,
     scan_limit: int,
 ) -> tuple[dict[str, Any], Any, int]:
-    threads = await scrape_inbox(page, scan_limit)
+    threads = await scrape_inbox(page, scan_limit, quick=True)
     matches = [row for row in threads if str(row.get("thread_id", "")) == thread_id]
     if len(matches) != 1:
         raise RuntimeError(
@@ -289,8 +289,13 @@ async def _run_browser(
                 raise RuntimeError("authenticated Chrome profile is not on the exact target thread")
             if not await _any_exact_text_visible(page, args.target_name):
                 raise RuntimeError("target recipient name is not visible in the opened thread")
+            # Independent in-thread positive DM proof. Applies before any
+            # composer write, PDF upload or send button click; group chats fail closed.
+            from src.direct_thread_guard import assert_one_to_one_thread
+            await assert_one_to_one_thread(page, args.target_name, current)
+            status["direct_thread_header_verified"] = True
 
-            body_before = normalize_text(await page.locator("body").inner_text(timeout=10_000))
+            body_before = normalize_text(await page.locator("body").first.inner_text(timeout=10_000))
             if expected_preview not in body_before:
                 raise RuntimeError("saved inbound message is not visible in the opened thread")
 
@@ -357,7 +362,7 @@ async def _run_browser(
             for _ in range(30):
                 await page.wait_for_timeout(500)
                 remaining = normalize_text(await _editor_text(editor))
-                body_after = normalize_text(await page.locator("body").inner_text())
+                body_after = normalize_text(await page.locator("body").first.inner_text())
                 if not remaining and normalize_text(reply) in body_after:
                     dom_confirmed = True
                     break
