@@ -20,6 +20,7 @@ JST = timezone(timedelta(hours=9))
 LEDGER = ROOT / "data" / "auto_reply_ledger.json"
 BASELINE_INBOX = ROOT / "data" / "auto_reply_baseline_inbox.json"
 STATUS = ROOT / "data" / "auto_reply_status.json"
+SEND_PAUSE_FILE = ROOT / "data" / "send_pause.lock"
 DRIVE_STATUS = Path(r"G:\マイドライブ\AI_Agents\Private\FBGroupAutoposter\messenger_auto_reply_status.json")
 DRIVE_LEDGER = Path(r"G:\マイドライブ\AI_Agents\Private\FBGroupAutoposter\messenger_auto_reply_ledger.json")
 # Auto-send is strictly for explicit document requests, not ordinary chat.
@@ -89,6 +90,14 @@ def has_unresolved_attempt(attempts: dict, thread_id: str) -> bool:
 
 def run_pending(settings) -> dict:
     now = datetime.now(JST)
+    # The independent maintenance marker is checked before any auto-send path.
+    # The marker must be placed in the runtime data directory before a
+    # controlled restart; existing processes do not hot-reload this module.
+    if SEND_PAUSE_FILE.exists():
+        report = {"armed": False, "attempted": 0, "confirmed": 0,
+                  "status": "send_paused_fail_closed"}
+        safe_save(STATUS, report)
+        return report
     if not LEDGER.exists():
         safe_save(LEDGER, {"armed_after": now.isoformat(), "attempts": {}})
         report = {"armed": True, "attempted": 0, "confirmed": 0,
