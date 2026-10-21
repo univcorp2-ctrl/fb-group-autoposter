@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import hashlib
 import logging
 import os
 import random
@@ -115,7 +116,7 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
         attachment = await attach_authenticated_context(p, settings)
         page = await select_messenger_page(attachment.context)
         try:
-            threads = await scrape_inbox(page, settings.max_threads_per_run)
+            threads = await scrape_inbox(page, settings.max_threads_per_run, quick=True)
             summary["scanned"] = len(threads)
             if not threads and not await is_logged_in(page):
                 summary["logged_in"] = False
@@ -134,6 +135,28 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
 
             needing = select_threads_needing_reply(threads)
             summary["need_reply"] = len(needing)
+            # Review only *new*, recent, one-to-one document requests.
+            # Existing inbox previews are hashed at activation; no old
+            # conversation can become a new send merely due to re-review.
+            from src.auto_reply import BASELINE_INBOX, recent_inbox_timestamp
+            if not BASELINE_INBOX.is_file():
+                summary["needs_baseline"] = True
+                needing = []
+            else:
+                baseline = json.loads(BASELINE_INBOX.read_text(encoding="utf-8"))
+                hashes = baseline.get("previews")
+                if not isinstance(hashes, dict):
+                    raise RuntimeError("inbox_baseline_invalid")
+                doc_terms = ("資料", "図面", "レントロール", "概要書", "パンフ", "PDF", "pdf", "物件概要")
+                needing = [
+                    t for t in needing
+                    if recent_inbox_timestamp(t.get("time_text", ""))
+                    and any(term in str(t.get("preview","")) for term in doc_terms)
+                    and hashes.get(str(t.get("thread_id"))) != hashlib.sha256(
+                        str(t.get("preview","")).encode("utf-8")
+                    ).hexdigest()
+                ]
+            summary["new_document_requests"] = len(needing)
 
             from src.review_pipeline import review_draft
             from src.thread_context import read_recent_thread_text
@@ -159,7 +182,8 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                 if review_cached:
                     continue
                 if reviewed_now >= review_limit:
-                    active_drafts.pop(tid, None)
+                    # Pending requests remain in the inbox for the next cycle.
+                    # Do not delete an unrelated user's existing draft.
                     continue
                 reviewed_now += 1
                 history = await read_recent_thread_text(page, tid, str(thread["name"]))
