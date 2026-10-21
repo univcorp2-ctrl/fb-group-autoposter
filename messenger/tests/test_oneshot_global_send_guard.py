@@ -61,12 +61,12 @@ def test_force_cannot_skip_global_guard_and_it_runs_immediately_before_click():
     defs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
     main = ast.unparse(defs["main"])
     browser = ast.unparse(defs["_run_browser"])
-    assert "if args.send:\n            _assert_global_send_guard(settings.data_dir, args.thread_id)" in main
+    assert "if args.send:\n            _assert_global_send_guard(settings.data_dir, args.thread_id, auto_claim=args.auto_claim)" in main
     assert "await _set_editor_text(page, editor, reply)" in browser
-    before_editor = browser.index("_assert_global_send_guard(settings.data_dir, args.thread_id)")
+    before_editor = browser.index("_assert_global_send_guard(settings.data_dir, args.thread_id, auto_claim=args.auto_claim)")
     editor = browser.index("await _set_editor_text(page, editor, reply)")
     assert before_editor < editor
     click = browser.index("await send_button.click(timeout=10000)")
-    before_click = browser.rindex("_assert_global_send_guard(settings.data_dir, args.thread_id)", 0, click)
+    before_click = browser.rindex("_assert_global_send_guard(settings.data_dir, args.thread_id, auto_claim=args.auto_claim, consume=bool(args.auto_claim))", 0, click)
     assert before_click > editor
     assert "args.force" not in ast.unparse(defs["_assert_global_send_guard"])
