@@ -1,17 +1,67 @@
 {
-  "generated_at": "2026-10-21T13:08:17.970891+00:00",
+  "generated_at": "2026-10-21T23:55:40.677071+00:00",
   "health": "stalled",
   "message": "確認済み投稿がありません。",
   "counts": {
-    "failed": 38,
-    "skipped": 12
+    "skipped": 15,
+    "failed": 35
   },
   "last_post_at": null,
   "heartbeat": {
-    "orchestrator": "2026-10-21T13:07:24.905463+00:00",
+    "orchestrator": "2026-10-21T13:25:05.990651+00:00",
     "session": "2026-08-18T23:11:06.600187+00:00"
   },
   "recent": [
+    {
+      "property_id": "eb-10170",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:25:05.984654+00:00"
+    },
+    {
+      "property_id": "eb-10170",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:17:05.436795+00:00"
+    },
+    {
+      "property_id": "eb-10170",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:13:04.939419+00:00"
+    },
+    {
+      "property_id": "eb-10170",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:11:04.379151+00:00"
+    },
+    {
+      "property_id": "eb-10170",
+      "group_id": "462766603810852",
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "circuit_open:selector_composer_threshold",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-21T13:10:03.872781+00:00"
+    },
     {
       "property_id": "eb-30214",
       "group_id": "774212775739164",
@@ -461,56 +511,6 @@
       "posted_at": null,
       "permalink": null,
       "updated_at": "2026-10-21T12:04:24.084648+00:00"
-    },
-    {
-      "property_id": "eb-20511",
-      "group_id": "1911961896257757",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T12:03:26.626450+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "628818327463444",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T12:02:05.994675+00:00"
-    },
-    {
-      "property_id": "eb-29810",
-      "group_id": "462766603810852",
-      "status": "skipped",
-      "attempts": 0,
-      "last_error": "circuit_open:selector_composer_threshold",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T12:02:05.943111+00:00"
-    },
-    {
-      "property_id": "eb-30214",
-      "group_id": "774212775739164",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:59:23.705379+00:00"
-    },
-    {
-      "property_id": "eb-15416",
-      "group_id": "1261566862455883",
-      "status": "failed",
-      "attempts": 1,
-      "last_error": "「投稿」ボタンが押せる状態になりません",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-21T08:58:24.474471+00:00"
     }
   ]
 }
