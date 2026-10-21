@@ -57,10 +57,11 @@ def test_fresh_inbound_send_at_most_once(tmp_path,monkeypatch):
     proof=hashlib.sha256(("物件問い合わせ"+"\0"+"この物件の資料をください").encode("utf-8")).hexdigest()
     row=candidate(review_status="approved",review_model="claude-opus-4-6",
                   review_message_sha256=proof,
+                  material={"approved": True, "sha256":"sha-valid", "drive_file_id":"file-valid"},
                   draft="お問い合わせの物件について資料を確認し、改めてご案内いたします。")
     (tmp_path/"drafts.json").write_text(json.dumps({"drafts":[row]},ensure_ascii=False),encoding="utf-8")
     (tmp_path/"drafts_archive.jsonl").write_text(json.dumps({"checked_at":t,**row},ensure_ascii=False),encoding="utf-8")
-    class Done: returncode=0;stdout='{"ok":true,"sent":true}\n';stderr=''
+    class Done: returncode=0;stdout='{"ok":true,"sent":true,"attachment_confirmed":true}\n';stderr=''
     calls=[]
     def send(argv,**kwargs):
         calls.append(argv)
