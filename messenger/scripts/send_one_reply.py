@@ -159,6 +159,11 @@ async def verify_current_inbox(
 
 
 async def run(args: argparse.Namespace) -> int:
+    # Legacy sender has no verified premium review, 1:1 thread/PDF gates or
+    # durable uncertain-attempt guard. The modern reviewed path is separate.
+    # Do not permit this legacy script to send, including with --force.
+    if args.send:
+        raise RuntimeError("legacy_one_shot_sender_disabled_fail_closed")
     row = load_target(args)
     reply = load_reply(args, row)
     reply_digest = message_hash(reply)
