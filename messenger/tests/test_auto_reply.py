@@ -26,6 +26,8 @@ def test_initial_arm_never_sends_history(tmp_path, monkeypatch):
     monkeypatch.setattr(auto_reply,"DRIVE_STATUS",tmp_path/"drive.json")
     monkeypatch.setattr(auto_reply,"DRIVE_LEDGER",tmp_path/"drive-ledger.json")
     monkeypatch.setattr(auto_reply,"BASELINE_INBOX",tmp_path/"baseline.json")
+    # Isolate synthetic sender tests from the real production pause marker.
+    monkeypatch.setattr(auto_reply,"SEND_PAUSE_FILE",tmp_path/"send_pause.lock")
     (tmp_path/"baseline.json").write_text('{"previews":{}}',encoding="utf-8")
     monkeypatch.setenv("MESSENGER_AUTO_SEND","true")
     from unittest.mock import Mock
@@ -47,6 +49,8 @@ def test_fresh_inbound_send_at_most_once(tmp_path,monkeypatch):
     monkeypatch.setattr(auto_reply,"DRIVE_STATUS",tmp_path/"drive.json")
     monkeypatch.setattr(auto_reply,"DRIVE_LEDGER",tmp_path/"drive-ledger.json")
     monkeypatch.setattr(auto_reply,"BASELINE_INBOX",tmp_path/"baseline.json")
+    # Isolate synthetic sender tests from the real production pause marker.
+    monkeypatch.setattr(auto_reply,"SEND_PAUSE_FILE",tmp_path/"send_pause.lock")
     (tmp_path/"baseline.json").write_text('{"previews":{}}',encoding="utf-8")
     monkeypatch.setenv("MESSENGER_AUTO_SEND","true")
     s=SimpleNamespace(data_dir=tmp_path)
@@ -81,6 +85,8 @@ def test_inbox_snapshot_blocks_preexisting_message(tmp_path, monkeypatch):
     monkeypatch.setattr(auto_reply,"DRIVE_STATUS",tmp_path/"drive.json")
     monkeypatch.setattr(auto_reply,"DRIVE_LEDGER",tmp_path/"drive-ledger.json")
     monkeypatch.setattr(auto_reply,"BASELINE_INBOX",tmp_path/"baseline.json")
+    # Isolate synthetic sender tests from the real production pause marker.
+    monkeypatch.setattr(auto_reply,"SEND_PAUSE_FILE",tmp_path/"send_pause.lock")
     monkeypatch.setenv("MESSENGER_AUTO_SEND","true")
     s=SimpleNamespace(data_dir=tmp_path)
     assert auto_reply.run_pending(s)["attempted"]==0
