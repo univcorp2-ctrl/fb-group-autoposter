@@ -22,7 +22,8 @@ BASELINE_INBOX = ROOT / "data" / "auto_reply_baseline_inbox.json"
 STATUS = ROOT / "data" / "auto_reply_status.json"
 DRIVE_STATUS = Path(r"G:\マイドライブ\AI_Agents\Private\FBGroupAutoposter\messenger_auto_reply_status.json")
 DRIVE_LEDGER = Path(r"G:\マイドライブ\AI_Agents\Private\FBGroupAutoposter\messenger_auto_reply_ledger.json")
-KEYWORDS = ("物件", "不動産", "内見", "投資", "賃貸", "利回り", "アパート", "マンション", "土地", "収益ビル", "査定", "売却", "融資", "買付")
+# Auto-send is strictly for explicit document requests, not ordinary chat.
+DOCUMENT_REQUESTS = ("資料", "図面", "概要書", "レントロール", "パンフ", "PDF", "pdf", "物件概要")
 IGNORED = ("メッセージは復元されていません", "不在着信", "自動送信", "自動応答")
 ONLY_INBOUND = re.compile(r"^\d+$")
 
@@ -63,7 +64,7 @@ def eligible_message(row: dict) -> bool:
         and row.get("participant_count") == 1
         and row.get("is_group") is False
         and ONLY_INBOUND.fullmatch(str(row.get("thread_id") or ""))
-        and text and any(kw in text for kw in KEYWORDS)
+        and text and any(kw in text for kw in DOCUMENT_REQUESTS)
         and not any(no in text for no in IGNORED)
         and recent_inbox_timestamp(row.get("time_text", ""))
         and row.get("url") == f"https://www.messenger.com/t/{row.get('thread_id')}"
@@ -109,7 +110,7 @@ def run_pending(settings) -> dict:
     attempted = 0
     confirmed = 0
     skipped = 0
-    limit = min(3, max(1, int(os.getenv("MESSENGER_AUTO_SEND_MAX_DAILY", "3"))))
+    limit = min(20, max(1, int(os.getenv("MESSENGER_AUTO_SEND_MAX_DAILY", "20"))))
     today_count = sum(
         1 for v in data["attempts"].values()
         if str(v.get("created_at", "")).startswith(now.date().isoformat())
@@ -121,7 +122,9 @@ def run_pending(settings) -> dict:
         try:
             row = json.loads(line)
             ts = parse_archive_time(row.get("checked_at", ""))
-            if ts is None or ts <= baseline:
+            # Archive granularity is one minute; compare its upper bound to the
+            # exact activation timestamp and rely on baseline hashes for safety.
+            if ts is None or ts + timedelta(minutes=1) <= baseline:
                 continue
             key = hashlib.sha256(
                 (str(row.get("thread_id")) + "\0" + str(row.get("last_message"))).encode("utf-8")
@@ -145,6 +148,13 @@ def run_pending(settings) -> dict:
                 (str(nowrow.get("name", "")) + "\0" +
                  str(nowrow.get("last_message", ""))).encode("utf-8")
             ).hexdigest()
+            material = nowrow.get("material") or {}
+            if (not isinstance(material, dict)
+                    or material.get("approved") is not True
+                    or not material.get("sha256")
+                    or not material.get("drive_file_id")):
+                skipped += 1
+                continue
             if (nowrow.get("review_status") != "approved"
                     or not any(m in str(nowrow.get("review_model", "")).lower()
                                for m in ("opus", "gpt-5.6-terra"))
@@ -179,7 +189,7 @@ def run_pending(settings) -> dict:
             command = [
                 sys.executable, str(ROOT / "scripts" / "send_one_playwright_reply.py"),
                 "--target-name", str(row["name"]), "--thread-id", str(row["thread_id"]),
-                "--scan-limit", "30", "--send",
+                "--scan-limit", "40", "--send",
             ]
             try:
                 proc = subprocess.run(
