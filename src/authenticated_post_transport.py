@@ -83,47 +83,54 @@ async def run_authenticated_task(task, path, on_click=None, *, timeout=180):
     page = None
     try:
         async with async_playwright() as playwright:
-            settings = SimpleNamespace(profile_dir=Path(os.getenv('FB_AUTHENTICATED_PROFILE',
-                r'C:\AI-Agent\chrome-profile-authenticated')), chrome_profile_directory='Default', browser_display_mode='auto')
-            attachment = await browser_helper().attach_authenticated_context(playwright, settings)
-            context = attachment.context
-            session = await context.browser.new_browser_cdp_session()
             try:
-                async with context.expect_page(timeout=15000) as pending:
-                    await session.send('Target.createTarget', {'url':'about:blank','background':True})
-                page = await pending.value
+                settings = SimpleNamespace(profile_dir=Path(os.getenv('FB_AUTHENTICATED_PROFILE',
+                    r'C:\AI-Agent\chrome-profile-authenticated')), chrome_profile_directory='Default', browser_display_mode='auto')
+                attachment = await browser_helper().attach_authenticated_context(playwright, settings)
+                context = attachment.context
+                session = await context.browser.new_browser_cdp_session()
+                try:
+                    async with context.expect_page(timeout=15000) as pending:
+                        await session.send('Target.createTarget', {'url':'about:blank','background':True})
+                    page = await pending.value
+                finally:
+                    await session.detach()
+                async def receive(source, message): return await bridge.receive(message)
+                await page.expose_binding('__fbTaskBridge', receive)
+                url = str(task['group_url'])
+                if not url.startswith('https://www.facebook.com/groups/'):
+                    raise ValueError('not an authorized Facebook group URL')
+                await page.goto(url+'#fbautoposter_task='+task['task_id'], wait_until='domcontentloaded', timeout=45000)
+                await page.evaluate("() => { window.name='FBGroupAutoposter-Posting-Background'; }")
+                await page.wait_for_timeout(1800)
+                shim = """async () => {
+                  const chrome = {runtime:{onMessage:{addListener(){}},
+                    sendMessage: async (message) => {
+                      const response = await window.__fbTaskBridge(message);
+                      if (!response?.ok) throw new Error(response?.error || 'bound_bridge_failed');
+                      return response;
+                    }}};
+                """
+                await page.evaluate(shim+content+'\n}')
+                deadline = time.monotonic()+timeout
+                while task.get('status') != 'finished' and time.monotonic() < deadline:
+                    await asyncio.sleep(.5)
+                if task.get('status') != 'finished':
+                    raise TimeoutError('authenticated content result timeout')
+                result = {**task['result'], 'click_marked':bridge.clicked}
+                screenshot = ROOT/'screenshots'/('authenticated-'+task['task_id']+'.png')
+                screenshot.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    await page.screenshot(path=str(screenshot), full_page=False, timeout=10000)
+                    result['screenshot'] = str(screenshot)
+                except Exception: pass
+                return result
             finally:
-                await session.detach()
-            async def receive(source, message): return await bridge.receive(message)
-            await page.expose_binding('__fbTaskBridge', receive)
-            url = str(task['group_url'])
-            if not url.startswith('https://www.facebook.com/groups/'):
-                raise ValueError('not an authorized Facebook group URL')
-            await page.goto(url+'#fbautoposter_task='+task['task_id'], wait_until='domcontentloaded', timeout=45000)
-            await page.evaluate("() => { window.name='FBGroupAutoposter-Posting-Background'; }")
-            await page.wait_for_timeout(1800)
-            shim = """async () => {
-              const chrome = {runtime:{onMessage:{addListener(){}},
-                sendMessage: async (message) => {
-                  const response = await window.__fbTaskBridge(message);
-                  if (!response?.ok) throw new Error(response?.error || 'bound_bridge_failed');
-                  return response;
-                }}};
-            """
-            await page.evaluate(shim+content+'\n}')
-            deadline = time.monotonic()+timeout
-            while task.get('status') != 'finished' and time.monotonic() < deadline:
-                await asyncio.sleep(.5)
-            if task.get('status') != 'finished':
-                raise TimeoutError('authenticated content result timeout')
-            result = {**task['result'], 'click_marked':bridge.clicked}
-            screenshot = ROOT/'screenshots'/('authenticated-'+task['task_id']+'.png')
-            screenshot.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                await page.screenshot(path=str(screenshot), full_page=False, timeout=10000)
-                result['screenshot'] = str(screenshot)
-            except Exception: pass
-            return result
+                if page:
+                    try: await page.close()
+                    except Exception: pass
+                    page = None
+
     except Exception as error:
         result = {'status':'uncertain' if bridge.clicked else 'failed_before_click',
                   'error':type(error).__name__+': '+str(error)[:240], 'click_marked':bridge.clicked}
