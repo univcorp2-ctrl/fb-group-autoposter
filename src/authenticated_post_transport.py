@@ -19,6 +19,17 @@ from datetime import datetime, timezone
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def save_transport_status(result, task):
+    path = ROOT/'data'/'authenticated_post_transport_status.json'
+    status = {'transport':'authenticated_cdp','checked_at':datetime.now(timezone.utc).isoformat(),
+              'last_action':task.get('action','post'), 'last_status':result.get('status'),
+              'click_marked':bool(result.get('click_marked')), 'task_id':task['task_id'],
+              'source_digest':hashlib.sha256((ROOT/'extension'/'content.js').read_bytes()).hexdigest()}
+    temp=path.with_suffix('.json.tmp')
+    temp.write_text(json.dumps(status,ensure_ascii=False,indent=2),encoding='utf-8')
+    os.replace(temp,path)
+
+
 def cadence_remaining(last_click, minutes, *, now=None):
     if not last_click: return 0
     instant = now or datetime.now(timezone.utc)
@@ -140,6 +151,7 @@ async def run_authenticated_task(task, path, on_click=None, *, timeout=180):
                     await page.screenshot(path=str(screenshot), full_page=False, timeout=10000)
                     result['screenshot'] = str(screenshot)
                 except Exception: pass
+                save_transport_status(result,task)
                 return result
             finally:
                 if page:
@@ -152,6 +164,7 @@ async def run_authenticated_task(task, path, on_click=None, *, timeout=180):
                   'error':type(error).__name__+': '+str(error)[:240], 'click_marked':bridge.clicked}
         task.update(status='finished', result=result, finished_at_epoch=time.time())
         bridge.save()
+        save_transport_status(result,task)
         return result
     finally:
         if page:
