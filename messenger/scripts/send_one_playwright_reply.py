@@ -105,8 +105,8 @@ def _require_premium_approval(args: argparse.Namespace, row: dict[str, Any], rep
     reviewed = str(row.get("draft") or "").strip()
     if row.get("review_status") != "approved":
         raise RuntimeError("premium_review_not_approved")
-    if not any(model in str(row.get("review_model", "")).lower()
-               for model in ("opus", "gpt-5.6-terra")):
+    from src.review_pipeline import premium_model_verified
+    if not premium_model_verified(row.get("review_model", "")):
         raise RuntimeError("premium_review_model_unverified")
     expected = hashlib.sha256(
         (str(row.get("name", "")) + "\0" + str(row.get("last_message", ""))).encode("utf-8")

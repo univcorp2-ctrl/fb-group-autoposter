@@ -15,6 +15,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from src.review_pipeline import premium_model_verified
 
 ROOT = Path(__file__).resolve().parents[1]
 JST = timezone(timedelta(hours=9))
@@ -184,8 +185,7 @@ def run_pending(settings) -> dict:
                 skipped += 1
                 continue
             if (nowrow.get("review_status") != "approved"
-                    or not any(m in str(nowrow.get("review_model", "")).lower()
-                               for m in ("opus", "gpt-5.6-terra"))
+                    or not premium_model_verified(nowrow.get("review_model", ""))
                     or nowrow.get("review_message_sha256") != expected_sha
                     or not str(nowrow.get("draft", "")).strip()):
                 skipped += 1

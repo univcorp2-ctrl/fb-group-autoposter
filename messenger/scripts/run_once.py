@@ -158,7 +158,7 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                 ]
             summary["new_document_requests"] = len(needing)
 
-            from src.review_pipeline import review_draft
+            from src.review_pipeline import review_draft, premium_model_verified
             from src.thread_context import read_recent_thread_text
 
             review_limit = max(1, min(10, int(os.getenv("MESSENGER_MAX_REVIEWS_PER_SCAN", "5"))))
@@ -176,8 +176,7 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                     prior and prior.get("last_message") == preview
                     and prior.get("review_status") in {"approved", "needs_human"}
                     and prior.get("review_policy_version") == "2026-10-20-v3"
-                    and any(m in str(prior.get("review_model", "")).lower()
-                            for m in ("opus", "gpt-5.6-terra"))
+                    and premium_model_verified(prior.get("review_model", ""))
                 )
                 if review_cached:
                     continue

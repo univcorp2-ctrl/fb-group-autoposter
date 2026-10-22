@@ -73,10 +73,55 @@ def _prompt(name: str, inbound: str, history: str, first_draft: str, evidence: E
     )
 
 def _call_opus(prompt: str, api_key: str = "") -> tuple[str, str] | None:
-    # User policy: paid API, Codex CLI and other external reviewers are disabled.
-    # Review belongs in the current normal ChatGPT conversation only.
-    # Fail closed: no automated approval, external invocation or send.
-    return None
+    # Explicitly authorized 2026-10-22. Other provider modes stay disabled;
+    # never fall back to a paid API, npm CLI, or a weaker model.
+    if os.getenv("MESSENGER_REVIEW_PROVIDER", "").strip().lower() != "codex_login":
+        return None
+    configured = os.getenv("MESSENGER_REVIEW_CODEX_EXE", "")
+    if configured:
+        executable = Path(configured)
+    else:
+        app_bin = Path(os.getenv("LOCALAPPDATA", "")) / "OpenAI" / "Codex" / "bin"
+        candidates = list(app_bin.glob("*/codex.exe"))
+        executable = max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None
+    if not executable or executable.name.lower() != "codex.exe" or not executable.is_file():
+        return None
+    environment = {k: v for k, v in os.environ.items()
+                   if k.upper() not in {"OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY",
+                                        "OPENAI_BASE_URL"}}
+    options = {"encoding": "utf-8", "text": True, "stdout": subprocess.PIPE,
+               "stderr": subprocess.PIPE, "check": False, "shell": False,
+               "env": environment, "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+    try:
+        login = subprocess.run([str(executable), "login", "status"], timeout=15, **options)
+        if login.returncode or "logged in using chatgpt" not in (login.stdout + login.stderr).lower():
+            return None
+        with tempfile.TemporaryDirectory(prefix="messenger-login-review-") as folder:
+            result_file = Path(folder) / "review.json"
+            schema_file = Path(folder) / "schema.json"
+            schema_file.write_text(json.dumps({
+                "type": "object", "additionalProperties": False,
+                "required": ["verdict", "reply", "reason"],
+                "properties": {"verdict": {"type": "string", "enum": ["approve", "needs_human"]},
+                               "reply": {"type": "string"}, "reason": {"type": "string"}},
+            }), encoding="utf-8")
+            result = subprocess.run([
+                str(executable), "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules",
+                "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never",
+                "--model", "gpt-6-astra", "-c", 'model_reasoning_effort="high"',
+                "-c", "mcp_servers={}", "-c", "plugins={}",
+                "--output-schema", str(schema_file), "--output-last-message", str(result_file), "-",
+            ], input=prompt, cwd=folder, timeout=150, **options)
+            if result.returncode or not result_file.is_file() or result_file.stat().st_size > 65536:
+                return None
+            return result_file.read_text(encoding="utf-8"), "gpt-6-astra/high"
+    except (OSError, subprocess.TimeoutExpired):
+        log.warning("ChatGPT-login premium review unavailable; no fallback")
+        return None
+
+
+def premium_model_verified(model: str) -> bool:
+    return str(model).lower() in {"claude-opus-4-6", "gpt-5.6-terra/high", "gpt-6-astra/high"}
 
 
 
