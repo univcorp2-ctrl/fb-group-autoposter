@@ -25,6 +25,7 @@ from src.generator import (
     fallback_body,
 )
 from src.group_rules import apply_group_rules
+from src.runtime_usage import UsageRun
 
 log = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,12 +61,14 @@ def _call_codex(prompt: str, timeout_seconds: int = 120) -> str:
         command = [
             executable,
             "exec",
+            "--json",
             "--skip-git-repo-check",
             "--output-last-message",
             str(output_path),
             "-",
         ]
-        subprocess.run(
+        usage_run = UsageRun('facebook-posting', 'codex-configured')
+        result = subprocess.run(
             command,
             input=prompt,
             text=True,
@@ -73,7 +76,9 @@ def _call_codex(prompt: str, timeout_seconds: int = 120) -> str:
             cwd=ROOT,
             timeout=timeout_seconds,
             check=True,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
+        usage_run.finish(result.stdout)
         return output_path.read_text(encoding="utf-8").strip()
     finally:
         try:
