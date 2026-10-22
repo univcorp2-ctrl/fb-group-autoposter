@@ -313,12 +313,26 @@ group:
 revision_instruction:
 {revision_instruction}
 """
+    from src.runtime_usage import UsageRun
+    usage_run = UsageRun('facebook-posting', settings.claude_model)
     resp = client.messages.create(
         model=settings.claude_model,
         max_tokens=1600,
         temperature=0.7,
         messages=[{"role": "user", "content": prompt}],
     )
+    usage = getattr(resp, 'usage', None)
+    raw_input = getattr(usage, 'input_tokens', None)
+    cache_read = getattr(usage, 'cache_read_input_tokens', 0) or 0
+    cache_write = getattr(usage, 'cache_creation_input_tokens', 0) or 0
+    output = getattr(usage, 'output_tokens', None)
+    usage_run.record['source'] = 'anthropic.response.usage'
+    if all(type(n) is int and n >= 0 for n in (raw_input, cache_read, cache_write, output)):
+        usage_run.finish(json.dumps({'type': 'turn.completed', 'usage': {
+            'input_tokens': raw_input + cache_read + cache_write,
+            'cached_input_tokens': cache_read, 'output_tokens': output}}))
+    else:
+        usage_run.finish('')
     chunks = []
     for item in resp.content:
         text = getattr(item, "text", "")
@@ -363,6 +377,10 @@ def generate_variants(
                 log.warning("claude generation failed for group %s: %s", group.get("id"), exc)
                 degraded = True
         else:
+            from src.runtime_usage import UsageRun
+            usage_run = UsageRun('facebook-posting', 'none')
+            usage_run.record['source'] = 'deterministic-no-model'
+            usage_run.finish('{"type":"turn.completed","usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0}}')
             degraded = True
         if not body:
             body = fallback_body(property_data, group, revision_instruction=revision_instruction)
