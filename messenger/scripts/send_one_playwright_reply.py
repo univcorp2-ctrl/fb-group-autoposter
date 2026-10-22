@@ -420,11 +420,6 @@ async def _run_browser(
 
             # Recheck after asynchronous UI navigation, before mutating composer.
             _assert_global_send_guard(settings.data_dir, args.thread_id, auto_claim=args.auto_claim)
-            await _set_editor_text(page, editor, reply)
-            editor_after_fill = normalize_text(await _editor_text(editor))
-            if editor_after_fill != normalize_text(reply):
-                raise RuntimeError("composer text did not exactly match the intended reply")
-
             if attachment is not None:
                 from src.messenger_attachment import stage_verified_pdf
                 staged = await stage_verified_pdf(
@@ -433,6 +428,11 @@ async def _run_browser(
                 status.update({"attachment_staged": staged["staged"],
                                "attachment_sha256": attachment.sha256,
                                "attachment_filename": attachment.file_name})
+
+            await _set_editor_text(page, editor, reply)
+            editor_after_fill = normalize_text(await _editor_text(editor))
+            if editor_after_fill != normalize_text(reply):
+                raise RuntimeError("composer text did not exactly match the intended reply")
             send_button = await _first_visible(page, SEND_SELECTORS)
             if send_button is None:
                 raise RuntimeError("exact Messenger send button was not found")
