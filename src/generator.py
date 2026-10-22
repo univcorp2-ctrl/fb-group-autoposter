@@ -3,8 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import random
 import re
+from datetime import date
 from dataclasses import dataclass
 from typing import Any
 
@@ -214,10 +214,10 @@ def build_investment_pitch(property_data: dict[str, Any]) -> str:
         return round(v / 1e4)
 
     cf_man = man(cf)
-    if cf_man >= 0:
-        cf_line = f"💵 想定キャッシュフロー：フルローン・金利2%・25年・経費20%想定で年間約{cf_man:,}万円"
-    else:
-        cf_line = f"💵 想定キャッシュフロー：年間約{cf_man:,}万円（自己資金を入れるとプラス化）"
+    if cf_man < 0:
+        # A negative full-loan cash flow undersells the listing; omit the block.
+        return ""
+    cf_line = f"💵 想定キャッシュフロー：フルローン・金利2%・25年・経費20%想定で年間約{cf_man:,}万円"
     return "\n".join(
         [
             INVEST_PREFIX,
@@ -229,50 +229,144 @@ def build_investment_pitch(property_data: dict[str, Any]) -> str:
     )
 
 
+_STATUTORY_LIFE = (("SRC", "SRC造", 47), ("RC", "RC造", 47), ("重量鉄骨", "重量鉄骨造", 34),
+                   ("軽量鉄骨", "軽量鉄骨造", 27), ("鉄骨", "鉄骨造", 34), ("木造", "木造", 22))
+# Internal broker jargon / duplicates that mean nothing to an investor reader.
+_POINT_SKIP = {"分かれ", "駅近", "SRC造", "RC造", "重量鉄骨造", "鉄骨造", "軽量鉄骨造", "木造"}
+_NO_YIELD_TYPES = ("土地", "用地", "空渡し", "更地")
+_ADDRESS_TAIL_RE = re.compile(r"([0-9０-９]+.*|[一二三四五六七八九十]+丁目.*)$")
+
+
+def _clean(value: Any) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return "" if text in {"", "-", "None", "記載なし", "不明"} else text
+
+
+def _public_location(location: str) -> str:
+    """Town-level address: drop 番地/号 so the exact lot is shared only on inquiry."""
+    trimmed = _ADDRESS_TAIL_RE.sub("", location).strip()
+    return trimmed or location
+
+
+def _property_type(property_data: dict[str, Any]) -> str:
+    for highlight in property_data.get("highlights") or []:
+        base = str(highlight).split("（")[0]
+        if base in _HASHTAG_TYPE_BASES:
+            return base
+    title = _clean(property_data.get("title"))
+    for base in sorted(_HASHTAG_TYPE_BASES, key=len, reverse=True):
+        if base in title:
+            return base
+    return "収益物件"
+
+
+def _city(location: str) -> str:
+    match = _AREA_RE.search(location)
+    return f"{match.group(1)}{match.group(2)}" if match else location[:10]
+
+
+def _access_lines(access: str) -> list[str]:
+    routes = [r.strip() for r in re.split(r"\s*[/／]\s*(?=\S*(?:線|鉄道|JR|メトロ|バス))", access) if r.strip()]
+    routes = list(dict.fromkeys(routes or [access]))
+    return routes[:2]
+
+
+def _selling_points(property_data: dict[str, Any], y: float | None, walk: str | None, ptype: str, ytext: str = "") -> list[str]:
+    points: list[str] = []
+    if walk and int(walk) <= 10:
+        points.append(f"駅徒歩{walk}分の駅近立地")
+    if y is not None and y >= 8:
+        points.append(f"表面利回り{ytext or f'{y:g}%'}の高利回り")
+    structure = _clean(property_data.get("structure"))
+    for key, label, years in _STATUTORY_LIFE:
+        if key in structure:
+            points.append(label)
+            break
+    used = {ptype}
+    for highlight in property_data.get("highlights") or []:
+        label = _clean(highlight)
+        if not label or label in used or label in _POINT_SKIP or label.split("（")[0] in _HASHTAG_TYPE_BASES:
+            continue
+        if any(label in p for p in points) or len(label) > 24:
+            continue
+        used.add(label)
+        points.append(label)
+    return points[:4]
+
+
 def fallback_body(property_data: dict[str, Any], group: dict[str, Any], *, revision_instruction: str = "") -> str:
-    property_id = property_data.get("property_id", "unknown")
-    rng = random.Random(_stable_seed(property_id, group["id"]))
-    openings = [
-        "収益物件のご紹介です。",
-        "物件情報を共有します。",
-        "不動産投資向けの案件です。",
-        "以下、物件概要です。",
-    ]
-    if "カジュアル" in str(group.get("tone", "")):
-        openings += ["気になる物件が出ました。", "投資用物件の共有です😊"]
-    highlights = property_data.get("highlights") or []
-    lines = [
-        rng.choice(openings),
-        "",
-        f"🏢 {property_data.get('title', '記載なし')}",
-        f"💰 価格：{property_data.get('price', '記載なし')}",
-        f"📈 利回り：{property_data.get('yield_pct', '記載なし')}",
-        f"📍 所在地：{property_data.get('location', '記載なし')}",
-        f"🚃 交通：{property_data.get('access', '記載なし')}",
-        f"🏗 構造：{property_data.get('structure', '記載なし')}",
-        f"📐 土地：{property_data.get('land_area', '記載なし')}／建物：{property_data.get('building_area', '記載なし')}",
-        f"🗓 築年：{property_data.get('year_built', '記載なし')}",
-    ]
-    # 推しポイント (mandatory buyer-merit). Placed near the top so the group
-    # rules' max_chars truncation never cuts it (it sits well before the
-    # contact/hashtags block that may be trimmed on long bodies).
-    lines += ["", build_pitch(property_data)]
-    invest = build_investment_pitch(property_data)
-    if invest:
-        lines += ["", invest]
-    if highlights:
-        bullet = " / ".join(str(x) for x in highlights)
-        lines += ["", f"✨ {bullet}"]
+    """Phone-readable listing post: headline, short fact block, points, CTA.
+
+    Layout follows the format buyers scan on 収益物件 portals (種別・エリア・
+    利回り・駅徒歩 up front, one fact per line). Only source facts are used.
+    """
+    title = _clean(property_data.get("title")) or "収益物件"
+    location = _clean(property_data.get("location"))
+    access = _clean(property_data.get("access"))
+    price = _clean(property_data.get("price"))
+    y = _parse_yield(property_data.get("yield_pct"))
+    # Show the yield exactly as the source states it (never re-round facts).
+    ytext = _clean(property_data.get("yield_pct"))
+    ytext = ytext if ytext.endswith("%") else f"{ytext}%"
+    walk_match = _WALK_RE.search(access)
+    walk = walk_match.group(1) if walk_match else None
+    ptype = _property_type(property_data)
+
+    headline_bits = []
+    if walk and int(walk) <= 10:
+        headline_bits.append(f"駅徒歩{walk}分")
+    if y is not None and y > 0:
+        headline_bits.append(f"表面利回り{ytext}")
+    lines = [f"【{ptype}｜{_city(location)}】" + "・".join(headline_bits), f"🏢 {title}", ""]
+
+    lines.append("■ 物件概要")
+    if price:
+        lines.append(f"・価格：{price}")
+    if y is not None and y > 0:
+        lines.append(f"・表面利回り：{ytext}")
+    elif ptype == "土地":
+        lines.append("・利回り：—（土地案件）")
+    if location:
+        lines.append(f"・所在地：{_public_location(location)}")
+    if access:
+        routes = _access_lines(access)
+        lines.append(f"・交通：{routes[0]}")
+        lines += [f"　　　{r}" for r in routes[1:]]
+    structure = _clean(property_data.get("structure"))
+    built = _clean(property_data.get("year_built"))
+    build_label = f"{built}築" if built else ""
+    # An EstateBoard date later than today is not proof a building is completed.
+    # Keep the source date, but never advertise an unbuilt property as "築".
+    if built:
+        match = re.fullmatch(r"(\d{4})年(?:(\d{1,2})月)?", built)
+        if match:
+            built_year = int(match.group(1))
+            built_month = int(match.group(2) or 1)
+            today = date.today()
+            if built_year > today.year or (built_year == today.year and built_month > today.month):
+                build_label = f"{built}（資料記載の将来年月・竣工状況未確認）"
+    if structure or built:
+        lines.append("・構造／建築時期：" + "／".join(v for v in (structure, build_label) if v))
+    land, bldg = _clean(property_data.get("land_area")), _clean(property_data.get("building_area"))
+    if land or bldg:
+        lines.append("・面積：" + "／".join(v for v in (f"土地 {land}" if land else "", f"建物 {bldg}" if bldg else "") if v))
+
+    points = _selling_points(property_data, y, walk, ptype, ytext)
+    if points:
+        lines += ["", "■ 推しポイント"] + [f"・{p}" for p in points]
+
     contact = str(group.get("contact", "") or "").strip()
     if contact:
         lines += ["", contact]
-    hashtags = build_hashtags(property_data)
-    if hashtags:
-        lines += ["", " ".join(hashtags)]
+    tags = ["#不動産投資", "#収益物件"]
+    if ptype != "収益物件":
+        tags.append(f"#{ptype}")
+    area = _AREA_RE.search(location)
+    if area:
+        tags += [f"#{area.group(1)}", f"#{area.group(2)}"]
+    lines += ["", " ".join(dict.fromkeys(tags))]
     if property_data.get("url") and group.get("allow_links", True):
         lines += ["", f"詳細：{property_data['url']}"]
-    if revision_instruction:
-        lines += ["", f"修正反映メモ：{revision_instruction}"]
     return apply_group_rules("\n".join(lines), group).body
 
 
@@ -313,12 +407,26 @@ group:
 revision_instruction:
 {revision_instruction}
 """
+    from src.runtime_usage import UsageRun
+    usage_run = UsageRun('facebook-posting', settings.claude_model)
     resp = client.messages.create(
         model=settings.claude_model,
         max_tokens=1600,
         temperature=0.7,
         messages=[{"role": "user", "content": prompt}],
     )
+    usage = getattr(resp, 'usage', None)
+    raw_input = getattr(usage, 'input_tokens', None)
+    cache_read = getattr(usage, 'cache_read_input_tokens', 0) or 0
+    cache_write = getattr(usage, 'cache_creation_input_tokens', 0) or 0
+    output = getattr(usage, 'output_tokens', None)
+    usage_run.record['source'] = 'anthropic.response.usage'
+    if all(type(n) is int and n >= 0 for n in (raw_input, cache_read, cache_write, output)):
+        usage_run.finish(json.dumps({'type': 'turn.completed', 'usage': {
+            'input_tokens': raw_input + cache_read + cache_write,
+            'cached_input_tokens': cache_read, 'output_tokens': output}}))
+    else:
+        usage_run.finish('')
     chunks = []
     for item in resp.content:
         text = getattr(item, "text", "")
@@ -363,6 +471,10 @@ def generate_variants(
                 log.warning("claude generation failed for group %s: %s", group.get("id"), exc)
                 degraded = True
         else:
+            from src.runtime_usage import UsageRun
+            usage_run = UsageRun('facebook-posting', 'none')
+            usage_run.record['source'] = 'deterministic-no-model'
+            usage_run.finish('{"type":"turn.completed","usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0}}')
             degraded = True
         if not body:
             body = fallback_body(property_data, group, revision_instruction=revision_instruction)
@@ -380,6 +492,10 @@ def generate_variants(
         if invest and INVEST_PREFIX not in body:
             body = f"{body.rstrip()}\n\n{invest}"
             body = apply_group_rules(body, group).body
+        from src.post_quality import evaluate as _evaluate_quality
+        quality = _evaluate_quality(body)
+        if not quality.passes:
+            log.warning("quality gate failed for %s/%s: %s", property_data.get("property_id"), group.get("id"), quality.summary())
         seed = _stable_seed(property_data.get("property_id", "unknown"), group["id"])
         variants.append(
             {
@@ -387,6 +503,9 @@ def generate_variants(
                 "body": body,
                 "images": property_data.get("images", []),
                 "char_count": len(body),
+                "quality_score": quality.score,
+                "quality_passes": quality.passes,
+                "quality_issues": quality.critical + quality.issues,
                 "variation_seed": seed,
                 "source_hash": source_hash,
                 "generation_fingerprint": _generation_fingerprint(
