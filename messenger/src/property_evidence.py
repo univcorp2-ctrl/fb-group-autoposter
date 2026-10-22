@@ -62,9 +62,17 @@ def lookup_property(inbound: str, source: Path | None = None) -> Evidence:
     wanted = _request_price_jpy(text)
     valid_rows = [row for row in rows if isinstance(row, dict)]
     explicit_ids = set(re.findall(r"(?:物件id|物件番号|propertyid)[:#]?([0-9]+)(?![a-z0-9])", text))
-    named_rows = [row for row in valid_rows
-                  if len(normalized(str(row.get("property.label") or ""))) >= 4
-                  and normalized(str(row.get("property.label") or "")) in text]
+    known_aliases = {
+        "24283": ("葛西の戸建", "葛西戸建", "南葛西戸建", "南葛西の戸建", "南葛西2丁目"),
+        "23586": ("リアライズ幕張ビル", "幕張ビル", "海浜幕張ビル", "幕張空ビル"),
+    }
+    named_rows = []
+    for row in valid_rows:
+        pid = str(row.get("propertyId") or row.get("property.id") or "")
+        label = normalized(str(row.get("property.label") or ""))
+        aliases = [normalized(a) for a in known_aliases.get(pid, ())]
+        if (len(label) >= 4 and label in text) or any(len(a) >= 4 and a in text for a in aliases):
+            named_rows.append(row)
     has_identity = bool(explicit_ids or named_rows)
     if explicit_ids:
         identified = [row for row in valid_rows
