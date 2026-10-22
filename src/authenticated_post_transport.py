@@ -138,6 +138,20 @@ async def run_authenticated_task(task, path, on_click=None, *, timeout=180):
                 if task.get('status') != 'finished':
                     raise TimeoutError('authenticated content result timeout')
                 result = {**task['result'], 'click_marked':bridge.clicked}
+                if task.get('action') == 'find_post' and result.get('status') == 'posted':
+                    from urllib.parse import urlparse
+                    permalink = str(result.get('permalink') or '')
+                    parsed = urlparse(permalink)
+                    expected = '/groups/'+str(task['group_id'])+'/'
+                    if parsed.hostname != 'www.facebook.com' or not parsed.path.startswith(expected):
+                        raise ValueError('verification returned a different group')
+                    await page.goto(permalink,wait_until='domcontentloaded',timeout=45000)
+                    await page.wait_for_timeout(2500)
+                    import re
+                    norm=lambda value: re.sub(r'\s+','',value)
+                    articles=await page.locator('[role="article"]').all_inner_texts()
+                    if not any(norm(task['body']) in norm(article) for article in articles):
+                        result={'status':'uncertain','error':'exact_post_body_not_visible','click_marked':False}
                 if result.get('status') not in {'posted','session_ok','layout_ok'}:
                     task['editor_diagnostics'] = await page.evaluate("""() => [...document.querySelectorAll('[contenteditable="true"]')].slice(0,8).map(e=>({
                       connected:e.isConnected, visible:e.offsetParent!==null, role:e.getAttribute('role'),
