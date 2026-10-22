@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 from pathlib import Path
 import sys
 from datetime import datetime, timezone
@@ -17,7 +18,7 @@ RUNTIME = Path(os.environ.get("LOCALAPPDATA", "")) / "FBGroupAutoposter" / "data
 SECRETS = PRIVATE / "estateboard_analytics_tokens.json"
 STATE = PRIVATE / "FBGroupAutoposter" / "analytics_sync_checkpoint.json"
 RESULT = PRIVATE / "FBGroupAutoposter" / "analytics_sync_last_result.json"
-MAX_BATCH = 50
+MAX_BATCH = max(1, min(50, int(os.environ.get('FB_ANALYTICS_BATCH_LIMIT', '50'))))
 
 sys.path.insert(0, str(ROOT))
 from src.analytics_export import (
@@ -59,7 +60,9 @@ def run(check_only: bool = False) -> int:
     checkpoint = json.loads(STATE.read_text(encoding="utf-8")) if STATE.is_file() else {}
     if not isinstance(checkpoint, dict):
         raise RuntimeError("Invalid checkpoint; refusing to overwrite")
-    client = AnalyticsClient(config)
+    native_transport = ROOT / 'scripts' / 'analytics_ingest_native.ps1'
+    if not native_transport.is_file():
+        raise RuntimeError('Native transport missing')
     catalog = load_group_catalog(config.groups_path)
     try:
         for row in published + other:
@@ -73,7 +76,17 @@ def run(check_only: bool = False) -> int:
             if status["sent"] >= MAX_BATCH:
                 break
             try:
-                client.send_post(payload)
+                result = subprocess.run(
+                    ['powershell.exe', '-NoProfile', '-NonInteractive', '-File', str(native_transport)],
+                    input=json.dumps({'token': token, 'payload': payload}, ensure_ascii=False),
+                    capture_output=True, text=True, encoding='utf-8', errors='replace',
+                    timeout=40, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+                if result.returncode != 0:
+                    raise RuntimeError('Windows native HTTPS ingest failed')
+                response = json.loads(result.stdout.strip())
+                if not response.get('ok'):
+                    raise RuntimeError('Analytics ingest API did not confirm success')
             except Exception as exc:
                 status["failed"] += 1
                 status["error_type"] = type(exc).__name__
