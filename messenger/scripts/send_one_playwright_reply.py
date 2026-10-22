@@ -309,8 +309,8 @@ async def _run_browser(
     editor: Any | None = None
 
     async with async_playwright() as playwright:
-        attachment = await attach_authenticated_context(playwright, settings)
-        page = await select_messenger_page(attachment.context)
+        browser_attachment = await attach_authenticated_context(playwright, settings)
+        page = await select_messenger_page(browser_attachment.context)
         try:
             current, classification, scanned = await _scan_exact_thread(
                 page,
