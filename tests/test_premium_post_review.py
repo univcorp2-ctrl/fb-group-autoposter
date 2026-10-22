@@ -86,7 +86,7 @@ def test_failed_review_is_never_reinvoked_for_identical_task(tmp_path):
     first = review_post_copy(job, target, {'id': '123'}, **options)
     second = review_post_copy(job, target, {'id': '123'}, **options)
     assert first == {'approved': False, 'reason': 'premium_review_unavailable:RuntimeError'}
-    assert second == {'approved': False, 'reason': 'premium_review_once_consumed'}
+    assert second == {'approved': False, 'reason': 'premium_review_task_once_consumed'}
     assert len(calls) == 1
 
 
