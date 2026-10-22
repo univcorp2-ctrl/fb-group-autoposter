@@ -21,9 +21,10 @@ def row(**changes):
     base.update(changes)
     return base
 
-def test_premium_review_allows_matching_message():
+def test_text_only_is_never_autosent_even_after_premium_review():
     r=row()
-    _require_premium_approval(args(),r,r["draft"])
+    with pytest.raises(RuntimeError,match="auto_send_requires_explicit_document_request"):
+        _require_premium_approval(args(),r,r["draft"])
 
 def test_fail_closed_legacy_and_unreviewed():
     for state in ({"review_status":None},{"review_status":"needs_human"},{"review_model":"cheap-template"},

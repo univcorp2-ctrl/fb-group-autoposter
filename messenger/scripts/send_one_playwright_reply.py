@@ -122,6 +122,10 @@ def _require_premium_approval(args: argparse.Namespace, row: dict[str, Any], rep
         raise RuntimeError("premium_review_content_invalid")
     from src.review_pipeline import document_requested
     wants_pdf = document_requested(row.get("last_message", ""))
+    # Unattended Messenger sending is intentionally PDF-request-only.
+    # Old approved text-only drafts must never bypass this new restriction.
+    if not wants_pdf:
+        raise RuntimeError("auto_send_requires_explicit_document_request")
     if wants_pdf:
         from src.material_delivery import plan_material, download_material
         expected = row.get("material") or {}

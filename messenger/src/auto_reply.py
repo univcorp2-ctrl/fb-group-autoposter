@@ -64,7 +64,9 @@ def recent_inbox_timestamp(label: str) -> bool:
 def eligible_message(row: dict) -> bool:
     text = str(row.get("last_message") or "").strip()
     return bool(
-        row.get("one_to_one_verified") is True
+        # Only property-document requests are in scope for unattended sends.
+        document_requested(text)
+        and row.get("one_to_one_verified") is True
         and row.get("participant_count") == 1
         and row.get("is_group") is False
         and ONLY_INBOUND.fullmatch(str(row.get("thread_id") or ""))

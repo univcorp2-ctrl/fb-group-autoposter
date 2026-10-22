@@ -139,6 +139,7 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
             # Existing inbox previews are hashed at activation; no old
             # conversation can become a new send merely due to re-review.
             from src.auto_reply import BASELINE_INBOX, recent_inbox_timestamp
+            doc_terms = ("資料", "図面", "レントロール", "概要書", "パンフ", "PDF", "pdf", "物件概要")
             if not BASELINE_INBOX.is_file():
                 summary["needs_baseline"] = True
                 needing = []
@@ -150,7 +151,8 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                 doc_terms = ("資料", "図面", "レントロール", "概要書", "パンフ", "PDF", "pdf", "物件概要")
                 needing = [
                     t for t in needing
-                    if recent_inbox_timestamp(t.get("time_text", ""))
+                    if any(term in str(t.get("preview", "")) for term in doc_terms)
+                    and recent_inbox_timestamp(t.get("time_text", ""))
                     and hashes.get(str(t.get("thread_id"))) != hashlib.sha256(
                         str(t.get("preview","")).encode("utf-8")
                     ).hexdigest()
