@@ -451,6 +451,13 @@ async def _run_browser(
                     dom_confirmed = True
                     break
 
+            attachment_confirmed = True
+            if attachment is not None:
+                from src.messenger_attachment import attachment_visible_after_send
+                attachment_confirmed = await attachment_visible_after_send(
+                    page, attachment.file_name
+                )
+
             post_inbox_confirmed = False
             post_reason = "not_checked"
             post_preview = ""
@@ -472,14 +479,7 @@ async def _run_browser(
                     )
                 )
             except Exception as exc:  # noqa: BLE001 - DOM proof remains available
-                post_reason = f"post_check_error:{type(exc).__name__}"
-
-            attachment_confirmed = True
-            if attachment is not None:
-                from src.messenger_attachment import attachment_visible_after_send
-                attachment_confirmed = await attachment_visible_after_send(
-                    page, attachment.file_name
-                )
+                post_reason = f"post_check_error:{type(exc).__name__}" 
             # A verified document reply requires BOTH text and PDF evidence.
             sent = (dom_confirmed or post_inbox_confirmed) and attachment_confirmed
             status["attachment_confirmed"] = attachment_confirmed
