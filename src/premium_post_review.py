@@ -24,7 +24,8 @@ def review_post_copy(job, target, group, *, source_path=None, review_dir=None, r
     blocked = lambda reason: {'approved': False, 'reason': reason}
     try:
         age = time.time() - source_path.stat().st_mtime
-        if not 0 <= age <= 3 * 86400:
+        # Windows timestamp precision can produce a tiny negative age just after write.
+        if not -2 <= age <= 3 * 86400:
             return blocked('latest_source_stale')
         source = json.loads(source_path.read_text(encoding='utf-8'))
         rows = source.get('items') if isinstance(source, dict) else source
