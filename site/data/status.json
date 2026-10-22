@@ -1,18 +1,28 @@
 {
-  "generated_at": "2026-10-22T11:09:42.291426+00:00",
+  "generated_at": "2026-10-22T14:06:37.035477+00:00",
   "health": "warning",
   "message": "直近履歴で失敗が成功を上回っています。",
   "counts": {
-    "failed": 45,
-    "posted": 1,
-    "uncertain": 4
+    "posted": 5,
+    "failed": 44,
+    "uncertain": 1
   },
-  "last_post_at": "2026-10-22T08:22:31.017563+00:00",
+  "last_post_at": "2026-10-22T12:06:58.077142+00:00",
   "heartbeat": {
-    "orchestrator": "2026-10-22T11:09:16.817334+00:00",
+    "orchestrator": "2026-10-22T13:51:04.999319+00:00",
     "session": "2026-08-18T23:11:06.600187+00:00"
   },
   "recent": [
+    {
+      "property_id": "eb-30440",
+      "group_id": "2217518449046952",
+      "status": "posted",
+      "attempts": 0,
+      "last_error": null,
+      "posted_at": "2026-10-22T12:06:58.077142+00:00",
+      "permalink": "https://www.facebook.com/groups/2217518449046952/posts/2328223617976434/",
+      "updated_at": "2026-10-22T12:07:54.777183+00:00"
+    },
     {
       "property_id": "eb-30440",
       "group_id": "2217518449046952",
@@ -206,31 +216,31 @@
     {
       "property_id": "eb-28032",
       "group_id": "1092188554162022",
-      "status": "uncertain",
+      "status": "posted",
       "attempts": 0,
-      "last_error": "permalink_not_found",
+      "last_error": null,
       "posted_at": "2026-10-22T07:46:29.758425+00:00",
-      "permalink": null,
+      "permalink": "https://www.facebook.com/groups/1092188554162022/posts/28753972934223545/",
       "updated_at": "2026-10-22T07:47:09.510071+00:00"
     },
     {
       "property_id": "eb-15416",
       "group_id": "1261566862455883",
-      "status": "uncertain",
+      "status": "posted",
       "attempts": 0,
-      "last_error": "permalink_not_found",
+      "last_error": null,
       "posted_at": "2026-10-22T07:19:33.893396+00:00",
-      "permalink": null,
+      "permalink": "https://www.facebook.com/groups/1261566862455883/posts/1473964511216116/",
       "updated_at": "2026-10-22T07:20:09.273501+00:00"
     },
     {
       "property_id": "eb-20511",
       "group_id": "350006781786522",
-      "status": "uncertain",
+      "status": "posted",
       "attempts": 0,
-      "last_error": "pending_admin_approval",
+      "last_error": null,
       "posted_at": "2026-10-22T06:45:18.469459+00:00",
-      "permalink": null,
+      "permalink": "https://www.facebook.com/groups/350006781786522/posts/28843067405387079/",
       "updated_at": "2026-10-22T06:46:02.665529+00:00"
     },
     {
@@ -502,16 +512,6 @@
       "posted_at": null,
       "permalink": null,
       "updated_at": "2026-10-22T04:56:01.752239+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "1092188554162022",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:55:58.495006+00:00"
     }
   ]
 }
