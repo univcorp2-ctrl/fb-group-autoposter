@@ -31,3 +31,11 @@
 5. Windows起動時の可視コンソール0件の前後比較、再ログイン/再起動後の継続も未検証。pythonw入口だけで全子プロセスの無窓動作を証明しない。
 
 KEEP: ソース・回帰テスト・本記録。ARCHIVE: 旧送信保留マーカー。DELETE: なし。
+
+## 追加依頼：タスク別トークン自動連携
+
+Facebook・Messenger・LINEに実行別の実測記録を追加し、既存 `AI-Operations-LightCheck` の15分更新へ接続した。09:20:02 JSTの本番ダッシュボードAPIで、3タスクの値が私有台帳と一致（Facebook 0、Messenger 15,190、LINE 19,516）。初期値は実接続・未送信の生成検証に使った実測量であり、顧客実送達の証明ではない。過去の未収集分は補完しない。
+
+LINEは既存依存関係のあるNTFS検証用コピーでbuildと328テストPASS、Python11テストPASS。Messenger178テストPASS、集計PowerShell17テストPASS。SQLite子プロセスの無窓起動へ修正後、実スケジュール起動の40秒観測で新規可視コンソール0件、集計タスク終了0を確認。
+
+連携仕様と再開位置は兄弟リポジトリ `cloud-local-task-dashboard/docs/token-usage.md`。集計元の実稼働コードは `C:/Users/t0015/codex-workspace-local-copy/automation-control-center-site/scripts/agent-health/`。投稿・返信・自主案内の完全復旧という元の目標は引き続き未完了。
