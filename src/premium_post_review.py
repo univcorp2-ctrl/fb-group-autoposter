@@ -10,7 +10,7 @@ from src.codex_provider import _call_codex
 from src.estateboard_adapter import is_postable, property_key, to_property
 
 FACTS = ('property_id', 'title', 'price', 'yield_pct', 'location', 'access', 'structure',
-         'land_area', 'building_area', 'year_built')
+         'land_area', 'building_area', 'year_built', 'highlights')
 
 
 def digest(value):
@@ -40,7 +40,7 @@ def review_post_copy(job, target, group, *, source_path=None, review_dir=None, r
         if not body:
             return blocked('empty_post_body')
         body_hash = hashlib.sha256(body.encode('utf-8')).hexdigest()
-        policy = {k: group.get(k) for k in ('id', 'name', 'allow_links', 'max_chars', 'forbidden')}
+        policy = {k: group.get(k) for k in ('id', 'name', 'allow_links', 'max_chars', 'forbidden', 'signature')}
         permission = {k: matches[0].get(k) for k in ('publicationStatus', 'publicationScope', 'property.allowBrokerSharing')}
         fingerprint = digest({'facts': latest, 'body': body, 'group': policy, 'permission': permission})
         directory = Path(review_dir or r'C:\AI-Agent\state\facebook-post-review')
@@ -57,6 +57,8 @@ def review_post_copy(job, target, group, *, source_path=None, review_dir=None, r
                   '最新の物件情報と投稿本文を照合し、価格・所在地・面積・構造・利回りの矛盾、根拠のない保証、'
                   '融資や販売継続・法的適合性の断定、非公開条件、グループ規則違反、読みにくさを検査する。'
                   '想定シミュレーションは想定と免責が明確で、数字に矛盾がない場合だけ許可。'
+                  'highlightsは元データから正規化した裏付け済み事実。allow_links=falseは物件本文のURL禁止で、'
+                  '既存運用で承認されたgroup.signatureの完全一致部分だけは署名URLの例外。その他のURLを例外扱いしない。'
                   '本文は変更しない。判断材料が不足する場合も承認しない。'
                   'JSONだけ返す: {"approved":true又はfalse,"reason":"短い根拠","bodyHash":"渡されたSHA256"}。\n'
                   '<untrusted_data>' + json.dumps(evidence, ensure_ascii=False) + '</untrusted_data>')

@@ -22,7 +22,7 @@ async def read_recent_thread_text(page: Any, thread_id: str, recipient_name: str
     temp = page
     try:
         await temp.goto(
-            f"https://www.messenger.com/t/{thread_id}",
+            f"https://www.messenger.com/e2ee/t/{thread_id}/",
             wait_until="domcontentloaded", timeout=40_000,
         )
         await temp.wait_for_timeout(1200)

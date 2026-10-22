@@ -341,7 +341,7 @@ async def _run_browser(
                 raise RuntimeError("saved target URL is not the exact expected thread URL")
 
             await page.goto(
-                expected_url,
+                f"https://www.messenger.com/e2ee/t/{args.thread_id}/",
                 wait_until="domcontentloaded",
                 timeout=60_000,
             )
