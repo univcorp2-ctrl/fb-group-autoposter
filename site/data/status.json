@@ -1,16 +1,87 @@
 {
-  "generated_at": "2026-10-22T05:42:28.070634+00:00",
-  "health": "stalled",
-  "message": "確認済み投稿がありません。",
+  "generated_at": "2026-10-22T08:24:58.872953+00:00",
+  "health": "warning",
+  "message": "直近履歴で失敗が成功を上回っています。",
   "counts": {
-    "failed": 50
+    "failed": 45,
+    "uncertain": 5
   },
-  "last_post_at": null,
+  "last_post_at": "2026-10-22T08:22:31.017563+00:00",
   "heartbeat": {
-    "orchestrator": "2026-10-22T05:42:04.936959+00:00",
+    "orchestrator": "2026-10-22T08:24:03.437173+00:00",
     "session": "2026-08-18T23:11:06.600187+00:00"
   },
   "recent": [
+    {
+      "property_id": "eb-30440",
+      "group_id": "2217518449046952",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:2027年3月は現時点で未来ですが、本文は「2027年3月築」と竣工済みのように表記しています。竣工予定であることの確認と明記が必要です。",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T08:24:01.635201+00:00"
+    },
+    {
+      "property_id": "eb-29625",
+      "group_id": "674802419312579",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-22T08:22:31.017563+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-22T08:23:18.315415+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "1092188554162022",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-22T07:46:29.758425+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-22T07:47:09.510071+00:00"
+    },
+    {
+      "property_id": "eb-15416",
+      "group_id": "1261566862455883",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-22T07:19:33.893396+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-22T07:20:09.273501+00:00"
+    },
+    {
+      "property_id": "eb-20511",
+      "group_id": "350006781786522",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "pending_admin_approval",
+      "posted_at": "2026-10-22T06:45:18.469459+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-22T06:46:02.665529+00:00"
+    },
+    {
+      "property_id": "eb-30440",
+      "group_id": "2217518449046952",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:2027年3月は現時点で未来ですが、本文は「2027年3月築」と竣工済みのように表記しています。竣工予定であることの確認と明記が必要です。",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T06:44:58.793454+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "1006724479360528",
+      "status": "uncertain",
+      "attempts": 0,
+      "last_error": "permalink_not_found",
+      "posted_at": "2026-10-22T06:09:35.118226+00:00",
+      "permalink": null,
+      "updated_at": "2026-10-22T06:10:19.186012+00:00"
+    },
     {
       "property_id": "eb-29625",
       "group_id": "674802419312579",
@@ -440,76 +511,6 @@
       "posted_at": null,
       "permalink": null,
       "updated_at": "2026-10-22T04:43:20.195718+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "1092188554162022",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:43:16.853685+00:00"
-    },
-    {
-      "property_id": "eb-15416",
-      "group_id": "1261566862455883",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:43:13.366105+00:00"
-    },
-    {
-      "property_id": "eb-20511",
-      "group_id": "350006781786522",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:43:09.293079+00:00"
-    },
-    {
-      "property_id": "eb-30440",
-      "group_id": "2217518449046952",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:43:06.027652+00:00"
-    },
-    {
-      "property_id": "eb-29624",
-      "group_id": "1006724479360528",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:43:02.647078+00:00"
-    },
-    {
-      "property_id": "eb-29625",
-      "group_id": "674802419312579",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:40:58.865454+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "1092188554162022",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:40:55.305048+00:00"
     }
   ]
 }
