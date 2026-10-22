@@ -136,6 +136,11 @@ async def scrape_inbox(page: Any, max_threads: int, *, quick: bool = False) -> l
     except Exception:  # noqa: BLE001 - fall through; _poll_rows still tries
         pass
     if quick:
+        # The virtualized list retains its scroll position between daemon polls.
+        # Start every scan at the newest rows, including after a deep lookup.
+        await page.mouse.move(220, 400)
+        await page.mouse.wheel(0, -100000)
+        await page.wait_for_timeout(350)
         # The newest inbound DM is at the top. Never scroll through history
         # on every minute-sized poll; that takes too long and disturbs UI state.
         await page.wait_for_timeout(650)
@@ -184,6 +189,8 @@ async def _poll_rows(page: Any, *, max_scrolls: int = 14, interval_ms: int = 120
         # Only stop once we have scrolled a few screens and seen no new rows for
         # several consecutive reads — otherwise a lagging render ends it too soon.
         if i >= 5 and idle >= 4:
+            break
+        if i == max_scrolls - 1:
             break
         try:
             await page.mouse.move(220, 400)
