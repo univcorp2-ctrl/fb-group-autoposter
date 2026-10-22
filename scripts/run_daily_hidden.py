@@ -1,10 +1,15 @@
 """Windowless scheduled entrypoint preserving the deployed runtime configuration."""
 from pathlib import Path
+import argparse
 import subprocess
 import sys
 
 
 def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--script',default=r'scripts\run_daily_drive.py',
+        choices=[r'scripts\run_daily_drive.py',r'scripts\verify_posts.py'])
+    script=parser.parse_args().script
     root = Path(__file__).resolve().parents[1]
     wrapper = root.parent / 'run-task.ps1'
     if not wrapper.is_file():
@@ -15,7 +20,7 @@ def main():
         result = subprocess.run([
             'powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden',
             '-ExecutionPolicy', 'Bypass', '-File', str(wrapper),
-            '-Script', r'scripts\run_daily_drive.py',
+            '-Script', script,
         ], cwd=root, stdin=subprocess.DEVNULL, stdout=stream, stderr=stream,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), check=False)
     return result.returncode
