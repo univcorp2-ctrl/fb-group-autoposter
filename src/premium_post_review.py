@@ -90,5 +90,8 @@ def review_post_copy(job, target, group, *, source_path=None, review_dir=None, r
         temporary.write_text(json.dumps(record, ensure_ascii=False), encoding='utf-8')
         os.replace(temporary, path)
         return record
+    except subprocess.CalledProcessError as error:
+        # Never log stdout/stderr: model output can contain private property facts.
+        return blocked('premium_review_unavailable:codex_exit_' + str(error.returncode))
     except Exception as error:
         return blocked('premium_review_unavailable:' + type(error).__name__)
