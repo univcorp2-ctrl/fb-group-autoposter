@@ -65,8 +65,10 @@
   }
 
   function isSafeNewThreadElement(el) {
-    if (!el || el.offsetParent === null) return false;
+    if (!el || !el.getClientRects().length || getComputedStyle(el).visibility === "hidden") return false;
     if (el.closest("#fbgp-panel")) return false;
+    if (el.closest('[role="region"][aria-label="スレッド作成ツール"]')) return false;
+    if (/(?:に書く|write to)/i.test(el.getAttribute?.('aria-label') || '')) return false;
     if (isInsideExistingPost(el)) return false;
 
     let node = el;
@@ -109,7 +111,7 @@
       'div[role="textbox"][contenteditable="true"], div[contenteditable="true"]'
     );
     for (const el of candidates) {
-      if (isSafeNewThreadElement(el)) return el;
+      if (isSafeNewThreadElement(el) && findComposerScope(el)) return el;
     }
     return null;
   }
@@ -419,11 +421,16 @@
     trigger.click();
 
     log("新規投稿本文欄を待機中...");
-    const editable = await waitFor(findDialogEditable, { timeout: 10000 });
+    let editable = await waitFor(() => {
+      const candidate = findDialogEditable();
+      return candidate && findComposerScope(candidate) ? candidate : null;
+    }, { timeout: 10000 });
     if (!editable) throw new Error("安全な新規投稿本文欄が見つかりません");
     if (task?.task_id) await reportStage(task.task_id, "composer_ready");
 
     await sleep(400);
+    editable = findDialogEditable();
+    if (!editable || !findComposerScope(editable)) throw new Error("新規投稿composerの再確認に失敗しました");
     log("本文を入力中...");
     const insertMode = await insertTextReactSafe(editable, text, { requireActiveButton: post || task?.action === "layout_check" });
     log(`本文入力方式: ${insertMode} [${describePostButton(editable)}]`);
