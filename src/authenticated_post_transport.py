@@ -118,6 +118,13 @@ async def run_authenticated_task(task, path, on_click=None, *, timeout=180):
                 if task.get('status') != 'finished':
                     raise TimeoutError('authenticated content result timeout')
                 result = {**task['result'], 'click_marked':bridge.clicked}
+                if result.get('status') not in {'posted','session_ok','layout_ok'}:
+                    task['editor_diagnostics'] = await page.evaluate("""() => [...document.querySelectorAll('[contenteditable="true"]')].slice(0,8).map(e=>({
+                      connected:e.isConnected, visible:e.offsetParent!==null, role:e.getAttribute('role'),
+                      dialog:!!e.closest('[role="dialog"]'), article:!!e.closest('[role="article"]'),
+                      ancestors:(()=>{let a=[],n=e;for(let i=0;i<7&&n;i++,n=n.parentElement)a.push({tag:n.tagName,role:n.getAttribute('role'),aria:n.getAttribute('aria-label'),visible:n.offsetParent!==null});return a;})()
+                    }))""")
+                    bridge.save()
                 screenshot = ROOT/'screenshots'/('authenticated-'+task['task_id']+'.png')
                 screenshot.parent.mkdir(parents=True, exist_ok=True)
                 try:
