@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-22T05:09:33.248358+00:00",
+  "generated_at": "2026-10-22T05:42:28.070634+00:00",
   "health": "stalled",
   "message": "確認済み投稿がありません。",
   "counts": {
@@ -7,10 +7,190 @@
   },
   "last_post_at": null,
   "heartbeat": {
-    "orchestrator": "2026-10-22T05:09:04.067960+00:00",
+    "orchestrator": "2026-10-22T05:42:04.936959+00:00",
     "session": "2026-08-18T23:11:06.600187+00:00"
   },
   "recent": [
+    {
+      "property_id": "eb-29625",
+      "group_id": "674802419312579",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:42:04.933439+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "1092188554162022",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:42:01.732264+00:00"
+    },
+    {
+      "property_id": "eb-15416",
+      "group_id": "1261566862455883",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:41:58.724188+00:00"
+    },
+    {
+      "property_id": "eb-20511",
+      "group_id": "350006781786522",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:41:55.466163+00:00"
+    },
+    {
+      "property_id": "eb-30440",
+      "group_id": "2217518449046952",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:41:52.302722+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "1006724479360528",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:41:49.077272+00:00"
+    },
+    {
+      "property_id": "eb-29625",
+      "group_id": "674802419312579",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:26:45.305699+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "1092188554162022",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:26:42.196160+00:00"
+    },
+    {
+      "property_id": "eb-15416",
+      "group_id": "1261566862455883",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:26:39.095185+00:00"
+    },
+    {
+      "property_id": "eb-20511",
+      "group_id": "350006781786522",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:26:35.828605+00:00"
+    },
+    {
+      "property_id": "eb-30440",
+      "group_id": "2217518449046952",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:26:32.563488+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "1006724479360528",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:26:28.983092+00:00"
+    },
+    {
+      "property_id": "eb-29625",
+      "group_id": "674802419312579",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:11:24.707843+00:00"
+    },
+    {
+      "property_id": "eb-28032",
+      "group_id": "1092188554162022",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:11:20.893052+00:00"
+    },
+    {
+      "property_id": "eb-15416",
+      "group_id": "1261566862455883",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:11:17.198179+00:00"
+    },
+    {
+      "property_id": "eb-20511",
+      "group_id": "350006781786522",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:11:14.331181+00:00"
+    },
+    {
+      "property_id": "eb-30440",
+      "group_id": "2217518449046952",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:11:10.570292+00:00"
+    },
+    {
+      "property_id": "eb-29624",
+      "group_id": "1006724479360528",
+      "status": "failed",
+      "attempts": 0,
+      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
+      "posted_at": null,
+      "permalink": null,
+      "updated_at": "2026-10-22T05:11:05.851544+00:00"
+    },
     {
       "property_id": "eb-29625",
       "group_id": "674802419312579",
@@ -330,186 +510,6 @@
       "posted_at": null,
       "permalink": null,
       "updated_at": "2026-10-22T04:40:55.305048+00:00"
-    },
-    {
-      "property_id": "eb-15416",
-      "group_id": "1261566862455883",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:40:51.627916+00:00"
-    },
-    {
-      "property_id": "eb-20511",
-      "group_id": "350006781786522",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:40:47.512495+00:00"
-    },
-    {
-      "property_id": "eb-30440",
-      "group_id": "2217518449046952",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:40:43.683232+00:00"
-    },
-    {
-      "property_id": "eb-29624",
-      "group_id": "1006724479360528",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:40:40.241657+00:00"
-    },
-    {
-      "property_id": "eb-29625",
-      "group_id": "674802419312579",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:39:35.514799+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "1092188554162022",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:39:30.166225+00:00"
-    },
-    {
-      "property_id": "eb-15416",
-      "group_id": "1261566862455883",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:39:26.374572+00:00"
-    },
-    {
-      "property_id": "eb-20511",
-      "group_id": "350006781786522",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:39:22.853189+00:00"
-    },
-    {
-      "property_id": "eb-30440",
-      "group_id": "2217518449046952",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:39:19.164775+00:00"
-    },
-    {
-      "property_id": "eb-29624",
-      "group_id": "1006724479360528",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:39:15.860264+00:00"
-    },
-    {
-      "property_id": "eb-29625",
-      "group_id": "674802419312579",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:38:21.832093+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "1092188554162022",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:38:18.591017+00:00"
-    },
-    {
-      "property_id": "eb-15416",
-      "group_id": "1261566862455883",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:38:15.649656+00:00"
-    },
-    {
-      "property_id": "eb-20511",
-      "group_id": "350006781786522",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:38:12.181551+00:00"
-    },
-    {
-      "property_id": "eb-30440",
-      "group_id": "2217518449046952",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:38:09.044505+00:00"
-    },
-    {
-      "property_id": "eb-29624",
-      "group_id": "1006724479360528",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:38:05.877940+00:00"
-    },
-    {
-      "property_id": "eb-29625",
-      "group_id": "674802419312579",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:23:01.574899+00:00"
-    },
-    {
-      "property_id": "eb-28032",
-      "group_id": "1092188554162022",
-      "status": "failed",
-      "attempts": 0,
-      "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
-      "posted_at": null,
-      "permalink": null,
-      "updated_at": "2026-10-22T04:22:58.536169+00:00"
     }
   ]
 }
