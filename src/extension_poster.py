@@ -48,6 +48,12 @@ class ExtensionFacebookPoster(FacebookPoster):
         timeout: int = 180,
     ) -> dict[str, Any]:
         task_path = self._task_dir / f"{attempt_id}.json"
+        if os.getenv('FB_POST_TRANSPORT') == 'authenticated_cdp':
+            from src.authenticated_post_transport import cadence_remaining
+            with self.db.connect() as conn:
+                last_click = conn.execute('SELECT MAX(click_started_at) FROM submission_attempts').fetchone()[0]
+            remaining = cadence_remaining(last_click, self.settings.min_interval_min)
+            if remaining: await asyncio.sleep(remaining)
         images = [str(item) for item in (target.get("images") or [])]
         payload = {
             "task_id": attempt_id,

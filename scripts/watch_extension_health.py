@@ -84,6 +84,18 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check-only", action="store_true")
     args = parser.parse_args()
+    from dotenv import load_dotenv
+    load_dotenv(ROOT/'.env')
+    if os.getenv('FB_POST_TRANSPORT') == 'authenticated_cdp':
+        path=ROOT/'data'/'authenticated_post_transport_status.json'
+        try: status=json.loads(path.read_text(encoding='utf-8'))
+        except (OSError,ValueError): status={'last_status':'UNKNOWN'}
+        state={**status,'checked_at':datetime.now(timezone.utc).isoformat(),
+               'result':'authenticated_cdp_active_legacy_extension_not_used','legacy_chrome_restart':False}
+        atomic_json(STATE_FILE,state)
+        atomic_json(DRIVE_STATUS,state)
+        print(json.dumps(state,ensure_ascii=False))
+        return 0 if status.get('last_status') in {'posted','layout_ok','session_ok'} else 2
     now = time.time()
     stamp = datetime.now(timezone.utc).isoformat()
     prior = {}

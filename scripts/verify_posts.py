@@ -20,6 +20,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -39,6 +40,9 @@ async def run(*, headed: bool, probe: bool) -> dict:
     settings = Settings.load()
     groups = {str(g["id"]): g for g in load_groups()}
     db = QueueDB(settings.db_path)
+    if os.getenv('FB_POST_TRANSPORT') == 'authenticated_cdp' and not probe:
+        from src.authenticated_post_reconcile import reconcile
+        return await reconcile(settings,db)
 
     # Re-check posted/uncertain, plus recently-failed targets (so a post that was
     # transiently missed can be RESTORED to posted once found). We never downgrade

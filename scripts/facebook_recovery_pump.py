@@ -17,12 +17,23 @@ from pathlib import Path
 from urllib.request import urlopen
 
 ROOT=Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path: sys.path.insert(0,str(ROOT))
 from dotenv import load_dotenv
 load_dotenv(ROOT / '.env')
 STATE=ROOT/"data"/"recovery_pump_status.json"
 DRIVE=Path(r"G:\マイドライブ\AI_Agents\Private\FBGroupAutoposter\recovery_pump_status.json")
 WRAPPER=Path(r"C:\Users\t0015\AppData\Local\FBGroupAutoposter\run-task.ps1")
 MAX_STARTS_PER_DAY=6
+
+def pipeline_busy(lock_path=None, is_running=None):
+    path = Path(lock_path or Path(os.getenv('DB_PATH',str(WRAPPER.parent/'data'/'jobs.db'))).with_name('pipeline.lock'))
+    if not path.exists(): return False
+    try: pid = int(path.read_text(encoding='utf-8').strip())
+    except (OSError,ValueError): return True
+    if is_running is None:
+        from src.orchestrator import _pid_is_running
+        is_running = _pid_is_running
+    return bool(pid > 0 and is_running(pid))
 
 def save(data:dict)->None:
     for path in (STATE,DRIVE):
@@ -65,6 +76,8 @@ def main()->int:
             ok,reason=safe_to_run(health,expected)
         if not ok:
             result["reason"]=reason
+        elif pipeline_busy():
+            result['reason']='existing_pipeline_owner_running'
         elif starts>=MAX_STARTS_PER_DAY:
             result["reason"]="daily_start_limit"
         elif not WRAPPER.is_file():
