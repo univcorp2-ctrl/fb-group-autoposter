@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+from datetime import date
 from dataclasses import dataclass
 from typing import Any
 
@@ -333,8 +334,19 @@ def fallback_body(property_data: dict[str, Any], group: dict[str, Any], *, revis
         lines += [f"　　　{r}" for r in routes[1:]]
     structure = _clean(property_data.get("structure"))
     built = _clean(property_data.get("year_built"))
+    build_label = f"{built}築" if built else ""
+    # An EstateBoard date later than today is not proof a building is completed.
+    # Keep the source date, but never advertise an unbuilt property as "築".
+    if built:
+        match = re.fullmatch(r"(\d{4})年(?:(\d{1,2})月)?", built)
+        if match:
+            built_year = int(match.group(1))
+            built_month = int(match.group(2) or 1)
+            today = date.today()
+            if built_year > today.year or (built_year == today.year and built_month > today.month):
+                build_label = f"{built}（資料記載の将来年月・竣工状況未確認）"
     if structure or built:
-        lines.append("・構造／築年：" + "／".join(v for v in (structure, f"{built}築" if built else "") if v))
+        lines.append("・構造／建築時期：" + "／".join(v for v in (structure, build_label) if v))
     land, bldg = _clean(property_data.get("land_area")), _clean(property_data.get("building_area"))
     if land or bldg:
         lines.append("・面積：" + "／".join(v for v in (f"土地 {land}" if land else "", f"建物 {bldg}" if bldg else "") if v))
