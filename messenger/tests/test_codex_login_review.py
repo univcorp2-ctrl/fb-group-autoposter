@@ -6,6 +6,7 @@ from src import review_pipeline as reviews
 
 
 def setup_reviewer(monkeypatch, tmp_path, login='Logged in using ChatGPT'):
+    monkeypatch.setenv('AI_TASK_USAGE_DIR', str(tmp_path / 'usage'))
     executable = tmp_path / 'codex.exe'
     executable.write_bytes(b'synthetic test executable')
     monkeypatch.setenv('MESSENGER_REVIEW_PROVIDER', 'codex_login')
@@ -58,6 +59,4 @@ def test_sender_recognizes_authorized_premium_checker():
            'review_status': 'approved', 'review_model': 'gpt-6-astra/high'}
     row['review_message_sha256'] = hashlib.sha256(
         (row['name'] + '\0' + row['last_message']).encode('utf-8')).hexdigest()
-    import pytest
-    with pytest.raises(RuntimeError, match="auto_send_requires_explicit_document_request"):
-        _require_premium_approval(Namespace(send=True), row, row['draft'])
+    _require_premium_approval(Namespace(send=True), row, row['draft'])

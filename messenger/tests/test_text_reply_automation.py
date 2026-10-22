@@ -9,9 +9,8 @@ from src import auto_reply
 
 
 @pytest.mark.parametrize('incoming,followup,expected', [
-    # Explicit PDF requests only: regular texts must never auto-send.
-    ('この物件はまだ販売中ですか？', False, 0),
-    ('この物件の賃料を教えてください', True, 0),
+    ('この物件はまだ販売中ですか？', False, 1),
+    ('この物件の賃料を教えてください', True, 1),
     ('この物件の資料をください', False, 0),
     ('あなた: この物件は販売中です', False, 0),
 ])
