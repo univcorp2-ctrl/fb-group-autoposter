@@ -176,7 +176,7 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                 review_cached = bool(
                     prior and prior.get("last_message") == preview
                     and prior.get("review_status") in {"approved", "needs_human"}
-                    and prior.get("review_policy_version") == "2026-10-22-v5"
+                    and prior.get("review_policy_version") == "2026-10-22-v6"
                     and premium_model_verified(prior.get("review_model", ""))
                 )
                 if review_cached:
@@ -199,7 +199,7 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                     "participant_count": thread.get("participant_count"),
                     "is_group": thread.get("is_group") is True,
                     "time_text": thread.get("time_text", ""),
-                    "review_policy_version": "2026-10-22-v5",
+                    "review_policy_version": "2026-10-22-v6",
                     **decision,
                 }
                 active_drafts[tid] = row
