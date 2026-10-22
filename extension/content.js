@@ -403,6 +403,10 @@
   async function doPost(text, { post = false, log = console.log, task = null } = {}) {
     let clickStarted = false;
     if (loginLooksBroken()) throw new Error("SESSION_EXPIRED");
+    const joinRequired = [...document.querySelectorAll('button, [role="button"]')].some(el =>
+      el.getClientRects().length && !isInsideExistingPost(el) && !el.closest('#fbgp-panel') &&
+      /^(?:グループに参加|Join group)$/i.test((el.innerText || el.getAttribute('aria-label') || '').trim()));
+    if (joinRequired) throw new Error('GROUP_MEMBERSHIP_REQUIRED: 参加済みグループだけに投稿します');
 
     // 必ずグループのトップへ戻してから新規スレッドcomposerを探す。
     // コメント/返信欄への誤投稿は安全のため禁止する。
