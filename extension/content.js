@@ -296,8 +296,8 @@
   }
 
   function loginLooksBroken() {
-    const url = location.href.toLowerCase();
-    if (url.includes("/login") || url.includes("checkpoint") || url.includes("recover")) return true;
+    const path = new URL(location.href).pathname.toLowerCase();
+    if (/^\/(?:login(?:\.php)?|checkpoint|recover)(?:\/|$)/.test(path)) return true;
     return Boolean(document.querySelector('input[name="email"], input[name="pass"]'));
   }
 
