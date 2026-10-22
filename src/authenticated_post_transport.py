@@ -14,8 +14,17 @@ from pathlib import Path
 import sys
 import time
 from types import SimpleNamespace
+from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def cadence_remaining(last_click, minutes, *, now=None):
+    if not last_click: return 0
+    instant = now or datetime.now(timezone.utc)
+    age = (instant-datetime.fromisoformat(last_click)).total_seconds()
+    if age < -300: raise ValueError('future submission timestamp')
+    return max(0, minutes*60-age)
 
 
 class TaskBridge:
