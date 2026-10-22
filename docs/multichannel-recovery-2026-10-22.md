@@ -26,6 +26,7 @@
 1. C Messenger `data/draft_daemon_status.json` と `auto_reply_status.json` を再読し、プロセスと最新走査を確認。過去の `blocked_or_uncertain_no_replay` は絶対に消さない。
 2. Facebookの実稼働拡張機能はC `app/extension/` の1.1.5、G `extension/` は1.1.1。旧G版でC版を一括上書きしない。最新失敗はcomposer_readyの後に投稿ボタンを認識できない。UI上の通常入力は有効化できたため、実拡張の入力/認識経路を再現して修正する。
 3. Messengerの通常返信と歴史的保留を、最新会話・独立レビュー・重複防止を使って処理できるよう復旧する。資料権限不足を根拠なく承認しない。
+   - 追加で通常返信を妨げる実装を確認：`send_one_playwright_reply.py` の `attachment` がChrome接続の `BrowserAttachment` とPDFの双方に使われている。資料なしではChrome接続オブジェクトに `file_path` を要求する経路がある。ブラウザ接続と送付PDFを分離し、本文だけの送信経路を回帰検証すること。
 4. LINEのC runtimeはGソースよりバックグラウンド接続・巡回カーソルの修正が進んでいる。G版の一括配置は禁止。現行台帳は `C:/AI-Agent/line-draft-automation/state/line-auto-state-v2.json`。
 5. Windows起動時の可視コンソール0件の前後比較、再ログイン/再起動後の継続も未検証。pythonw入口だけで全子プロセスの無窓動作を証明しない。
 
