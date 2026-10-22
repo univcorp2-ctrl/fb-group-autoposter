@@ -29,14 +29,15 @@ async def stage_verified_pdf(page: Any, local_pdf: Path, display_name: str) -> d
     if not await attachment_input_ready(page):
         raise RuntimeError("messenger_attachment_input_missing_or_ambiguous")
     body_before = (await _body_text(page)).count(display_name)
-    upload=page.locator(FILE_SELECTOR)
-    await upload.set_input_files(str(local_pdf),timeout=30_000)
-    staged=False
+    if body_before == 0:
+        upload = page.locator(FILE_SELECTOR)
+        await upload.set_input_files(str(local_pdf), timeout=30_000)
+    staged = False
     for i in range(24):
         await page.wait_for_timeout(500)
-        body=await _body_text(page)
-        if body.count(display_name)>body_before:
-            staged=True
+        body = await _body_text(page)
+        if body.count(display_name) > 0:
+            staged = True
             break
     if not staged:
         # May mean Messenger auto-sent the document at upload time. Do NOT
