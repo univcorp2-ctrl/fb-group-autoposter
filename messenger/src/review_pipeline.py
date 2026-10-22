@@ -105,8 +105,11 @@ def _call_opus(prompt: str, api_key: str = "") -> tuple[str, str] | None:
                 "properties": {"verdict": {"type": "string", "enum": ["approve", "needs_human"]},
                                "reply": {"type": "string"}, "reason": {"type": "string"}},
             }), encoding="utf-8")
+            from src.runtime_usage import UsageRun
+            usage_run = UsageRun('messenger-auto-reply', 'gpt-6-astra')
             result = subprocess.run([
                 str(executable), "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules",
+                "--json",
                 "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never",
                 "--model", "gpt-6-astra", "-c", 'model_reasoning_effort="high"',
                 "--disable", "shell_tool", "--disable", "multi_agent", "--disable", "multi_agent_v2",
@@ -114,6 +117,7 @@ def _call_opus(prompt: str, api_key: str = "") -> tuple[str, str] | None:
                 "-c", "mcp_servers={}", "-c", "plugins={}",
                 "--output-schema", str(schema_file), "--output-last-message", str(result_file), "-",
             ], input=prompt, cwd=folder, timeout=150, **options)
+            usage_run.finish(result.stdout)
             if result.returncode or not result_file.is_file() or result_file.stat().st_size > 65536:
                 return None
             return result_file.read_text(encoding="utf-8"), "gpt-6-astra/high"

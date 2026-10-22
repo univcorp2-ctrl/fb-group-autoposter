@@ -6,6 +6,7 @@ from src import review_pipeline as reviews
 
 
 def setup_reviewer(monkeypatch, tmp_path, login='Logged in using ChatGPT'):
+    monkeypatch.setenv('AI_TASK_USAGE_DIR', str(tmp_path / 'usage'))
     executable = tmp_path / 'codex.exe'
     executable.write_bytes(b'synthetic test executable')
     monkeypatch.setenv('MESSENGER_REVIEW_PROVIDER', 'codex_login')
