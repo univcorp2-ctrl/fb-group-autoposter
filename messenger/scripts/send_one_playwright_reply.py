@@ -120,8 +120,8 @@ def _require_premium_approval(args: argparse.Namespace, row: dict[str, Any], rep
     evidence = lookup_property(str(row.get("last_message", "")))
     if _validate(reply, str(row.get("last_message", "")), evidence):
         raise RuntimeError("premium_review_content_invalid")
-    wants_pdf = any(word in str(row.get("last_message", "")) for word in
-                    ("資料", "図面", "詳細", "概要書", "レントロール"))
+    from src.review_pipeline import document_requested
+    wants_pdf = document_requested(row.get("last_message", ""))
     if wants_pdf:
         from src.material_delivery import plan_material, download_material
         expected = row.get("material") or {}

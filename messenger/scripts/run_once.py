@@ -151,12 +151,13 @@ async def _scan(settings: Settings, use_telegram: bool) -> dict:
                 needing = [
                     t for t in needing
                     if recent_inbox_timestamp(t.get("time_text", ""))
-                    and any(term in str(t.get("preview","")) for term in doc_terms)
                     and hashes.get(str(t.get("thread_id"))) != hashlib.sha256(
                         str(t.get("preview","")).encode("utf-8")
                     ).hexdigest()
                 ]
-            summary["new_document_requests"] = len(needing)
+            summary["new_requests"] = len(needing)
+            summary["new_document_requests"] = sum(
+                any(term in str(t.get('preview', '')) for term in doc_terms) for t in needing)
 
             from src.review_pipeline import review_draft, premium_model_verified
             from src.thread_context import read_recent_thread_text

@@ -20,7 +20,11 @@ REVIEW_MODEL = "claude-opus-4-6"
 BANNED = ("はじめまして", "初めまして", "下書きです", "送信前に内容", "公式LINE",
           "コミュニティ →", "line.ee/", "facebook.com/groups/",
           "希望のエリアや予算感", "投資/居住などの目的")
-DOC_TERMS = ("資料", "図面", "レントロール", "概要書", "物件概要")
+DOC_TERMS = ("資料", "図面", "レントロール", "概要書", "物件概要", "パンフ", "PDF", "pdf")
+
+
+def document_requested(text: str) -> bool:
+    return any(term in str(text) for term in DOC_TERMS)
 
 def _document_excerpt(material: dict) -> str:
     if not material.get("approved") or not material.get("file_path"):
@@ -46,6 +50,10 @@ def _prompt(name: str, inbound: str, history: str, first_draft: str, evidence: E
         'JSONのみ: {"verdict":"approve|needs_human","reply":"本文のみ","reason":"判断理由"}\n'
         "厳守: 相手の最新質問を直接解決。物件の名称と価格を正確に照合し不明情報を推測しない。"
         "既存会話に初めましては不可。資料請求にエリア/予算を聞き返さない。"
+        "資料請求以外の通常の質問も、会話で確認できた事実から直接回答する。"
+        "資料なしで答えられる通常返信にPDF検証は不要。資料の送付を約束しない。"
+        "単なる謝辞・相槌・広告・勧誘・不動産と無関係な用件はneeds_humanとしreplyは空文字。"
+        "未確認の販売状況・法的判断・融資条件を断定せず、未着手の調査を確認中と書かない。"
         "LINE宣伝・コミュニティ誘導・内部の下書き注記・根拠のない資料送付済み主張は不可。"
         "初稿が間違っている場合は捨て、ゼロから書き直す。日本語・敬語・150〜250文字程度。"
         "添付資料が検証済みの場合のみ、同じMessengerスレッドへPDFを添付してご案内する。"
@@ -161,7 +169,7 @@ def review_draft(
     first_draft: str | None=None,
 ) -> dict[str, Any]:
     evidence=lookup_property(incoming)
-    wants_document=any(t in incoming for t in DOC_TERMS)
+    wants_document=document_requested(incoming)
     material=plan_material(incoming) if wants_document else None
     if material and material.approved:
         try:

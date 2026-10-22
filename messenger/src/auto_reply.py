@@ -15,7 +15,8 @@ import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from src.review_pipeline import premium_model_verified
+from src.review_pipeline import premium_model_verified, document_requested
+from src.classifier import classify_thread
 
 ROOT = Path(__file__).resolve().parents[1]
 JST = timezone(timedelta(hours=9))
@@ -25,7 +26,7 @@ STATUS = ROOT / "data" / "auto_reply_status.json"
 SEND_PAUSE_FILE = ROOT / "data" / "send_pause.lock"
 DRIVE_STATUS = Path(r"G:\マイドライブ\AI_Agents\Private\FBGroupAutoposter\messenger_auto_reply_status.json")
 DRIVE_LEDGER = Path(r"G:\マイドライブ\AI_Agents\Private\FBGroupAutoposter\messenger_auto_reply_ledger.json")
-# Auto-send is strictly for explicit document requests, not ordinary chat.
+# Both ordinary replies and requested PDFs require independent premium review.
 DOCUMENT_REQUESTS = ("資料", "図面", "概要書", "レントロール", "パンフ", "PDF", "pdf", "物件概要")
 IGNORED = ("メッセージは復元されていません", "不在着信", "自動送信", "自動応答")
 ONLY_INBOUND = re.compile(r"^\d+$")
@@ -67,7 +68,7 @@ def eligible_message(row: dict) -> bool:
         and row.get("participant_count") == 1
         and row.get("is_group") is False
         and ONLY_INBOUND.fullmatch(str(row.get("thread_id") or ""))
-        and text and any(kw in text for kw in DOCUMENT_REQUESTS)
+        and text and classify_thread({**row, 'preview': text}).needs_reply
         and not any(no in text for no in IGNORED)
         and recent_inbox_timestamp(row.get("time_text", ""))
         and row.get("url") == f"https://www.messenger.com/t/{row.get('thread_id')}"
@@ -178,7 +179,7 @@ def run_pending(settings) -> dict:
                  str(nowrow.get("last_message", ""))).encode("utf-8")
             ).hexdigest()
             material = nowrow.get("material") or {}
-            if (not isinstance(material, dict)
+            if (document_requested(nowrow.get('last_message', '')) or material) and (not isinstance(material, dict)
                     or material.get("approved") is not True
                     or not material.get("sha256")
                     or not material.get("drive_file_id")):
@@ -193,14 +194,8 @@ def run_pending(settings) -> dict:
             if not eligible_message(row):
                 skipped += 1
                 continue
-            # Never send two automated replies to one thread within 24 hours.
-            if any(
-                v.get("thread_id") == row.get("thread_id")
-                and (now - datetime.fromisoformat(v["created_at"])).total_seconds() < 86400
-                for v in data["attempts"].values()
-            ):
-                skipped += 1
-                continue
+            # A distinct verified inbound can receive its answer on the same day.
+            # Same-preview and unresolved-attempt guards above still prevent replay.
             # Pre-commit before invoking any potentially consequential UI action.
             # A one-shot nonce binds this attempt to its child sender; an
             # unrelated sender cannot inherit this permission.
