@@ -144,7 +144,7 @@ async def scrape_inbox(page: Any, max_threads: int, *, quick: bool = False) -> l
         # The newest inbound DM is at the top. Never scroll through history
         # on every minute-sized poll; that takes too long and disturbs UI state.
         await page.wait_for_timeout(650)
-        raw_rows = await _poll_rows(page, max_scrolls=2, interval_ms=350)
+        raw_rows = await _poll_rows(page, max_scrolls=6, interval_ms=700)
         if not raw_rows:
             # Messenger sometimes renders "loading..." for several seconds
             # *after* domcontentloaded. Never report a false empty inbox.
