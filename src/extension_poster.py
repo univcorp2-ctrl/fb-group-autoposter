@@ -51,7 +51,7 @@ class ExtensionFacebookPoster(FacebookPoster):
         images = [str(item) for item in (target.get("images") or [])]
         payload = {
             "task_id": attempt_id,
-            "status": "pending",
+            "status": "leased" if os.getenv('FB_POST_TRANSPORT') == 'authenticated_cdp' else "pending",
             "created_at_epoch": time.time(),
             "expires_at_epoch": time.time() + timeout,
             "group_id": str(target["group_id"]),
@@ -62,6 +62,10 @@ class ExtensionFacebookPoster(FacebookPoster):
             "allow_images": bool(group.get("allow_images", True)),
         }
         self._atomic_json(task_path, payload)
+        if os.getenv('FB_POST_TRANSPORT') == 'authenticated_cdp':
+            from src.authenticated_post_transport import run_authenticated_task
+            return await run_authenticated_task(payload, task_path,
+                lambda: self.db.mark_click_started(attempt_id), timeout=timeout)
         deadline = time.monotonic() + timeout
         click_marked = False
         while time.monotonic() < deadline:

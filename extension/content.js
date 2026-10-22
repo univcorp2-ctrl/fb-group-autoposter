@@ -236,8 +236,9 @@
   async function reportStage(taskId, stage) {
     if (!taskId) return;
     try {
-      await chrome.runtime.sendMessage({ type: "FB_BRIDGE_EVENT", taskId, stage });
-    } catch (_) {}
+      const response = await chrome.runtime.sendMessage({ type: "FB_BRIDGE_EVENT", taskId, stage });
+      if (response?.ok !== true && stage === "click_started") throw new Error("click_commit_not_confirmed");
+    } catch (error) { if (stage === "click_started") throw error; }
   }
 
   async function reportResult(taskId, result) {

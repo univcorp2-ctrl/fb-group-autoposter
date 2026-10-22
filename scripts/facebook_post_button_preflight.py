@@ -69,7 +69,14 @@ def ensure_layout_gate(group:dict, version:str, timeout:int=130)->dict:
         "allow_images":False,
         "action":"layout_check",
     }
-    atomic(path,task)
+    if os.getenv('FB_POST_TRANSPORT') == 'authenticated_cdp':
+        import asyncio
+        from src.authenticated_post_transport import run_authenticated_task
+        task['status'] = 'leased'
+        atomic(path,task)
+        asyncio.run(run_authenticated_task(task,path,timeout=timeout))
+    else:
+        atomic(path,task)
     deadline=now+min(timeout,PROBE_TTL_SECONDS-5)
     while time.time()<deadline:
         time.sleep(1.5)

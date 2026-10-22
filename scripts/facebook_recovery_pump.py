@@ -17,6 +17,8 @@ from pathlib import Path
 from urllib.request import urlopen
 
 ROOT=Path(__file__).resolve().parents[1]
+from dotenv import load_dotenv
+load_dotenv(ROOT / '.env')
 STATE=ROOT/"data"/"recovery_pump_status.json"
 DRIVE=Path(r"G:\マイドライブ\AI_Agents\Private\FBGroupAutoposter\recovery_pump_status.json")
 WRAPPER=Path(r"C:\Users\t0015\AppData\Local\FBGroupAutoposter\run-task.ps1")
@@ -55,7 +57,12 @@ def main()->int:
         result["expected_version"]=expected
         with urlopen("http://127.0.0.1:8766/health",timeout=4) as res:health=json.load(res)
         result["loaded_version"]=health.get("extension_version")
-        ok,reason=safe_to_run(health,expected)
+        if os.getenv('FB_POST_TRANSPORT') == 'authenticated_cdp':
+            result['transport'] = 'authenticated_cdp'
+            ok = not (health.get('active_lease') or health.get('pending_tasks') or health.get('posting_paused'))
+            reason = 'posting_busy_or_paused' if not ok else 'ready_for_authenticated_preflight'
+        else:
+            ok,reason=safe_to_run(health,expected)
         if not ok:
             result["reason"]=reason
         elif starts>=MAX_STARTS_PER_DAY:
