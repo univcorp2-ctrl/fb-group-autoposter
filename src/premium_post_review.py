@@ -61,8 +61,17 @@ def review_post_copy(job, target, group, *, source_path=None, review_dir=None, r
             if cached_age >= 86400:
                 return blocked('premium_review_expired_one_attempt_only')
             return cached
-        # Claim before calling Codex: a failed/timeout/crashed review must never
-        # automatically spend a second review for this task, even after restart.
+        # A changed body is still the SAME task. A job/group may call Codex
+        # once, even if its exact-content fingerprint changes afterward.
+        task_key = digest({'job_id': str(job.get('job_id') or job.get('property_id') or ''),
+                           'group_id': str(target.get('group_id') or group.get('id') or '')})
+        try:
+            with (directory / ('task-' + task_key + '.claimed')).open('x', encoding='utf-8') as claim:
+                claim.write(datetime.now(timezone.utc).isoformat())
+        except FileExistsError:
+            return blocked('premium_review_task_once_consumed')
+        # The independent content claim also deduplicates different tasks with
+        # identical facts/copy, including an earlier failed model invocation.
         try:
             with (directory / (fingerprint + '.claimed')).open('x', encoding='utf-8') as claim:
                 claim.write(datetime.now(timezone.utc).isoformat())
