@@ -39,3 +39,19 @@ Facebook・Messenger・LINEに実行別の実測記録を追加し、既存 `AI-
 LINEは既存依存関係のあるNTFS検証用コピーでbuildと328テストPASS、Python11テストPASS。Messenger178テストPASS、集計PowerShell17テストPASS。SQLite子プロセスの無窓起動へ修正後、実スケジュール起動の40秒観測で新規可視コンソール0件、集計タスク終了0を確認。
 
 連携仕様と再開位置は兄弟リポジトリ `cloud-local-task-dashboard/docs/token-usage.md`。集計元の実稼働コードは `C:/Users/t0015/codex-workspace-local-copy/automation-control-center-site/scripts/agent-health/`。投稿・返信・自主案内の完全復旧という元の目標は引き続き未完了。
+
+## 続行結果：本文返信とFacebookウィンドウ（09:35 JST）
+
+- Messengerのブラウザ接続と添付PDFの変数衝突を実送信フローの合成ブラウザで再現（送信前にfile_path属性エラー）し修正。資料なしの本文返信、送信前の最終ガード、DOMによる事後確認が通る回帰テストを追加。
+- 資料請求だけのフィルターを外し、新規・最近の1対1問い合わせを高性能レビュー対象へ追加。自身の送信・締めの相槌・グループ等は既存classifierで除外。PDFが必要な依頼では従来通り資料検証必須。通常質問に不要なPDFを要求しないよう、資料依頼判定をレビューと個別送信で統一。
+- 同一スレッドで24時間一切返信しない制限を撤去し、別の最新受信への追加質問に回答可能とした。同じ受信hashの再送禁止、未確定履歴の永久再送禁止、全体の日次上限は保持。
+- G Messenger183件PASS、C稼働先154件PASS。Cへ反映前に独立の短期メンテナンス保留を置き、送信プロセス0を確認してdaemonを停止・反映・テスト・再開。自身が置いた保留は `_archive/2026-10-22-messenger-review/ordinary-replies-runtime-update.pause` に保全。以前の保留や台帳を削除していない。
+- C実モデルで架空の通常質問をレビューし、gpt-6-astra/highが根拠に沿う32文字の本文をapproved、material=nullと判定。顧客へは未送信。09:35:25の実daemonは認証済み・armed=true、送信試行0、未確定1維持。新規問い合わせは0。
+- Facebook未送信診断の最初のhandleは `data/extension_tasks/layout-check-20261022-0331f2bf.json`。取得後tab_openedにも進まず期限切れ。Defaultプロフィールにインストールされた拡張機能 `kofaofnbmnnianmdobmfgcfhakllhoal` の保存エラーで `No current window` を確認した。ポーリングは動いても、Chromeがバックグラウンドのみではtabs.createに使えるウィンドウがなかった。
+- Default Chromeだけに最小化したabout:blankウィンドウを作成（再起動なし、認証済みMessenger/LINEプロフィールは維持）。その後のhandle `layout-check-window-20261022-a928175e.json` はcomposer_readyへ到達し、layout_ok / mode=paste / lines=3/3で完了。診断文字は拡張機能自身が消去する経路。投稿クリックは0。これで入力の実診断は成功したが、公開URLの確認ではない。
+- 次の再発対策は拡張機能1.1.6。`postingWindowId()` が同じプロフィールの通常ウィンドウを使用し、なければfocused=false/state=minimizedで所有ウィンドウを作成。作成失敗はクリック前失敗として記録する。Cの稼働版1.1.5のcontent/background/manifestをG正本へ取り込み、その上に修正。C旧版は `_archive/2026-10-22-extension-owner-window/` に保全。ウィンドウ作成・再使用・incognito除外のNodeテストと構文検査PASS、既存permalink検査PASS。
+- **版の再読込はまだ未確認**。09:35:18のwatchdog check-onlyはloaded=1.1.5 / expected=1.1.6、idle=439秒で待機。watchdogに版不一致を検出する処理を追加し、既存の15分アイドル・6時間再起動間隔・投稿停止なし・active leaseなしに加えてpending taskなしの場合だけ再読込する。ソースとCへ配置し7回帰テストPASS。既存の5分タスクで安全条件成立時に反映する。次回、実heartbeatのversion=1.1.6を確認すること。check-only待機を完了扱いにしない。
+
+次の優先作業：1.1.6の実読込を確認し、Facebook本文の高性能レビューを現行承認ハッシュと最新sourceに結び付けて実公開を検証。LINEの明示資料請求を無条件skipするno_reply_needed再レビュー経路と、メーカーがsend=falseの場合に独立チェッカーを飛ばす経路を修復し、実会話に対する適切な返信を検証。Messengerの既存4保留も個別に解決し、新規限定の運用だけで完了としない。
+
+KEEP: 返信修正・テスト・拡張機能1.1.6・監視修正・本記録。ARCHIVE: C旧拡張版と短期メンテナンス保留。DELETE: なし。
