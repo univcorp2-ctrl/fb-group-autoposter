@@ -134,19 +134,41 @@
     return null;
   }
 
-  function findPostButton(editable) {
+  function findPostButtonCandidate(editable) {
     const scope = findComposerScope(editable);
     if (!scope) return null;
-    const btns = scope.querySelectorAll('div[role="button"], button, [aria-label]');
+    // Facebook often puts a non-matching aria-label on the native Post
+    // button even though its visible text is exactly "投稿".
+    const btns = scope.querySelectorAll('button, [role="button"], [aria-label]');
     for (const b of btns) {
       if (!isSafeNewThreadElement(b)) continue;
-      const label = (b.getAttribute("aria-label") || b.textContent || "").trim();
-      if (["投稿", "Post", "シェア", "Share"].includes(label)) {
-        const disabled = b.getAttribute("aria-disabled") === "true" || b.disabled === true;
-        if (!disabled && b.offsetParent !== null) return b;
+      const labels = [b.getAttribute("aria-label"), b.innerText, b.textContent]
+        .map((v) => String(v || "").trim().replace(/\s+/g, " "));
+      if (labels.some((label) => ["投稿", "Post", "シェア", "Share"].includes(label))) {
+        const clickable = b.closest('button, [role="button"]') || b;
+        if (isSafeNewThreadElement(clickable)) return clickable;
       }
     }
     return null;
+  }
+  function findPostButton(editable) {
+    const button = findPostButtonCandidate(editable);
+    if (!button) return null;
+    const disabled = button.getAttribute("aria-disabled") === "true" ||
+      button.hasAttribute("disabled") || button.disabled === true;
+    return !disabled && button.offsetParent !== null ? button : null;
+  }
+  function describePostButton(editable) {
+    const scope = findComposerScope(editable);
+    const button = findPostButtonCandidate(editable);
+    return [
+      "scope=" + !!scope,
+      "candidate=" + !!button,
+      "enabled=" + !!findPostButton(editable),
+      "aria_disabled=" + (button?.getAttribute("aria-disabled") || ""),
+      "native_disabled=" + !!button?.disabled,
+      "visible=" + !!(button && button.offsetParent !== null)
+    ].join(" ");
   }
 
   // ---- 本文流し込み（Reactが拾う形）---------------------------------------
@@ -190,16 +212,25 @@
     return got.length >= want.length && flat(editable.innerText).includes(flat(text).slice(0, 40));
   }
 
-  async function insertTextReactSafe(editable, text) {
+  async function insertTextReactSafe(editable, text, { requireActiveButton = false } = {}) {
     insertByPaste(editable, text);
-    await sleep(600);
-    if (layoutPreserved(editable, text)) return "paste";
+    await sleep(650);
+    const pasted = layoutPreserved(editable, text);
+    // A synthetic paste may change the DOM while Lexical still thinks the
+    // composer is empty. Verify Facebook's actual submit state, not DOM alone.
+    if (pasted && (!requireActiveButton || findPostButton(editable))) return "paste";
     insertByParagraphs(editable, text);
-    await sleep(600);
-    if (layoutPreserved(editable, text)) return "paragraphs";
+    await sleep(750);
+    const paragraphLayout = layoutPreserved(editable, text);
+    if (paragraphLayout && (!requireActiveButton || findPostButton(editable))) {
+      return "paragraphs";
+    }
+    const diag = describePostButton(editable);
     clearEditable(editable);
-    // Never publish a post whose line breaks were lost.
-    throw new Error("LAYOUT_LOST: 改行を保持したまま本文を入力できませんでした");
+    if (!paragraphLayout) {
+      throw new Error("LAYOUT_LOST: 改行が消えました [" + diag + "]");
+    }
+    throw new Error("COMPOSER_STATE_NOT_COMMITTED: 本文は表示されていますが投稿ボタンが無効 [" + diag + "]");
   }
 
   async function reportStage(taskId, stage) {
@@ -393,8 +424,8 @@
 
     await sleep(400);
     log("本文を入力中...");
-    const insertMode = await insertTextReactSafe(editable, text);
-    log(`本文入力方式: ${insertMode}`);
+    const insertMode = await insertTextReactSafe(editable, text, { requireActiveButton: post || task?.action === "layout_check" });
+    log(`本文入力方式: ${insertMode} [${describePostButton(editable)}]`);
     await sleep(800);
     await attachTaskImages(task, log, editable);
 
@@ -402,18 +433,19 @@
       const lines = contentLines(editable.innerText).length;
       const expected = contentLines(text).length;
       log(`✅ 下書き投入完了（プレビュー）。行数 ${lines}/${expected}`);
+      const buttonDiagnostics = describePostButton(editable);
       if (task?.action === "layout_check") {
         // Leave nothing behind: empty the composer so closing it never prompts.
         clearEditable(editable);
         await sleep(300);
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       }
-      return { status: "layout_ok", error: `mode=${insertMode} lines=${lines}/${expected}` };
+      return { status: "layout_ok", error: `mode=${insertMode} lines=${lines}/${expected} button=${buttonDiagnostics}` };
     }
 
     log("「投稿」ボタン待機中...");
     const btn = await waitFor(() => findPostButton(editable), { timeout: 8000 });
-    if (!btn) throw new Error("「投稿」ボタンが押せる状態になりません");
+    if (!btn) throw new Error("「投稿」ボタンが押せる状態になりません [" + describePostButton(editable) + "]");
     if (task?.task_id) await reportStage(task.task_id, "click_started");
     clickStarted = true;
     btn.click();
