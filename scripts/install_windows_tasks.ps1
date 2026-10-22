@@ -52,10 +52,10 @@ $communitySettings = New-ScheduledTaskSettingsSet `
 Register-ScheduledTask -TaskName 'FBAutoposter-CommunityManager' -Action $communityAction -Trigger $communityTrigger -Settings $communitySettings -Description 'Safely refresh/promote Facebook communities before posting' -Force | Out-Null
 
 New-DailyRun -Name 'FBAutoposter-Keepalive' -Script 'keepalive.py' -At '08:00' -RandomDelayMin 20 -Desc 'Keep FB session alive + back up healthy profile (+ logon)' -AlsoAtLogon
-New-DailyRun -Name 'FBAutoposter-Morning' -Script 'run_daily_drive.py' -At '09:30' -RandomDelayMin 45 -Desc 'Post one fresh broker-OK property (morning + logon catch-up)' -AlsoAtLogon -ExecutionHours 8
-New-DailyRun -Name 'FBAutoposter-Midday' -Script 'run_daily_drive.py' -At '13:00' -RandomDelayMin 30 -Desc 'Posting fallback (only posts if morning missed)' -ExecutionHours 8
-New-DailyRun -Name 'FBAutoposter-Afternoon' -Script 'run_daily_drive.py' -At '16:30' -RandomDelayMin 30 -Desc 'Posting fallback (only posts if earlier runs missed)' -ExecutionHours 8
-New-DailyRun -Name 'FBAutoposter-Evening' -Script 'run_daily_drive.py' -At '20:30' -RandomDelayMin 45 -Desc 'Posting fallback (only posts if earlier runs missed)' -ExecutionHours 8
+New-DailyRun -Name 'FBAutoposter-Morning' -Script 'run_daily_hidden.py' -At '09:30' -RandomDelayMin 45 -Desc 'Post one fresh broker-OK property (morning + logon catch-up)' -AlsoAtLogon -ExecutionHours 8
+New-DailyRun -Name 'FBAutoposter-Midday' -Script 'run_daily_hidden.py' -At '13:00' -RandomDelayMin 30 -Desc 'Posting fallback (only posts if morning missed)' -ExecutionHours 8
+New-DailyRun -Name 'FBAutoposter-Afternoon' -Script 'run_daily_hidden.py' -At '16:30' -RandomDelayMin 30 -Desc 'Posting fallback (only posts if earlier runs missed)' -ExecutionHours 8
+New-DailyRun -Name 'FBAutoposter-Evening' -Script 'run_daily_hidden.py' -At '20:30' -RandomDelayMin 45 -Desc 'Posting fallback (only posts if earlier runs missed)' -ExecutionHours 8
 New-DailyRun -Name 'FBAutoposter-Monitor-AM' -Script 'monitor.py' -At '12:00' -RandomDelayMin 0 -Desc 'Posting health check (after morning run)'
 New-DailyRun -Name 'FBAutoposter-Monitor-PM' -Script 'monitor.py' -At '23:00' -RandomDelayMin 0 -Desc 'Posting health check (after evening run)'
 New-DailyRun -Name 'FBAutoposter-StatusDB' -Script 'build_status_db.py' -At '09:15' -RandomDelayMin 10 -Desc 'Rebuild posting-status Excel/CSV (投稿済/未投稿 一覧)' -AlsoAtLogon
