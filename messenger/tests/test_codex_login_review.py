@@ -23,6 +23,7 @@ def setup_reviewer(monkeypatch, tmp_path, login='Logged in using ChatGPT'):
         assert argv[argv.index('--model') + 1] == 'gpt-6-astra'
         assert argv[argv.index('--sandbox') + 1] == 'read-only'
         assert '--ignore-user-config' in argv
+        assert 'shell_tool' in argv and 'multi_agent_v2' in argv
         result = Path(argv[argv.index('--output-last-message') + 1])
         result.write_text(json.dumps({'verdict': 'approve', 'reply': '検証用の返信です。',
                                      'reason': 'synthetic'}), encoding='utf-8')

@@ -109,6 +109,8 @@ def _call_opus(prompt: str, api_key: str = "") -> tuple[str, str] | None:
                 str(executable), "exec", "--ephemeral", "--ignore-user-config", "--ignore-rules",
                 "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never",
                 "--model", "gpt-6-astra", "-c", 'model_reasoning_effort="high"',
+                "--disable", "shell_tool", "--disable", "multi_agent", "--disable", "multi_agent_v2",
+                "-c", 'web_search="disabled"',
                 "-c", "mcp_servers={}", "-c", "plugins={}",
                 "--output-schema", str(schema_file), "--output-last-message", str(result_file), "-",
             ], input=prompt, cwd=folder, timeout=150, **options)
