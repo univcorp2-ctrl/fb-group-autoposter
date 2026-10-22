@@ -30,7 +30,13 @@ def test_review_is_bound_to_latest_facts_and_exact_body(tmp_path):
     assert review_post_copy(job, target, {'id': '123'}, **options)['approved']
     assert len(calls) == 1
     target['body'] += ' 追加文'
-    assert review_post_copy(job, target, {'id': '123'}, **options)['approved']
+    # Changed copy is still the same job/group; never review it twice.
+    assert review_post_copy(job, target, {'id': '123'}, **options) == {
+        'approved': False, 'reason': 'premium_review_task_once_consumed'}
+    assert len(calls) == 1
+    # A genuinely distinct job can receive its own one-time review.
+    other_job = {**job, 'job_id': 'second-independent-job'}
+    assert review_post_copy(other_job, target, {'id': '123'}, **options)['approved']
     assert len(calls) == 2
 
 
