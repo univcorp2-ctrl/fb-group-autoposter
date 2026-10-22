@@ -47,6 +47,26 @@ def review_post_copy(job, target, group, *, source_path=None, review_dir=None, r
         fingerprint = digest({'facts': latest, 'body': body, 'group': policy, 'permission': permission})
         directory = Path(review_dir or r'C:\AI-Agent\state\facebook-post-review')
         directory.mkdir(parents=True, exist_ok=True)
+        # Business identity MUST NOT derive from job_id, mutable copy or user-supplied
+        # purpose: retries/new jobs for one property/group/posting intent share it.
+        group_id = str(target.get('group_id') or group.get('id') or '').strip()
+        property_id = str(latest.get('property_id') or '').strip()
+        if target.get('group_id') and group.get('id') and str(target['group_id']) != str(group['id']):
+            return blocked('premium_review_group_identity_mismatch')
+        if not group_id or not property_id:
+            return blocked('premium_review_business_identity_missing')
+        business_key = digest({'property_id': property_id, 'group_id': group_id,
+                               'purpose': 'facebook_group_new_thread'})
+        business_claim = directory / ('business-' + business_key + '.claimed')
+        # Exclusive persistent claim happens BEFORE model invocation and before
+        # reading a legacy fingerprint cache. A cache may be reused but changed
+        # copy or new job_id can never trigger another model call.
+        try:
+            with business_claim.open('x', encoding='utf-8') as claim:
+                claim.write(datetime.now(timezone.utc).isoformat())
+            business_already_claimed = False
+        except FileExistsError:
+            business_already_claimed = True
         path = directory / (fingerprint + '.json')
         if path.is_file():
             # Never invoke Codex twice for the exact same reviewed post/task.
@@ -61,6 +81,8 @@ def review_post_copy(job, target, group, *, source_path=None, review_dir=None, r
             if cached_age >= 86400:
                 return blocked('premium_review_expired_one_attempt_only')
             return cached
+        if business_already_claimed:
+            return blocked('premium_review_business_once_consumed')
         # A changed body is still the SAME task. A job/group may call Codex
         # once, even if its exact-content fingerprint changes afterward.
         task_key = digest({'job_id': str(job.get('job_id') or job.get('property_id') or ''),
