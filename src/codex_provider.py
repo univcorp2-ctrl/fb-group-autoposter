@@ -51,31 +51,46 @@ revision_instruction:
 
 
 def _call_codex(prompt: str, timeout_seconds: int = 120) -> str:
-    executable = shutil.which(os.getenv("CODEX_CLI", "codex"))
-    if not executable:
-        raise FileNotFoundError("Codex CLI was not found on PATH")
+    candidates = list((Path(os.getenv('LOCALAPPDATA', '')) / 'OpenAI' / 'Codex' / 'bin').glob('*/codex.exe'))
+    override = os.getenv('FB_REVIEW_CODEX_EXE', '')
+    executable = Path(override) if override else (max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None)
+    if not executable or executable.name.lower() != 'codex.exe' or not executable.is_file():
+        raise FileNotFoundError('App Codex executable is required')
+    environment = {k: v for k, v in os.environ.items() if k.upper() not in
+                   {'OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_BASE_URL'}}
+    login = subprocess.run([str(executable), 'login', 'status'], capture_output=True,
+        encoding='utf-8', timeout=15, check=False, env=environment,
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    if login.returncode or 'logged in using chatgpt' not in (login.stdout + login.stderr).lower():
+        raise RuntimeError('CHATGPT_LOGIN_REQUIRED_NO_API_FALLBACK')
     fd, raw_path = tempfile.mkstemp(prefix="fb-codex-", suffix=".txt")
     os.close(fd)
     output_path = Path(raw_path)
     try:
         command = [
-            executable,
+            str(executable),
             "exec",
             "--json",
+            '--ephemeral', '--ignore-user-config', '--ignore-rules', '--sandbox', 'read-only',
+            '--model', 'gpt-6-astra', '-c', 'model_reasoning_effort="high"',
+            '--disable', 'shell_tool', '--disable', 'multi_agent', '--disable', 'multi_agent_v2',
+            '-c', 'mcp_servers={}', '-c', 'plugins={}', '-c', 'web_search="disabled"',
             "--skip-git-repo-check",
             "--output-last-message",
             str(output_path),
             "-",
         ]
-        usage_run = UsageRun('facebook-posting', 'codex-configured')
+        usage_run = UsageRun('facebook-posting', 'gpt-6-astra')
         result = subprocess.run(
             command,
             input=prompt,
             text=True,
+            encoding='utf-8',
             capture_output=True,
             cwd=ROOT,
             timeout=timeout_seconds,
             check=True,
+            env=environment,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
         usage_run.finish(result.stdout)
