@@ -51,8 +51,9 @@ def desktop_idle_seconds() -> int:
 
 def eligible_for_restart(health: dict, *, idle: int, last_restart: float, now: float) -> bool:
     return (
-        not health.get("extension_polling", False)
+        (not health.get("extension_polling", False) or health.get("needs_extension_reload", False))
         and not health.get("active_lease", False)
+        and not health.get("pending_tasks", 0)
         and not health.get("posting_paused", False)
         and idle >= MIN_IDLE_SECONDS
         and now - last_restart >= RESTART_COOLDOWN_SECONDS
@@ -100,6 +101,8 @@ def main() -> int:
     }
     try:
         health = bridge_health()
+        expected_version = json.loads((ROOT / 'extension' / 'manifest.json').read_text(encoding='utf-8'))['version']
+        health['needs_extension_reload'] = bool(health.get('extension_version') and health['extension_version'] != expected_version)
         state.update({
             "bridge_online": True,
             "extension_polling": bool(health.get("extension_polling", False)),
@@ -107,8 +110,11 @@ def main() -> int:
             "active_lease": bool(health.get("active_lease", False)),
             "pending_tasks": int(health.get("pending_tasks") or 0),
             "posting_paused": bool(health.get("posting_paused", False)),
+            "loaded_extension_version": health.get('extension_version'),
+            "expected_extension_version": expected_version,
+            "needs_extension_reload": health['needs_extension_reload'],
         })
-        if state["extension_polling"]:
+        if state["extension_polling"] and not state['needs_extension_reload']:
             state["result"] = "healthy"
         else:
             idle = desktop_idle_seconds()
@@ -116,7 +122,7 @@ def main() -> int:
             if not eligible_for_restart(
                 health, idle=idle, last_restart=state["last_restart_epoch"], now=now
             ):
-                state["result"] = "stale_waiting_for_safe_idle_or_cooldown"
+                state["result"] = "extension_update_waiting_for_safe_idle_or_cooldown" if state['needs_extension_reload'] else "stale_waiting_for_safe_idle_or_cooldown"
             elif args.check_only:
                 state["result"] = "stale_restart_eligible_check_only"
             else:
@@ -130,7 +136,9 @@ def main() -> int:
                 new_health = bridge_health()
                 state["extension_polling"] = bool(new_health.get("extension_polling", False))
                 state["poll_age_seconds"] = new_health.get("extension_poll_age_seconds")
-                state["result"] = "recovered" if state["extension_polling"] else "restart_did_not_restore_polling"
+                state['loaded_extension_version'] = new_health.get('extension_version')
+                state['needs_extension_reload'] = new_health.get('extension_version') != expected_version
+                state["result"] = "recovered" if state["extension_polling"] and not state['needs_extension_reload'] else "restart_did_not_restore_expected_extension"
     except Exception as error:
         state["result"] = "watchdog_error"
         state["error"] = f"{type(error).__name__}: {error}"[:250]
@@ -141,7 +149,7 @@ def main() -> int:
     except OSError as error:
         state["drive_error"] = type(error).__name__
     print(json.dumps(state, ensure_ascii=False))
-    return 0 if state["extension_polling"] else 2
+    return 0 if state["extension_polling"] and not state.get('needs_extension_reload', False) else 2
 
 
 if __name__ == "__main__":
