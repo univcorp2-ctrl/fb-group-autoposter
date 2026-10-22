@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-22T04:13:08.161137+00:00",
+  "generated_at": "2026-10-22T05:09:33.248358+00:00",
   "health": "stalled",
   "message": "確認済み投稿がありません。",
   "counts": {
@@ -7,7 +7,7 @@
   },
   "last_post_at": null,
   "heartbeat": {
-    "orchestrator": "2026-10-22T04:12:40.767348+00:00",
+    "orchestrator": "2026-10-22T05:09:04.067960+00:00",
     "session": "2026-08-18T23:11:06.600187+00:00"
   },
   "recent": [
@@ -19,7 +19,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:12:40.762347+00:00"
+      "updated_at": "2026-10-22T05:09:04.063621+00:00"
     },
     {
       "property_id": "eb-28032",
@@ -29,7 +29,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:12:37.729863+00:00"
+      "updated_at": "2026-10-22T05:09:00.919273+00:00"
     },
     {
       "property_id": "eb-15416",
@@ -39,7 +39,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:12:34.273402+00:00"
+      "updated_at": "2026-10-22T05:08:57.770191+00:00"
     },
     {
       "property_id": "eb-20511",
@@ -49,7 +49,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:12:31.263538+00:00"
+      "updated_at": "2026-10-22T05:08:53.634230+00:00"
     },
     {
       "property_id": "eb-30440",
@@ -59,7 +59,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:12:28.053401+00:00"
+      "updated_at": "2026-10-22T05:08:50.616841+00:00"
     },
     {
       "property_id": "eb-29624",
@@ -69,7 +69,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:12:24.708790+00:00"
+      "updated_at": "2026-10-22T05:08:47.164561+00:00"
     },
     {
       "property_id": "eb-29625",
@@ -79,7 +79,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:10:16.152342+00:00"
+      "updated_at": "2026-10-22T04:56:01.752239+00:00"
     },
     {
       "property_id": "eb-28032",
@@ -89,7 +89,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:10:12.656842+00:00"
+      "updated_at": "2026-10-22T04:55:58.495006+00:00"
     },
     {
       "property_id": "eb-15416",
@@ -99,7 +99,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:10:09.447528+00:00"
+      "updated_at": "2026-10-22T04:55:55.527391+00:00"
     },
     {
       "property_id": "eb-20511",
@@ -109,7 +109,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:10:05.902730+00:00"
+      "updated_at": "2026-10-22T04:55:52.205240+00:00"
     },
     {
       "property_id": "eb-30440",
@@ -119,7 +119,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:10:02.585142+00:00"
+      "updated_at": "2026-10-22T04:55:48.936912+00:00"
     },
     {
       "property_id": "eb-29624",
@@ -129,7 +129,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:09:59.450544+00:00"
+      "updated_at": "2026-10-22T04:55:45.611457+00:00"
     },
     {
       "property_id": "eb-29625",
@@ -139,7 +139,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:07:55.211624+00:00"
+      "updated_at": "2026-10-22T04:53:43.255925+00:00"
     },
     {
       "property_id": "eb-28032",
@@ -149,7 +149,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:07:52.122397+00:00"
+      "updated_at": "2026-10-22T04:53:39.596718+00:00"
     },
     {
       "property_id": "eb-15416",
@@ -159,7 +159,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:07:48.941539+00:00"
+      "updated_at": "2026-10-22T04:53:36.097107+00:00"
     },
     {
       "property_id": "eb-20511",
@@ -169,7 +169,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:07:45.442613+00:00"
+      "updated_at": "2026-10-22T04:53:32.693652+00:00"
     },
     {
       "property_id": "eb-30440",
@@ -179,7 +179,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:07:41.930969+00:00"
+      "updated_at": "2026-10-22T04:53:29.286641+00:00"
     },
     {
       "property_id": "eb-29624",
@@ -189,7 +189,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:07:38.962312+00:00"
+      "updated_at": "2026-10-22T04:53:25.737204+00:00"
     },
     {
       "property_id": "eb-29625",
@@ -199,7 +199,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:06:34.938103+00:00"
+      "updated_at": "2026-10-22T04:47:40.682049+00:00"
     },
     {
       "property_id": "eb-28032",
@@ -209,7 +209,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:06:31.924862+00:00"
+      "updated_at": "2026-10-22T04:47:37.240803+00:00"
     },
     {
       "property_id": "eb-15416",
@@ -219,7 +219,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:06:28.812847+00:00"
+      "updated_at": "2026-10-22T04:47:33.744063+00:00"
     },
     {
       "property_id": "eb-20511",
@@ -229,7 +229,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:06:25.464956+00:00"
+      "updated_at": "2026-10-22T04:47:30.756389+00:00"
     },
     {
       "property_id": "eb-30440",
@@ -239,7 +239,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:06:22.581867+00:00"
+      "updated_at": "2026-10-22T04:47:27.648260+00:00"
     },
     {
       "property_id": "eb-29624",
@@ -249,7 +249,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T04:06:19.478209+00:00"
+      "updated_at": "2026-10-22T04:47:24.001023+00:00"
     },
     {
       "property_id": "eb-29625",
@@ -259,7 +259,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:57:21.023405+00:00"
+      "updated_at": "2026-10-22T04:43:20.195718+00:00"
     },
     {
       "property_id": "eb-28032",
@@ -269,7 +269,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:57:17.758204+00:00"
+      "updated_at": "2026-10-22T04:43:16.853685+00:00"
     },
     {
       "property_id": "eb-15416",
@@ -279,7 +279,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:57:14.814015+00:00"
+      "updated_at": "2026-10-22T04:43:13.366105+00:00"
     },
     {
       "property_id": "eb-20511",
@@ -289,7 +289,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:57:11.661866+00:00"
+      "updated_at": "2026-10-22T04:43:09.293079+00:00"
     },
     {
       "property_id": "eb-30440",
@@ -299,7 +299,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:57:08.724806+00:00"
+      "updated_at": "2026-10-22T04:43:06.027652+00:00"
     },
     {
       "property_id": "eb-29624",
@@ -309,7 +309,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:57:05.398141+00:00"
+      "updated_at": "2026-10-22T04:43:02.647078+00:00"
     },
     {
       "property_id": "eb-29625",
@@ -319,7 +319,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:42:01.310128+00:00"
+      "updated_at": "2026-10-22T04:40:58.865454+00:00"
     },
     {
       "property_id": "eb-28032",
@@ -329,7 +329,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:41:58.342622+00:00"
+      "updated_at": "2026-10-22T04:40:55.305048+00:00"
     },
     {
       "property_id": "eb-15416",
@@ -339,7 +339,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:41:55.315712+00:00"
+      "updated_at": "2026-10-22T04:40:51.627916+00:00"
     },
     {
       "property_id": "eb-20511",
@@ -349,7 +349,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:41:52.450456+00:00"
+      "updated_at": "2026-10-22T04:40:47.512495+00:00"
     },
     {
       "property_id": "eb-30440",
@@ -359,7 +359,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:41:49.137665+00:00"
+      "updated_at": "2026-10-22T04:40:43.683232+00:00"
     },
     {
       "property_id": "eb-29624",
@@ -369,7 +369,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:41:45.715530+00:00"
+      "updated_at": "2026-10-22T04:40:40.241657+00:00"
     },
     {
       "property_id": "eb-29625",
@@ -379,7 +379,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:26:41.748691+00:00"
+      "updated_at": "2026-10-22T04:39:35.514799+00:00"
     },
     {
       "property_id": "eb-28032",
@@ -389,7 +389,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:26:37.460692+00:00"
+      "updated_at": "2026-10-22T04:39:30.166225+00:00"
     },
     {
       "property_id": "eb-15416",
@@ -399,7 +399,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:26:34.358186+00:00"
+      "updated_at": "2026-10-22T04:39:26.374572+00:00"
     },
     {
       "property_id": "eb-20511",
@@ -409,7 +409,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:26:31.404365+00:00"
+      "updated_at": "2026-10-22T04:39:22.853189+00:00"
     },
     {
       "property_id": "eb-30440",
@@ -419,7 +419,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:26:27.973875+00:00"
+      "updated_at": "2026-10-22T04:39:19.164775+00:00"
     },
     {
       "property_id": "eb-29624",
@@ -429,7 +429,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:26:25.017110+00:00"
+      "updated_at": "2026-10-22T04:39:15.860264+00:00"
     },
     {
       "property_id": "eb-29625",
@@ -439,7 +439,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:18:21.102308+00:00"
+      "updated_at": "2026-10-22T04:38:21.832093+00:00"
     },
     {
       "property_id": "eb-28032",
@@ -449,7 +449,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:18:17.898040+00:00"
+      "updated_at": "2026-10-22T04:38:18.591017+00:00"
     },
     {
       "property_id": "eb-15416",
@@ -459,7 +459,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:18:14.800104+00:00"
+      "updated_at": "2026-10-22T04:38:15.649656+00:00"
     },
     {
       "property_id": "eb-20511",
@@ -469,7 +469,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:18:11.018252+00:00"
+      "updated_at": "2026-10-22T04:38:12.181551+00:00"
     },
     {
       "property_id": "eb-30440",
@@ -479,7 +479,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:18:07.545903+00:00"
+      "updated_at": "2026-10-22T04:38:09.044505+00:00"
     },
     {
       "property_id": "eb-29624",
@@ -489,7 +489,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:18:04.566942+00:00"
+      "updated_at": "2026-10-22T04:38:05.877940+00:00"
     },
     {
       "property_id": "eb-29625",
@@ -499,7 +499,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:14:00.097077+00:00"
+      "updated_at": "2026-10-22T04:23:01.574899+00:00"
     },
     {
       "property_id": "eb-28032",
@@ -509,7 +509,7 @@
       "last_error": "premium_review_hold:premium_review_unavailable:CalledProcessError",
       "posted_at": null,
       "permalink": null,
-      "updated_at": "2026-10-22T03:13:57.010932+00:00"
+      "updated_at": "2026-10-22T04:22:58.536169+00:00"
     }
   ]
 }
