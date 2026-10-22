@@ -50,3 +50,19 @@ def test_model_cannot_approve_different_body_hash(tmp_path):
     result = review_post_copy(job, target, {}, source_path=source, review_dir=tmp_path / 'reviews',
                               run_review=lambda _: approved('different body'))
     assert result['approved'] is False
+
+
+def test_reviewer_receives_verified_highlights_and_exact_signature_policy(tmp_path):
+    row, source, job, target = setup_case(tmp_path)
+    row['property.ownershipType'] = 'FREEHOLD'
+    source.write_text(json.dumps({'items': [row]}), encoding='utf-8')
+    job['payload_json'] = json.dumps(to_property(row))
+    signature = '承認済み署名 https://example.com/contact'
+    def checker(prompt):
+        evidence = json.loads(prompt.split('<untrusted_data>')[1].split('</untrusted_data>')[0])
+        assert '所有権' in evidence['facts']['highlights']
+        assert evidence['group']['signature'] == signature
+        assert evidence['group']['allow_links'] is False
+        return approved(target['body'])
+    assert review_post_copy(job, target, {'id': '123', 'allow_links': False, 'signature': signature},
+        source_path=source, review_dir=tmp_path/'reviews', run_review=checker)['approved']
