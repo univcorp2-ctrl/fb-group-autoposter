@@ -66,3 +66,35 @@ def test_reviewer_receives_verified_highlights_and_exact_signature_policy(tmp_pa
         return approved(target['body'])
     assert review_post_copy(job, target, {'id': '123', 'allow_links': False, 'signature': signature},
         source_path=source, review_dir=tmp_path/'reviews', run_review=checker)['approved']
+
+
+
+def test_failed_review_is_never_reinvoked_for_identical_task(tmp_path):
+    _, source, job, target = setup_case(tmp_path)
+    calls = []
+    def failing_reviewer(prompt):
+        calls.append(prompt)
+        raise RuntimeError('synthetic unavailable')
+    options = {'source_path': source, 'review_dir': tmp_path / 'reviews',
+               'run_review': failing_reviewer}
+    first = review_post_copy(job, target, {'id': '123'}, **options)
+    second = review_post_copy(job, target, {'id': '123'}, **options)
+    assert first == {'approved': False, 'reason': 'premium_review_unavailable:RuntimeError'}
+    assert second == {'approved': False, 'reason': 'premium_review_once_consumed'}
+    assert len(calls) == 1
+
+
+def test_rejected_review_is_cached_without_repeated_model_call(tmp_path):
+    _, source, job, target = setup_case(tmp_path)
+    calls = []
+    def rejected(prompt):
+        calls.append(prompt)
+        return json.dumps({'approved': False, 'bodyHash': hashlib.sha256(target['body'].encode()).hexdigest(),
+                           'reason': 'unsupported factual claim'})
+    options = {'source_path': source, 'review_dir': tmp_path / 'reviews',
+               'run_review': rejected}
+    first = review_post_copy(job, target, {'id': '123'}, **options)
+    second = review_post_copy(job, target, {'id': '123'}, **options)
+    assert first == second
+    assert first['approved'] is False
+    assert len(calls) == 1
