@@ -1,0 +1,10 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const code=fs.readFileSync(require('node:path').join(__dirname,'../extension/content.js'),'utf8');
+const body=code.slice(code.indexOf('  function isSafeNewThreadElement'),code.indexOf('  function findDialogEditable'));
+const context={isInsideExistingPost:()=>false,getComputedStyle:()=>({visibility:'visible'})};
+vm.createContext(context);vm.runInContext(body,context);
+const fixed={offsetParent:null,getClientRects:()=>[{}],closest:()=>null,getAttribute:()=>'',parentElement:null};
+assert.equal(context.isSafeNewThreadElement(fixed),true,'visible fixed dialogs must be allowed');
+const chat={...fixed,offsetParent:{},closest:s=>s.includes('スレッド作成ツール')?{}:null};
+assert.equal(context.isSafeNewThreadElement(chat),false,'Messenger chat editors must never receive property posts');
+console.log('fixed dialog visibility and Messenger exclusion passed');
