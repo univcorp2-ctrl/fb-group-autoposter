@@ -55,3 +55,11 @@ LINEは既存依存関係のあるNTFS検証用コピーでbuildと328テストP
 次の優先作業：1.1.6の実読込を確認し、Facebook本文の高性能レビューを現行承認ハッシュと最新sourceに結び付けて実公開を検証。LINEの明示資料請求を無条件skipするno_reply_needed再レビュー経路と、メーカーがsend=falseの場合に独立チェッカーを飛ばす経路を修復し、実会話に対する適切な返信を検証。Messengerの既存4保留も個別に解決し、新規限定の運用だけで完了としない。
 
 KEEP: 返信修正・テスト・拡張機能1.1.6・監視修正・本記録。ARCHIVE: C旧拡張版と短期メンテナンス保留。DELETE: なし。
+
+## 2026-10-22 10:10 JST: priority customer replies executed
+- Messenger: はしもと ゆき, thread 2189053298490382, 10:08 JST. Sent the approved answer giving the requested property address. Reloaded conversation showed exact outgoing text and sent label. Recorded confirmed_sent in runtime ledger; preserved the other unresolved attempt.
+- LINE: pending material request Uf4c489602183c36e6d4ba7bf544a9cd6, 10:09:53 JST. Independent gpt-6-astra review passed. Sent: 松が谷の2件は除外いたします。ほかの物件資料をご案内するため、ご希望のエリアを教えていただけますか？ Runtime ledger status=sent, sent=1, scanned=1, errors=[], pendingReview=0. No PDF attached. Sender reread the conversation and matched the exact outgoing text.
+- Messenger daemon was briefly stopped during manual browser send, then restarted. The one-shot sender previously timed out navigating the inbox before composing; it did not send.
+- LINE priority scan helper now selects a never-attempted pending request before rotating the remaining scan. Source targeted review tests: 3 passed. Existing failed-model cooldown for this never-sent request was cleared after checking the current model worked; the guarded second review completed and sent.
+- Outstanding broader recovery: other Messenger conversations and Facebook publication proof. Runtime posting suite returned 5 failures (analytics import, backend validation, extension guard expectation, metrics import, schedule string expectation); no claim of full posting verification.
+- KEEP: priority scan helper, runtime delivery ledgers, this evidence note. ARCHIVE: none. DELETE: none.
