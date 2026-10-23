@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
@@ -208,3 +208,24 @@ def test_select_messenger_page_creates_tab_without_replacing_user_page() -> None
 
     make.assert_not_awaited()
     context.new_page.assert_not_awaited()
+
+def test_select_messenger_page_reclaims_only_single_empty_launcher_inbox() -> None:
+    browser = _browser_module()
+    async def eval_js(script, *args):
+        if args:
+            eval_js.tag = args[0]
+            return None
+        return eval_js.tag
+    eval_js.tag = ""
+    page = SimpleNamespace(
+        url="https://www.messenger.com/t/",
+        evaluate=AsyncMock(side_effect=eval_js),
+    )
+    context = SimpleNamespace(pages=[page], new_page=AsyncMock())
+    selected = asyncio.run(browser.select_messenger_page(context))
+    assert selected is page
+    assert page.evaluate.await_count == 4
+    context.new_page.assert_not_awaited()
+
+
+
