@@ -158,7 +158,26 @@ async def select_messenger_page(context: Any) -> Any:
             pass
     if owned:
         return owned[0]
-    # Hard user-requested NO-NEW-TABS policy: never create a second page,
-    # even when navigation cleared window.name or the background page vanished.
-    # We must not hijack an untagged human-owned Messenger tab either.
+    # Recovery is allowed ONLY for the dedicated Chrome launcher's single,
+    # untagged Messenger INBOX page (not a human conversation, other tab, or
+    # general Chrome profile). We reclaim that existing page: ZERO new tabs.
+    # The launcher is explicitly bound to chrome-profile-authenticated/Default.
+    if len(context.pages) == 1:
+        candidate = context.pages[0]
+        safe_starts = {
+            "https://www.messenger.com/",
+            "https://www.messenger.com/t/",
+        }
+        if str(candidate.url) in safe_starts:
+            try:
+                tag = await candidate.evaluate("() => window.name")
+                if not tag:
+                    await candidate.evaluate(
+                        "(value) => { window.name = value; }", AUTOMATION_PAGE_TAG
+                    )
+                    if await candidate.evaluate("() => window.name") == AUTOMATION_PAGE_TAG:
+                        return candidate
+            except Exception:
+                pass
+    # Never allocate tabs, reload, or take over unverified human-owned pages.
     raise AuthenticatedProfileUnavailable("messenger_background_tab_missing_no_new_tabs")
