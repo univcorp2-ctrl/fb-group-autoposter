@@ -203,8 +203,8 @@ def test_select_messenger_page_creates_tab_without_replacing_user_page() -> None
         new_page=AsyncMock(),
     )
     with patch.object(browser, "create_background_page", new=AsyncMock(return_value=created)) as make:
-        selected = asyncio.run(browser.select_messenger_page(context))
+        with pytest.raises(browser.AuthenticatedProfileUnavailable, match="no_new_tabs"):
+            asyncio.run(browser.select_messenger_page(context))
 
-    assert selected is created
-    make.assert_awaited_once_with(context)
+    make.assert_not_awaited()
     context.new_page.assert_not_awaited()

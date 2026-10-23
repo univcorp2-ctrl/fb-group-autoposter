@@ -158,4 +158,7 @@ async def select_messenger_page(context: Any) -> Any:
             pass
     if owned:
         return owned[0]
-    return await create_background_page(context)
+    # Hard user-requested NO-NEW-TABS policy: never create a second page,
+    # even when navigation cleared window.name or the background page vanished.
+    # We must not hijack an untagged human-owned Messenger tab either.
+    raise AuthenticatedProfileUnavailable("messenger_background_tab_missing_no_new_tabs")
