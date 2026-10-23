@@ -191,6 +191,10 @@ async def cycle(probe=False):
      register_verified(group,body,state)
      return {'status':'prior_unverified_post_reconciled','group':gid}
    return {'status':'blocked_unconfirmed_prior_click','group':gid}
+ # Respect group operating hours even when Windows runs a missed task late.
+ hour=datetime.datetime.now(ZoneInfo('Asia/Tokyo')).hour
+ if not 7 <= hour < 23:
+  return {'status':'outside_group_hours_safe_hold','local_hour':hour}
  # One property max one community per day; group-specific cooldown also applies.
  today=str(local_date())
  if any(str(row.get('posted_at') or '')[:10]==today for row in posts):
