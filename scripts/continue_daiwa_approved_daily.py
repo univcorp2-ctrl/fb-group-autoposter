@@ -1,5 +1,5 @@
 """Noninteractive, bounded Daiwa Facebook 10-post campaign.
-Uses seller-approved listing ONLY, one eligible PRIVATE group/day, same body.
+Uses seller-approved listing in multiple eligible PRIVATE groups/day, same body.
 Never opens Messenger tabs. No retry after an unverified Facebook click.
 All evidence & state in PRIVATE Google Drive; only hashes/verified links on cloud.
 """
@@ -22,6 +22,9 @@ PROPERTY='daiwa-hino-toyoda3-droom-2026'
 SOURCE_ID='email-1a0f0370fa1cf6d3-0'
 APPROVED_MESSAGE='1a10f92be1a245e9'
 GOAL=10
+DAILY_MIN_POSTS=2
+DAILY_MAX_POSTS=3  # distinct communities; a bounded daily maximum
+MIN_POST_INTERVAL_MINUTES=60
 GROUP_IDS=('1261566862455883','630451722001309','792499964217824',
  '628818327463444','2478498062317428','1911961896257757',
  '1092188554162022','674802419312579','2217518449046952',
@@ -61,6 +64,34 @@ def current_consent():
 def groups_by_id():
  os.chdir(FB);configured={str(g['id']):g for g in load_groups()}
  return {id:configured[id] for id in GROUP_IDS if id in configured and configured[id].get('enabled',True)}
+
+def posting_rate_status(posts, *, moment=None):
+ """Count live, permalink-confirmed posts by local JST date, not UTC.
+
+ Same-day posting may continue across distinct communities, but no more than
+ DAILY_MAX_POSTS after at least MIN_POST_INTERVAL_MINUTES since the last post.
+ """
+ moment=moment or datetime.datetime.now(datetime.timezone.utc)
+ day=moment.astimezone(ZoneInfo('Asia/Tokyo')).date()
+ today=set()
+ last=None
+ for post in posts:
+  if post.get('status')!='posted' or not str(post.get('permalink') or '').startswith('https://www.facebook.com/groups/'):
+   continue
+  stamp=post.get('posted_at')
+  if not stamp:continue
+  try:
+   parsed=datetime.datetime.fromisoformat(str(stamp).replace('Z','+00:00'))
+   if parsed.tzinfo is None:parsed=parsed.replace(tzinfo=datetime.timezone.utc)
+  except (ValueError,TypeError):continue
+  if parsed.astimezone(ZoneInfo('Asia/Tokyo')).date()!=day:continue
+  today.add(str(post.get('group_id')))
+  if last is None or parsed>last:last=parsed
+ wait_seconds=0
+ if last is not None:
+  wait_seconds=max(0,MIN_POST_INTERVAL_MINUTES*60-(moment-last).total_seconds())
+ return {'today_groups':len(today),'wait_seconds':int(wait_seconds + 0.999) if wait_seconds else 0,
+   'daily_minimum':DAILY_MIN_POSTS,'daily_maximum':DAILY_MAX_POSTS}
 
 def existing_posts(db):
  with db.connect() as conn:
@@ -195,10 +226,15 @@ async def cycle(probe=False):
  hour=datetime.datetime.now(ZoneInfo('Asia/Tokyo')).hour
  if not 7 <= hour < 23:
   return {'status':'outside_group_hours_safe_hold','local_hour':hour}
- # One property max one community per day; group-specific cooldown also applies.
- today=str(local_date())
- if any(str(row.get('posted_at') or '')[:10]==today for row in posts):
-  return {'status':'one_post_per_day_guard','verified':len(verified)}
+ # Post to multiple distinct communities each day, with a strict interval.
+ # A verified permalink and different community are mandatory before counting.
+ rate=posting_rate_status(posts)
+ state['daily_rule']={**rate,'day_jst':str(local_date())}
+ save(STATE,state)
+ if rate['today_groups']>=DAILY_MAX_POSTS:
+  return {'status':'daily_limit_reached','verified':len(verified),**rate}
+ if rate['wait_seconds']:
+  return {'status':'inter_post_cooldown','verified':len(verified),**rate}
  for gid in GROUP_IDS:
   if gid not in conf or gid in verified:continue
   group=conf[gid]
