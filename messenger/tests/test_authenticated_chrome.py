@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import importlib
 from pathlib import Path
 from types import SimpleNamespace
@@ -224,7 +224,8 @@ def test_select_messenger_page_reclaims_only_single_empty_launcher_inbox() -> No
     context = SimpleNamespace(pages=[page], new_page=AsyncMock())
     selected = asyncio.run(browser.select_messenger_page(context))
     assert selected is page
-    assert page.evaluate.await_count == 3
+    assert page.evaluate.await_count == 4
     context.new_page.assert_not_awaited()
+
 
 
