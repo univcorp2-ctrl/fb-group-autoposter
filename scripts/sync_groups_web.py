@@ -138,16 +138,50 @@ def sync_groups_web(eb_root: Path | None = None) -> dict:
 
 
 def _wrangler_deploy(eb: Path) -> bool:
-    try:
-        cp = subprocess.run(
-            ["npx", "wrangler", "pages", "deploy", "docs", "--project-name=estateboard", "--commit-dirty=true"],
-            cwd=str(eb), capture_output=True, text=True, timeout=600, shell=True, check=False,
-        )
-        return cp.returncode == 0
-    except Exception as exc:  # noqa: BLE001
-        log.warning("wrangler deploy skipped: %s: %s", type(exc).__name__, exc)
+    """Use the full canonical EstateBoard Pages build, never docs-only."""
+    canonical = Path(r"C:\AI-Agent\EstateBoard")
+    python = Path(r"C:\Users\t0015\AppData\Local\Programs\Python\Python311\python.exe")
+    required = [
+        canonical / "docs" / "daiwa-posting" / "index.html",
+        canonical / "functions" / "api" / "daiwa" / "summary.js",
+        canonical / "functions" / "api" / "analytics" / "health.js",
+        canonical / "functions" / "api" / "analytics" / "public-summary.js",
+        canonical / "facebook-analytics" / "app.js",
+    ]
+    if not python.is_file() or not all(f.is_file() for f in required):
+        log.error("Pages deploy blocked: complete canonical assets missing")
         return False
-
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"], cwd=str(canonical),
+            capture_output=True, text=True, timeout=20, creationflags=flags)
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=str(canonical),
+            capture_output=True, text=True, timeout=20, creationflags=flags)
+        if branch.stdout.strip() != "main" or dirty.stdout.strip():
+            log.warning("Pages deploy blocked: canonical repo is not clean main")
+            return False
+        pulled = subprocess.run(
+            ["git", "pull", "--ff-only", "origin", "main"], cwd=str(canonical),
+            capture_output=True, text=True, timeout=120, creationflags=flags)
+        if pulled.returncode:
+            log.warning("Pages deploy blocked: cannot fast-forward canonical main")
+            return False
+        if not all(f.is_file() for f in required):
+            log.warning("Pages deploy blocked: missing asset after fast-forward")
+            return False
+        deployed = subprocess.run(
+            [str(python), "-c", "import scripts.daily_pipeline as p; p.stage_deploy()"],
+            cwd=str(canonical), capture_output=True, text=True, timeout=670,
+            creationflags=flags)
+        if deployed.returncode:
+            log.warning("Full Pages deploy failed: code=%s", deployed.returncode)
+            return False
+        return True
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.warning("Full Pages deploy safely skipped: %s", type(exc).__name__)
+        return False
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
